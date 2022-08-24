@@ -6,6 +6,29 @@
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <clickhouse>
+<!-- <storage_configuration>
+    <disks>
+        <default>
+        </default>
+        <s3>
+        <type>s3</type>
+        <endpoint>https://signoz-benchmarks.s3.amazonaws.com/data2/</endpoint>        <access_key_id>AKIARKCF5OX3HGMZVL2G</access_key_id>
+        <secret_access_key>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</secret_access_key>
+        </s3>
+    </disks>
+    <policies>
+        <tiered>
+        <volumes>
+        <default>
+            <disk>default</disk>
+        </default>
+        <s3>
+            <disk>s3</disk>
+        </s3>
+        </volumes>
+        </tiered>
+    </policies>
+</storage_configuration> -->
     <logger>
         <!-- Possible levels [1]:
 
@@ -1070,8 +1093,9 @@
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
     <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
-
+    <user_defined_executable_functions_config>*function.xml</user_defined_executable_functions_config>
+    <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+    
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->

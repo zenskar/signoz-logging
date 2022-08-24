@@ -1,0 +1,18 @@
+<functions>
+    <function>
+        <type>executable</type>
+        <name>getSubTreeSpans</name>
+        <return_type>Array(String)</return_type>
+        <return_name>spans</return_name>
+        <argument>
+            <type>Array(String)</type>
+            <name>spanID</name>
+        </argument>
+        <argument>
+            <type>Array(String)</type>
+            <name>parentSpanID</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>./getSubTreeSpans</command>
+    </function>
+</functions>

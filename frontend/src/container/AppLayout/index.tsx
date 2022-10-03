@@ -1,5 +1,5 @@
 import { notification } from 'antd';
-import getFeaturesFlags from 'api/features/getFeatureFlags';
+import getFeatureFlags from 'api/features/getFeatureFlags';
 import getUserLatestVersion from 'api/user/getLatestVersion';
 import getUserVersion from 'api/user/getVersion';
 import Header from 'container/Header';
@@ -45,7 +45,7 @@ function AppLayout(props: AppLayoutProps): JSX.Element {
 			enabled: isLoggedIn,
 		},
 		{
-			queryFn: getFeaturesFlags,
+			queryFn: getFeatureFlags,
 			queryKey: 'getFeatureFlags',
 		},
 	]);
@@ -61,6 +61,9 @@ function AppLayout(props: AppLayoutProps): JSX.Element {
 
 		if (getUserVersionResponse.status === 'idle' && isLoggedIn) {
 			getUserVersionResponse.refetch();
+		}
+		if (getFeaturesResponse.status === 'idle') {
+			getFeaturesResponse.refetch();
 		}
 	}, [
 		getFeaturesResponse,
@@ -110,6 +113,19 @@ function AppLayout(props: AppLayoutProps): JSX.Element {
 			});
 			notification.error({
 				message: t('oops_something_went_wrong_version'),
+			});
+		}
+		if (
+			getFeaturesResponse.isFetched &&
+			getFeaturesResponse.isSuccess &&
+			getFeaturesResponse.data &&
+			getFeaturesResponse.data.payload
+		) {
+			dispatch({
+				type: UPDATE_FEATURE_FLAGS,
+				payload: {
+					...getFeaturesResponse.data.payload,
+				},
 			});
 		}
 
@@ -171,6 +187,8 @@ function AppLayout(props: AppLayoutProps): JSX.Element {
 		getFeaturesResponse.isFetched,
 		getFeaturesResponse.isSuccess,
 		getFeaturesResponse.data,
+		getFeaturesResponse.isLoading,
+		getFeaturesResponse.isError,
 	]);
 
 	const isToDisplayLayout = isLoggedIn;

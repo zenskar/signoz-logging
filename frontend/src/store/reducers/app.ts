@@ -199,7 +199,7 @@ const appReducer = (
 		case UPDATE_FEATURE_FLAGS: {
 			return {
 				...state,
-				featureFlags: action.payload,
+				featureFlags: { ...action.payload },
 			};
 		}
 

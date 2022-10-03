@@ -1,4 +1,4 @@
-import { PayloadProps as FeatureFlagPayload } from 'types/api/features/getFeaturesFlags';
+import { PayloadProps as FeatureFlagPayload } from 'types/api/features/getFeatureFlags';
 import { PayloadProps as OrgPayload } from 'types/api/user/getOrganization';
 import { PayloadProps as UserPayload } from 'types/api/user/getUser';
 import { ROLES } from 'types/roles';

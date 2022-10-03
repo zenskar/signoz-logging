@@ -2,7 +2,7 @@ import axios from 'api';
 import { ErrorResponseHandler } from 'api/ErrorResponseHandler';
 import { AxiosError } from 'axios';
 import { ErrorResponse, SuccessResponse } from 'types/api';
-import { PayloadProps } from 'types/api/features/getFeaturesFlags';
+import { PayloadProps } from 'types/api/features/getFeatureFlags';
 
 const getFeaturesFlags = async (): Promise<
 	SuccessResponse<PayloadProps> | ErrorResponse

@@ -1,4 +1,4 @@
-import { PayloadProps as FeatureFlagPayload } from 'types/api/features/getFeaturesFlags';
+import { PayloadProps as FeatureFlagPayload } from 'types/api/features/getFeatureFlags';
 import {
 	Organization,
 	PayloadProps as OrgPayload,
@@ -114,7 +114,7 @@ export interface UpdateOrg {
 
 export interface UpdateFeatureFlags {
 	type: typeof UPDATE_FEATURE_FLAGS;
-	payload: FeatureFlagPayload;
+	payload: null | FeatureFlagPayload;
 }
 
 export type AppAction =

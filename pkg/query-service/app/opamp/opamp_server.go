@@ -130,3 +130,26 @@ processors:
 		})
 	}
 }
+
+func (srv *Server) UpdateConfig(config []byte) error {
+	agent := srv.agents.FindAgent("00000000000000000000000000")
+	if agent == nil {
+		return fmt.Errorf("no agent found")
+	}
+	hash := sha256.New()
+	hash.Write(config)
+	agent.SendToAgent(&protobufs.ServerToAgent{
+		RemoteConfig: &protobufs.AgentRemoteConfig{
+			Config: &protobufs.AgentConfigMap{
+				ConfigMap: map[string]*protobufs.AgentConfigFile{
+					"collector.yaml": {
+						Body:        config,
+						ContentType: "application/x-yaml",
+					},
+				},
+			},
+			ConfigHash: hash.Sum(nil),
+		},
+	})
+	return nil
+}

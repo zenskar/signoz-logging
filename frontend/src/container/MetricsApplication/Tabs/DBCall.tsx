@@ -16,12 +16,9 @@ import { Widgets } from 'types/api/dashboard/getAll';
 import MetricReducer from 'types/reducer/metrics';
 
 import { Card, GraphContainer, GraphTitle, Row } from '../styles';
+import { dbSystemLegend, dbSystemTags } from './constant';
 import { Button } from './styles';
-import {
-	dbSystemTags,
-	onGraphClickHandler,
-	onViewTracePopupClick,
-} from './util';
+import { onGraphClickHandler, onViewTracePopupClick } from './util';
 
 function DBCall({ getWidgetQueryBuilder }: DBCallProps): JSX.Element {
 	const { servicename } = useParams<{ servicename?: string }>();
@@ -42,7 +39,6 @@ function DBCall({ getWidgetQueryBuilder }: DBCallProps): JSX.Element {
 			),
 		[resourceAttributeQueries],
 	);
-	const legend = '{{db_system}}';
 
 	const databaseCallsRPSWidget = useMemo(
 		() =>
@@ -51,7 +47,7 @@ function DBCall({ getWidgetQueryBuilder }: DBCallProps): JSX.Element {
 				promQL: [],
 				metricsBuilder: databaseCallsRPS({
 					servicename,
-					legend,
+					legend: dbSystemLegend,
 					tagFilterItems,
 				}),
 				clickHouse: [],

@@ -101,15 +101,15 @@ func checkDuplicates(pipeline []interface{}) bool {
 	return false
 }
 
-func buildPipeline(signal string, current []interface{}) ([]interface{}, error) {
+func buildPipeline(signal Signal, current []interface{}) ([]interface{}, error) {
 	var spec map[int]pipelineStatus
 
 	switch signal {
-	case "metrics":
+	case Metrics:
 		spec = metricsPipelineSpec
 		lockMetricsPipelineSpec.Lock()
 		defer lockMetricsPipelineSpec.Unlock()
-	case "traces":
+	case Traces:
 		spec = tracesPipelineSpec
 		lockTracesPipelineSpec.Lock()
 		defer lockTracesPipelineSpec.Unlock()

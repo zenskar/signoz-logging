@@ -140,11 +140,11 @@ func (agent *Agent) updateAgentDescription(newStatus *protobufs.AgentToServer) (
 			// todo: need to address multiple agent scenario here
 			// for now, the first response will be sent back to the UI
 			if agent.Status.RemoteConfigStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_APPLIED {
-				onConfigSuccess(string(agent.Status.RemoteConfigStatus.LastRemoteConfigHash))
+				onConfigSuccess(agent.ID, string(agent.Status.RemoteConfigStatus.LastRemoteConfigHash))
 			}
 
 			if agent.Status.RemoteConfigStatus.Status == protobufs.RemoteConfigStatuses_RemoteConfigStatuses_FAILED {
-				onConfigFailure(string(agent.Status.RemoteConfigStatus.LastRemoteConfigHash), agent.Status.RemoteConfigStatus.ErrorMessage)
+				onConfigFailure(agent.ID, string(agent.Status.RemoteConfigStatus.LastRemoteConfigHash), agent.Status.RemoteConfigStatus.ErrorMessage)
 			}
 		}
 	}

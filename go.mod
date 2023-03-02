@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.5.1
 	github.com/SigNoz/govaluate v0.0.0-20220522085550-d19c08c206cb
+	github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df
 	github.com/coreos/go-oidc/v3 v3.4.0
 	github.com/go-kit/log v0.2.1
 	github.com/google/uuid v1.3.0
@@ -33,6 +34,7 @@ require (
 	go.opentelemetry.io/collector/confmap v0.70.0
 	go.uber.org/zap v1.24.0
 	gopkg.in/segmentio/analytics-go.v3 v3.1.0
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apimachinery v0.26.1
 )
 
@@ -90,7 +92,6 @@ require (
 	google.golang.org/genproto v0.0.0-20221227171554-f9683d7f8bef // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.26.1 // indirect
 	k8s.io/client-go v0.26.1 // indirect
 )

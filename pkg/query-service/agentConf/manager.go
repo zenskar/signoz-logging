@@ -169,13 +169,19 @@ func UpsertFilterProcessor(ctx context.Context, version int, config *filterproce
 // successful deployment if no error is received.
 // this method is currently expected to be called only once in the lifecycle
 // but can be improved in future to accept continuous request status updates from opamp
-func (m *Manager) OnConfigUpdate(hash string, err error) {
+func (m *Manager) OnConfigUpdate(agentId string, hash string, err error) {
 
 	status := string(Deployed)
+
 	message := "deploy successful"
+
+	defer func() {
+		zap.S().Errorf(status, zap.String("agentId", agentId), zap.String("agentResponse", message))
+	}()
+
 	if err != nil {
 		status = string(DeployFailed)
-		message = err.Error()
+		message = fmt.Sprintf("%s: %s", agentId, err.Error())
 	}
 
 	m.updateDeployStatusByHash(context.Background(), hash, status, message)

@@ -14,7 +14,8 @@ import (
 const (
 	TracesLbPipelineName      = "traces/lb"
 	TracesDefaultPipelineName = "traces"
-	OtlpExporterName          = "otlp_internal"
+	OtlpInternalReceiver      = "otlp/internal"
+	LbExporterName            = "loadbalancing"
 )
 
 func ConfigureLbExporter() error {
@@ -100,7 +101,7 @@ func prepareLbSpec(agentConf *confmap.Conf, canLB bool, dryRun bool) error {
 }
 
 // prepareLbAgentSpec creates LB exporter agents
-func prepareLbAgentSpec(agentConf *confmap.Conf) (*confmap.Conf, error) {
+func prepareLbAgentSpec(agentConf *confmap.Conf) (serviceConf *confmap.Conf, fnerr error) {
 
 	// add a new otlp receiver otlp_internal at 0.0.0.0:4949
 	// this receiver will enable collecting traces re-routed by lb exporter
@@ -126,26 +127,40 @@ func prepareLbAgentSpec(agentConf *confmap.Conf) (*confmap.Conf, error) {
 
 	// add otlp internal receiver to receive traces from lb exporter
 	// at 0.0.0.0:4949
-	receivers[OtlpExporterName] = otlpreceiver.Config{
-		HTTP: otlpreceiver.HTTPServerSettings{
-			Endpoint: "0.0.0.0:4949",
-		},
-	}
+	receivers[OtlpInternalReceiver] = map[string]interface{}{
+		"protocols": otlpreceiver.Protocols{
+			GRPC: &otlpreceiver.GRPCServerSettings{
+				Endpoint: "0.0.0.0:4949",
+			},
+			HTTP: &otlpreceiver.HTTPServerSettings{
+				Endpoint:   "0.0.0.0:4949",
+				TLSSetting: nil,
+			},
+		}}
 
 	exporters := agentConf.Get("exporters").(map[string]interface{})
+
+	// load balancing settings from here: settings here https://pkg.go.dev/go.opentelemetry.io/collector/config/
+	// more description of config: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/loadbalancingexporter#configuration
+
 	exporters["loadbalancing"] = map[string]interface{}{
 		"protocol": map[string]interface{}{
 			"otlp": map[string]interface{}{
+				// Timeout is the timeout for every attempt to send data to the backend.
 				"timeout": "1s",
 			},
 		},
 		"resolver": map[string]interface{}{
-			"dns": map[string]interface{}{
-				"hostname": []interface{}{
-					// todo: need to find out this config
-					"signoz.example.com",
+			"static": map[string]interface{}{
+				"hostnames": []interface{}{
+					"0.0.0.0:4949",
 				},
 			},
+			// "dns": map[string]interface{}{
+			// 	// todo(): can we get this from agent?
+			// 	"hostname": constants.GetOrDefaultEnv("OTLP_ENDPOINT_HOST", "otlp.example.com"),
+			// 	"port":     constants.GetOrDefaultEnv("OTLP_ENDPOINT_PORT", "4317"),
+			// },
 		},
 	}
 
@@ -174,14 +189,17 @@ func prepareLbAgentSpec(agentConf *confmap.Conf) (*confmap.Conf, error) {
 
 	// capture existing receiver list in case lb config needs to be applied
 	preUpdateRcvrs := preUpdateTraces["receivers"].([]interface{})
-
-	pipelines[TracesLbPipelineName] = map[string]interface{}{
-		"receivers":  deepcopy.Anything(preUpdateRcvrs),
-		"processors": []string{""},
-		"exporters":  []string{"lbexporter"},
+	lbreceivers, err := deepcopy.Anything(preUpdateRcvrs)
+	if err != nil {
+		return nil, err
 	}
-	preUpdateTraces["receivers"] = []string{"otlp_internal"}
-	pipelines["traces"] = deepcopy.Anything(preUpdateTraces)
+	pipelines[TracesLbPipelineName] = map[string]interface{}{
+		"receivers":  lbreceivers,
+		"processors": []string{},
+		"exporters":  []string{LbExporterName},
+	}
+	preUpdateTraces["receivers"] = []string{OtlpInternalReceiver}
+	pipelines[TracesDefaultPipelineName], _ = deepcopy.Anything(preUpdateTraces)
 
 	service["pipelines"] = pipelines
 
@@ -197,14 +215,14 @@ func prepareLbAgentSpec(agentConf *confmap.Conf) (*confmap.Conf, error) {
 
 // prepareNonLbAgentSpec creates non-LB exporter agents that handle otlp receiver
 // only.
-func prepareNonLbAgentSpec(agentConf *confmap.Conf) (*confmap.Conf, error) {
+func prepareNonLbAgentSpec(agentConf *confmap.Conf) (serviceConf *confmap.Conf, fnerr error) {
 
 	receivers := agentConf.Get("receivers").(map[string]interface{})
 
 	// add otlp internal receiver to receive traces from lb exporter
 	// at 0.0.0.0:4949
-	receivers["otlp_internal"] = otlpreceiver.Config{
-		HTTP: otlpreceiver.HTTPServerSettings{
+	receivers["otlp/internal"] = otlpreceiver.Protocols{
+		HTTP: &otlpreceiver.HTTPServerSettings{
 			Endpoint: "0.0.0.0:4949",
 		},
 	}
@@ -232,8 +250,11 @@ func prepareNonLbAgentSpec(agentConf *confmap.Conf) (*confmap.Conf, error) {
 	preUpdateTraces := service["pipelines"].(map[string]interface{})["traces"].(map[string]interface{})
 
 	preUpdateTraces["receivers"] = []string{"otlp_internal"}
-	pipelines["traces"] = deepcopy.Anything(preUpdateTraces)
-
+	updatedTraces, err := deepcopy.Anything(preUpdateTraces)
+	if err != nil {
+		return nil, err
+	}
+	pipelines[TracesDefaultPipelineName] = updatedTraces
 	service["pipelines"] = pipelines
 
 	// todo(amol): try updating the traces keys directly but if that

@@ -64,7 +64,7 @@ func UpsertControlProcessors(ctx context.Context, signal string, processors map[
 }
 
 func checkPipelineExists(agentConf *confmap.Conf, name string) bool {
-	service := agentConfig.Get("service")
+	service := agentConf.Get("service")
 
 	pipeline := service.(map[string]interface{})["pipelines"].(map[string]interface{})
 	if _, ok := pipeline[name]; !ok {
@@ -73,14 +73,18 @@ func checkPipelineExists(agentConf *confmap.Conf, name string) bool {
 	return true
 }
 
-func checkExporterExists(agentConf *confmap.Conf, name string) bool {
-	service := agentConfig.Get("service")
-
-	exporters := service.(map[string]interface{})["exporters"].(map[string]interface{})
-	if _, ok := exporters[name]; !ok {
-		return false
+func checkExporterExists(agentConf *confmap.Conf, signal string, name string) bool {
+	service := agentConf.Get("service")
+	signalSpec := service.(map[string]interface{})["pipelines"].(map[string]interface{})[signal]
+	exporters := signalSpec.(map[string]interface{})["exporters"].([]interface{})
+	var found bool
+	for _, e := range exporters {
+		if e == name {
+			found = true
+		}
 	}
-	return true
+
+	return found
 }
 
 // addIngestionControlToAgent adds ingestion contorl rules to agent config
@@ -96,7 +100,7 @@ func addIngestionControlToAgent(agent *model.Agent, signal string, processors ma
 
 	// check if LB needs to be configured
 	if signal == string(Traces) && withLB {
-
+		fmt.Println("with lb is true")
 		// check if lb pipeline is setup for lb agents, here we assume
 		// that otlp_internal will exist implicitly if traces/lb pipeline exists
 		if agent.CanLB && !checkPipelineExists(agentConf, TracesLbPipelineName) {
@@ -113,7 +117,7 @@ func addIngestionControlToAgent(agent *model.Agent, signal string, processors ma
 		}
 
 		// check if otlp_internal is setup for non-lb agents
-		if !agent.CanLB && !checkExporterExists(agentConf, OtlpExporterName) {
+		if !agent.CanLB && !checkExporterExists(agentConf, string(Traces), OtlpInternalReceiver) {
 			zap.S().Debugf("OTLP internal not configured for agent. Preparing the lb exporter spec", agent.ID)
 			serviceConf, err := prepareNonLbAgentSpec(agentConf)
 			if err != nil {
@@ -198,8 +202,8 @@ func prepareControlProcesorsSpec(agentConf *confmap.Conf, signal Signal, process
 	// edit pipeline if processor is missing
 	service := agentConf.Get("service")
 
-	targetSpec := service.(map[string]interface{})["pipelines"].(map[string]interface{})[signal]
-	currentPipeline := targetSpec.(map[string]interface{})["processors"].([]interface{})
+	signalSpec := service.(map[string]interface{})["pipelines"].(map[string]interface{})[string(signal)]
+	currentPipeline := signalSpec.(map[string]interface{})["processors"].([]interface{})
 
 	// merge tracesPipelinePlan with current pipeline
 	mergedPipeline, err := buildPipeline(signal, currentPipeline)

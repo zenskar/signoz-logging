@@ -80,7 +80,7 @@ func (agent *Agent) UpdateStatus(statusMsg *protobufs.AgentToServer, response *p
 
 // extracts lb exporter support flag from agent description. the flag
 // is used to decide if lb exporter can be enabled on the agent.
-func extractLbFlag(agentDescr *protobufs.AgentDescription) bool {
+func ExtractLbFlag(agentDescr *protobufs.AgentDescription) bool {
 
 	if agentDescr == nil {
 		return false
@@ -150,7 +150,7 @@ func (agent *Agent) updateAgentDescription(newStatus *protobufs.AgentToServer) (
 	}
 
 	if agentDescrChanged {
-		agent.CanLB = extractLbFlag(newStatus.AgentDescription)
+		agent.CanLB = ExtractLbFlag(newStatus.AgentDescription)
 	}
 
 	return agentDescrChanged

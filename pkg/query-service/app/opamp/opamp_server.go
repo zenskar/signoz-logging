@@ -68,12 +68,17 @@ func (srv *Server) onDisconnect(conn types.Connection) {
 func (srv *Server) onMessage(conn types.Connection, msg *protobufs.AgentToServer) *protobufs.ServerToAgent {
 	agentID := msg.InstanceUid
 
-	agent, err := srv.agents.FindOrCreateAgent(agentID, conn)
+	agent, created, err := srv.agents.FindOrCreateAgent(agentID, conn)
 	if err != nil {
 		zap.S().Errorf("Failed to find or create agent %q: %v", agentID, err)
 		// TODO: handle error
 	}
-	zap.S().Debugf("received a message from agent:", zap.String("ID", agent.ID), zap.Any("status", agent.CurrentStatus))
+
+	if created {
+		agent.CanLB = model.ExtractLbFlag(msg.AgentDescription)
+		zap.S().Debugf("New agent added:", zap.Bool("canLb", agent.CanLB), zap.String("ID", agent.ID), zap.Any("status", agent.CurrentStatus))
+	}
+
 	var response *protobufs.ServerToAgent
 	response = &protobufs.ServerToAgent{
 		InstanceUid:  agentID,
@@ -97,8 +102,9 @@ func Ready() bool {
 	}
 	return true
 }
-func Subscribe(hash string, f func(hash string, err error)) {
-	model.ListenToConfigUpdate(hash, f)
+
+func Subscribe(agentId string, hash string, f model.OnChangeCallback) {
+	model.ListenToConfigUpdate(agentId, hash, f)
 }
 
 func UpsertProcessor(ctx context.Context, processors map[string]interface{}, names []interface{}) error {

@@ -1,11 +1,6 @@
 package otlpreceiver
 
 type GRPCServerSettings struct {
-	NetAddr    NetAddr           `mapstructure:",squash"`
-	TLSSetting *TLSServerSetting `mapstructure:"tls"`
-}
-
-type NetAddr struct {
 	// Endpoint configures the address for this network connection.
 	// For TCP and UDP networks, the address has the form "host:port". The host must be a literal IP address,
 	// or a host name that can be resolved to IP addresses. The port must be a literal port number or a service name.

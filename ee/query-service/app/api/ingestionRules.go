@@ -10,6 +10,7 @@ import (
 	"go.signoz.io/signoz/ee/query-service/ingestionRules"
 	"go.signoz.io/signoz/ee/query-service/model"
 	"go.signoz.io/signoz/pkg/query-service/agentConf"
+	baseapp "go.signoz.io/signoz/pkg/query-service/app"
 	"go.uber.org/zap"
 )
 
@@ -19,7 +20,7 @@ func parseAgentConfigVersion(r *http.Request) (int, *model.ApiError) {
 	versionString := mux.Vars(r)["version"]
 
 	if versionString == "latest" {
-		return 0, nil
+		return -1, nil
 	}
 
 	version64, err := strconv.ParseInt(versionString, 0, 8)
@@ -42,7 +43,7 @@ func (ah *APIHandler) listIngestionRulesHandler(w http.ResponseWriter, r *http.R
 	var payload *ingestionRules.IngestionRulesResponse
 	var apierr *model.ApiError
 
-	if version == 0 {
+	if version > 0 {
 		payload, apierr = ah.listIngestionRulesByVersion(context.Background(), version, elementType)
 	} else {
 		payload, apierr = ah.listIngestionRules(context.Background(), elementType)
@@ -65,7 +66,7 @@ func (ah *APIHandler) listIngestionRules(ctx context.Context, elementType agentC
 		return nil, model.InternalErrorStr("Failed to get latest agent config version")
 	}
 
-	payload, apierr := ah.opts.IngestionController.GetRulesByVersion(ctx, lastestConfig.Version)
+	payload, apierr := ah.opts.IngestionController.GetRulesByVersion(ctx, lastestConfig.Version, elementType)
 	if apierr != nil {
 		return payload, apierr
 	}
@@ -81,7 +82,7 @@ func (ah *APIHandler) listIngestionRules(ctx context.Context, elementType agentC
 // listIngestionRulesByVersion lists rules along with config version history
 func (ah *APIHandler) listIngestionRulesByVersion(ctx context.Context, version int, elementType agentConf.ElementTypeDef) (*ingestionRules.IngestionRulesResponse, *model.ApiError) {
 
-	payload, apierr := ah.opts.IngestionController.GetRulesByVersion(ctx, version)
+	payload, apierr := ah.opts.IngestionController.GetRulesByVersion(ctx, version, elementType)
 	if apierr != nil {
 		return payload, apierr
 	}
@@ -98,7 +99,12 @@ func (ah *APIHandler) listIngestionRulesByVersion(ctx context.Context, version i
 
 func (ah *APIHandler) createIngestionRule(w http.ResponseWriter, r *http.Request, elementType agentConf.ElementTypeDef) {
 
-	ctx := context.Background()
+	ctx, err := baseapp.AddUserToContext(context.Background(), r)
+	if err != nil {
+		RespondError(w, model.BadRequestStr("failed to find user in the context"), nil)
+		return
+	}
+
 	req := ingestionRules.PostableIngestionRules{}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -136,6 +142,7 @@ func (ah *APIHandler) redeployIngestionRule(w http.ResponseWriter, r *http.Reque
 		RespondError(w, apierr, nil)
 		return
 	}
+
 	if version == 0 {
 		RespondError(w, model.BadRequestStr("config version required"), nil)
 		return

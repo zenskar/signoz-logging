@@ -2,6 +2,7 @@ package ingestionRules
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"go.signoz.io/signoz/ee/query-service/ingestionRules/sqlite"
 	"go.signoz.io/signoz/ee/query-service/model"
+	basemodel "go.signoz.io/signoz/pkg/query-service/model"
 	"go.uber.org/zap"
 )
 
@@ -36,6 +38,7 @@ func (r *Repo) InitDB(engine string) error {
 
 // InsertRule stores a given postable rule to database
 func (r *Repo) insertRule(ctx context.Context, postable *PostableIngestionRule) (*model.IngestionRule, error) {
+	userId := basemodel.GetApiContextUserId(ctx)
 	if err := postable.IsValid(); err != nil {
 		return nil, errors.Wrap(err, "failed to validate postable ingestion rule")
 	}
@@ -61,11 +64,12 @@ func (r *Repo) insertRule(ctx context.Context, postable *PostableIngestionRule) 
 		Priority:    postable.Priority,
 		Config:      postable.Config,
 		RawConfig:   string(rawConfig),
+		Creator:     model.Creator{CreatedBy: userId},
 	}
 
 	insertQuery := `INSERT INTO ingestion_rules 
-	(id, name, source, rule_type, rule_subtype, priority, config_json) 
-	VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	(id, name, source, rule_type, rule_subtype, priority, config_json, created_by) 
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
 	_, err = r.db.ExecContext(ctx,
 		insertQuery,
@@ -75,7 +79,8 @@ func (r *Repo) insertRule(ctx context.Context, postable *PostableIngestionRule) 
 		insertRow.RuleType,
 		insertRow.RuleSubType,
 		insertRow.Priority,
-		insertRow.RawConfig)
+		insertRow.RawConfig,
+		userId)
 
 	if err != nil {
 		zap.S().Errorf("error in inserting ingestion rule data: ", zap.Error(err))
@@ -90,25 +95,25 @@ func (r *Repo) getRulesByVersion(ctx context.Context, version int) ([]model.Inge
 	var errors []error
 	rules := []model.IngestionRule{}
 
-	versionQuery := `SELECT id, 
+	versionQuery := `SELECT r.id, 
 		source, 
 		priority, 
 		rule_type, 
 		rule_subtype, 
 		name, 
-		config_json, 
-		v.deployment_status, 
-		v.deployment_sequence 
+		config_json
 		FROM ingestion_rules r,
 			 agent_config_elements e,
 			 agent_config_versions v
-		WHERE r.rule_type=e.element_type
-		AND r.id = e.element_id
+		WHERE r.id = e.element_id
 		AND v.id = e.version_id
 		AND v.version = $1`
 
 	err := r.db.SelectContext(ctx, &rules, versionQuery, version)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return rules, nil
+		}
 		return nil, []error{fmt.Errorf("failed to get drop rules from db: %v", err)}
 	}
 

@@ -58,7 +58,6 @@ type IngestionRule struct {
 	Config *IngestionRuleConfig `json:"config"`
 
 	Creator
-	Updater
 }
 
 func (i *IngestionRule) ParseRawConfig() error {

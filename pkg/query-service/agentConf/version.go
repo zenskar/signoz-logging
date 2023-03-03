@@ -22,14 +22,14 @@ const (
 )
 
 type ConfigVersion struct {
-	ID          string         `json:"id" db:"id"`
-	Version     int            `json:"version" db:"version"`
-	ElementType ElementTypeDef `json:"elementType" db:"element_type"`
-	CreatedBy   string         `json:"createdBy" db:"created_by"`
-
-	Active   bool `json:"active" db:"active"`
-	IsValid  bool `json:"is_valid" db:"is_valid"`
-	Disabled bool `json:"disabled" db:"disabled"`
+	ID            string         `json:"id" db:"id"`
+	Version       int            `json:"version" db:"version"`
+	ElementType   ElementTypeDef `json:"elementType" db:"element_type"`
+	CreatedBy     string         `json:"createdBy" db:"created_by"`
+	CreatedByName string         `json:"createdByName" db:"created_by_name"`
+	Active        bool           `json:"active" db:"active"`
+	IsValid       bool           `json:"is_valid" db:"is_valid"`
+	Disabled      bool           `json:"disabled" db:"disabled"`
 
 	DeployStatus DeployStatus `json:"deployStatus" db:"deploy_status"`
 	DeployResult string       `json:"deployResult" db:"deploy_result"`

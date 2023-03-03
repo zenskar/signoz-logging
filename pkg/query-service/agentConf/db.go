@@ -37,7 +37,7 @@ func (r *Repo) GetConfigHistory(ctx context.Context, typ ElementTypeDef) ([]Conf
 		id, 
 		version, 
 		element_type, 
-		created_by, 
+		COALESCE(created_by, -1) as created_by, 
 		active, 
 		is_valid, 
 		disabled, 
@@ -55,7 +55,9 @@ func (r *Repo) GetConfigVersion(ctx context.Context, typ ElementTypeDef, v int) 
 		id, 
 		version, 
 		element_type, 
-		created_by, 
+		COALESCE(created_by, -1) as created_by, 
+		COALESCE((SELECT NAME FROM users 
+		WHERE id = v.created_by), "unknown") created_by_name,
 		active, 
 		is_valid, 
 		disabled, 
@@ -63,7 +65,7 @@ func (r *Repo) GetConfigVersion(ctx context.Context, typ ElementTypeDef, v int) 
 		deploy_result,
 		last_hash,
 		last_config
-		FROM agent_config_versions 
+		FROM agent_config_versions v 
 		WHERE element_type = $1 
 		AND version = $2`, typ, v)
 
@@ -77,7 +79,7 @@ func (r *Repo) GetLatestVersion(ctx context.Context, typ ElementTypeDef) (*Confi
 		id, 
 		version, 
 		element_type, 
-		COALESCE(created_by,0) as created_by, 
+		COALESCE(created_by, -1) as created_by, 
 		active, 
 		is_valid, 
 		disabled, 
@@ -89,7 +91,9 @@ func (r *Repo) GetLatestVersion(ctx context.Context, typ ElementTypeDef) (*Confi
 			SELECT MAX(version) 
 			FROM agent_config_versions 
 			WHERE element_type=$2)`, typ, typ)
-
+	if err != nil {
+		zap.S().Errorf("failed get latest config version for element:", typ, err)
+	}
 	return &c, err
 }
 

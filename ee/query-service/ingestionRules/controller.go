@@ -121,16 +121,17 @@ func (ic *IngestionController) ApplyDropRules(ctx context.Context, postable []Po
 }
 
 // GetRulesByVersion responds with version info and associated drop rules
-func (ic *IngestionController) GetRulesByVersion(ctx context.Context, version int) (*IngestionRulesResponse, *model.ApiError) {
+func (ic *IngestionController) GetRulesByVersion(ctx context.Context, version int, typ agentConf.ElementTypeDef) (*IngestionRulesResponse, *model.ApiError) {
 	rules, apierr := ic.getRulesByVersion(ctx, version)
 	if apierr != nil {
-		zap.S().Errorf("failed to get drop rules for version", version, apierr)
+		zap.S().Errorf("failed to get ingestion rules for version", version, apierr)
 		return nil, model.InternalErrorStr("failed to get drop rules for given version")
 	}
-	configVersion, err := agentConf.GetConfigVersion(ctx, agentConf.ElementTypeDropRules, version)
+
+	configVersion, err := agentConf.GetConfigVersion(ctx, typ, version)
 	if err != nil || configVersion == nil {
-		zap.S().Errorf("failed to get drop rules for version", version, err)
-		return nil, model.InternalErrorStr("failed to get drop rules for given version")
+		zap.S().Errorf("failed to get version info", version, err)
+		return nil, model.InternalErrorStr("failed to get info on the given version")
 	}
 
 	return &IngestionRulesResponse{

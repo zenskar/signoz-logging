@@ -100,7 +100,7 @@ func addIngestionControlToAgent(agent *model.Agent, signal string, processors ma
 
 	// check if LB needs to be configured
 	if signal == string(Traces) && withLB {
-		fmt.Println("with lb is true")
+
 		// check if lb pipeline is setup for lb agents, here we assume
 		// that otlp_internal will exist implicitly if traces/lb pipeline exists
 		if agent.CanLB && !checkPipelineExists(agentConf, TracesLbPipelineName) {

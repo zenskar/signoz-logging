@@ -5,8 +5,8 @@ import (
 )
 
 type Creator struct {
-	CreatedBy string
-	Created   time.Time
+	CreatedBy string    `json:"created_by" db:"created_by"`
+	Created   time.Time `json:"created_at"  db:"created_at"`
 }
 
 type Updater struct {

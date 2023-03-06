@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	basemodel "go.signoz.io/signoz/pkg/query-service/model"
@@ -99,7 +100,7 @@ func (d *DropConfig) PrepareExpression() (result string, fnerr error) {
 		case MetricName:
 			// todo(amol): may need to transform operator to OTTL
 			// https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/ottl/README.md#boolean-expressions
-			expr = fmt.Sprintf("name %s \"%s\"", i.Operator, i.Value)
+			expr = fmt.Sprintf("metric.name %s \"%s\"", i.Operator, i.Value)
 		case ResourceAttribute:
 			expr = fmt.Sprintf("resource.attributes[\"%s\"] %s \"%s\"", i.Key, i.Operator, i.Value)
 		case Label:
@@ -117,8 +118,9 @@ func (d *DropConfig) PrepareExpression() (result string, fnerr error) {
 	result = exprs[0]
 
 	for _, e := range exprs[1:] {
-		result += fmt.Sprintf(" %s %s", d.DropFilter.Operator, e)
+		result += fmt.Sprintf(" %s %s", strings.ToLower(d.DropFilter.Operator), e)
 	}
+
 	return
 }
 

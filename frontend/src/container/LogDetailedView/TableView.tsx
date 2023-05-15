@@ -1,7 +1,6 @@
 import { blue, orange } from '@ant-design/colors';
-import { Input } from 'antd';
+import { Input, Tree } from 'antd';
 import { ColumnsType } from 'antd/es/table';
-import Editor from 'components/Editor';
 import AddToQueryHOC from 'components/Logs/AddToQueryHOC';
 import CopyClipboardHOC from 'components/Logs/CopyClipboardHOC';
 import { ResizeTable } from 'components/ResizeTable';
@@ -12,7 +11,7 @@ import React, { useMemo, useState } from 'react';
 import { ILog } from 'types/api/logs/log';
 
 import ActionItem from './ActionItem';
-import { recursiveParseJSON } from './utils';
+import { jsonToDataNodes, recursiveParseJSON } from './utils';
 
 // Fields which should be restricted from adding it to query
 const RESTRICTED_FIELDS = ['timestamp'];
@@ -87,18 +86,7 @@ function TableView({ logData }: TableViewProps): JSX.Element | null {
 				if (record.field === 'body') {
 					const parsedBody = recursiveParseJSON(field);
 					if (!isEmpty(parsedBody)) {
-						return (
-							<Editor
-								value={JSON.stringify(parsedBody, null, 2)}
-								readOnly
-								height="70vh"
-								options={{
-									minimap: {
-										enabled: false,
-									},
-								}}
-							/>
-						);
+						return <Tree treeData={jsonToDataNodes(parsedBody)} />;
 					}
 				}
 

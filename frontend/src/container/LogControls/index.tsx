@@ -1,13 +1,16 @@
 import {
+	CloudDownloadOutlined,
 	FastBackwardOutlined,
 	LeftOutlined,
 	RightOutlined,
 } from '@ant-design/icons';
 import { Button, Divider, Select } from 'antd';
+import { flattenObject } from 'container/LogDetailedView/utils';
 import { getGlobalTime } from 'container/LogsSearchFilter/utils';
 import { getMinMax } from 'container/TopNav/AutoRefresh/config';
 import { defaultSelectStyle } from 'pages/Logs/config';
 import { memo, useMemo } from 'react';
+import { CSVLink } from 'react-csv';
 import { useDispatch, useSelector } from 'react-redux';
 import { Dispatch } from 'redux';
 import { AppState } from 'store/reducers';
@@ -35,6 +38,8 @@ function LogControls(): JSX.Element | null {
 	const globalTime = useSelector<AppState, GlobalReducer>(
 		(state) => state.globalTime,
 	);
+
+	console.log({ logs });
 
 	const dispatch = useDispatch<Dispatch<AppActions>>();
 
@@ -95,13 +100,24 @@ function LogControls(): JSX.Element | null {
 
 	return (
 		<Container>
+			<CSVLink data={logs.map(flattenObject)}>
+				<Button
+					loading={isLoading}
+					size="small"
+					type="link"
+					icon={<CloudDownloadOutlined />}
+				>
+					Download CSV
+				</Button>
+			</CSVLink>
 			<Button
 				loading={isLoading}
 				size="small"
 				type="link"
 				onClick={handleGoToLatest}
+				icon={<FastBackwardOutlined />}
 			>
-				<FastBackwardOutlined /> Go to latest
+				Go to latest
 			</Button>
 			<Divider type="vertical" />
 			<Button
@@ -110,8 +126,9 @@ function LogControls(): JSX.Element | null {
 				type="link"
 				disabled={isNextAndPreviousDisabled}
 				onClick={handleNavigatePrevious}
+				icon={<LeftOutlined />}
 			>
-				<LeftOutlined /> Previous
+				Previous
 			</Button>
 			<Button
 				loading={isLoading}

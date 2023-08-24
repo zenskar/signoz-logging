@@ -488,7 +488,7 @@ echo "🟡 Starting the SigNoz containers. It may take a few minutes ..."
 echo
 # The docker-compose command does some nasty stuff for the `--detach` functionality. So we add a `|| true` so that the
 # script doesn't exit because this command looks like it failed to do it's thing.
-$sudo_cmd docker-compose -f ./docker/clickhouse-setup/docker-compose.yaml up --detach --remove-orphans || true
+$sudo_cmd docker-compose -f ./docker/clickhouse-setup/docker-compose.yaml up --detach || true
 
 wait_for_containers_start 60
 echo ""
@@ -527,13 +527,6 @@ else
     echo "👉 Need help in Getting Started?"
     echo -e "Join us on Slack https://signoz.io/slack"
     echo ""
-    echo -e "\n📨 Please share your email to receive support & updates about SigNoz!"
-    read -rp 'Email: ' email
-
-    while [[ $email == "" ]]
-    do
-        read -rp 'Email: ' email
-    done
     
     send_event "identify_successful_installation"
 fi

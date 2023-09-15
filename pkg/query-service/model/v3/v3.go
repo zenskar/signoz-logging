@@ -234,11 +234,15 @@ type FilterAttributeKeyRequest struct {
 type AttributeKeyDataType string
 
 const (
-	AttributeKeyDataTypeUnspecified AttributeKeyDataType = ""
-	AttributeKeyDataTypeString      AttributeKeyDataType = "string"
-	AttributeKeyDataTypeInt64       AttributeKeyDataType = "int64"
-	AttributeKeyDataTypeFloat64     AttributeKeyDataType = "float64"
-	AttributeKeyDataTypeBool        AttributeKeyDataType = "bool"
+	AttributeKeyDataTypeUnspecified  AttributeKeyDataType = ""
+	AttributeKeyDataTypeString       AttributeKeyDataType = "string"
+	AttributeKeyDataTypeInt64        AttributeKeyDataType = "int64"
+	AttributeKeyDataTypeFloat64      AttributeKeyDataType = "float64"
+	AttributeKeyDataTypeBool         AttributeKeyDataType = "bool"
+	AttributeKeyDataTypeArrayString  AttributeKeyDataType = "array(string)"
+	AttributeKeyDataTypeArrayInt64   AttributeKeyDataType = "array(int64)"
+	AttributeKeyDataTypeArrayFloat64 AttributeKeyDataType = "array(float64)"
+	AttributeKeyDataTypeArrayBool    AttributeKeyDataType = "array(bool)"
 )
 
 func (q AttributeKeyDataType) Validate() error {
@@ -285,6 +289,7 @@ type AttributeKey struct {
 	DataType AttributeKeyDataType `json:"dataType"`
 	Type     AttributeKeyType     `json:"type"`
 	IsColumn bool                 `json:"isColumn"`
+	IsJSON   bool                 `json:"isJSON"`
 }
 
 func (a AttributeKey) CacheKey() string {
@@ -293,7 +298,7 @@ func (a AttributeKey) CacheKey() string {
 
 func (a AttributeKey) Validate() error {
 	switch a.DataType {
-	case AttributeKeyDataTypeBool, AttributeKeyDataTypeInt64, AttributeKeyDataTypeFloat64, AttributeKeyDataTypeString, AttributeKeyDataTypeUnspecified:
+	case AttributeKeyDataTypeBool, AttributeKeyDataTypeInt64, AttributeKeyDataTypeFloat64, AttributeKeyDataTypeString, AttributeKeyDataTypeArrayFloat64, AttributeKeyDataTypeArrayString, AttributeKeyDataTypeArrayInt64, AttributeKeyDataTypeArrayBool, AttributeKeyDataTypeUnspecified:
 		break
 	default:
 		return fmt.Errorf("invalid attribute dataType: %s", a.DataType)
@@ -545,6 +550,9 @@ const (
 
 	FilterOperatorExists    FilterOperator = "exists"
 	FilterOperatorNotExists FilterOperator = "nexists"
+
+	FilterOperatorHas    FilterOperator = "has"
+	FilterOperatorNotHas FilterOperator = "nhas"
 )
 
 type FilterItem struct {
@@ -638,24 +646,26 @@ func (p *Point) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-// ExploreQuery is a query for the explore page
-// It is a composite query with a source page name
+// SavedView is a saved query for the explore page
+// It is a composite query with a source page name and user defined tags
 // The source page name is used to identify the page that initiated the query
-// The source page could be "traces", "logs", "metrics" or "dashboards", "alerts" etc.
-type ExplorerQuery struct {
+// The source page could be "traces", "logs", "metrics".
+type SavedView struct {
 	UUID           string          `json:"uuid,omitempty"`
+	Name           string          `json:"name"`
+	Category       string          `json:"category"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	CreatedBy      string          `json:"createdBy"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	UpdatedBy      string          `json:"updatedBy"`
 	SourcePage     string          `json:"sourcePage"`
+	Tags           []string        `json:"tags"`
 	CompositeQuery *CompositeQuery `json:"compositeQuery"`
 	// ExtraData is JSON encoded data used by frontend to store additional data
 	ExtraData string `json:"extraData"`
-	// 0 - false, 1 - true; this is int8 because sqlite doesn't support bool
-	IsView int8 `json:"isView"`
 }
 
-func (eq *ExplorerQuery) Validate() error {
-	if eq.IsView != 0 && eq.IsView != 1 {
-		return fmt.Errorf("isView must be 0 or 1")
-	}
+func (eq *SavedView) Validate() error {
 
 	if eq.CompositeQuery == nil {
 		return fmt.Errorf("composite query is required")

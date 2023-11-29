@@ -297,11 +297,28 @@ func (r *PromRule) SendAlerts(ctx context.Context, ts time.Time, resendDelay tim
 	notifyFunc(ctx, "", alerts...)
 }
 
+func (r *PromRule) GetSelectedQuery() string {
+	if r.ruleCondition != nil {
+		// If the user has explicitly set the selected query, we return that.
+		if r.ruleCondition.SelectedQuery != "" {
+			return r.ruleCondition.SelectedQuery
+		}
+		// Historically, we used to have only one query in the alerts for promql.
+		// So, if there is only one query, we return that.
+		// This is to maintain backward compatibility.
+		// For new rules, we will have to explicitly set the selected query.
+		return "A"
+	}
+	// This should never happen.
+	return ""
+}
+
 func (r *PromRule) getPqlQuery() (string, error) {
 
 	if r.ruleCondition.CompositeQuery.QueryType == v3.QueryTypePromQL {
 		if len(r.ruleCondition.CompositeQuery.PromQueries) > 0 {
-			if promQuery, ok := r.ruleCondition.CompositeQuery.PromQueries["A"]; ok {
+			selectedQuery := r.GetSelectedQuery()
+			if promQuery, ok := r.ruleCondition.CompositeQuery.PromQueries[selectedQuery]; ok {
 				query := promQuery.Query
 				if query == "" {
 					return query, fmt.Errorf("a promquery needs to be set for this rule to function")
@@ -309,7 +326,7 @@ func (r *PromRule) getPqlQuery() (string, error) {
 				if r.ruleCondition.Target != nil && r.ruleCondition.CompareOp != CompareOpNone {
 					unitConverter := converter.FromUnit(converter.Unit(r.ruleCondition.TargetUnit))
 					value := unitConverter.Convert(converter.Value{F: *r.ruleCondition.Target, U: converter.Unit(r.ruleCondition.TargetUnit)}, converter.Unit(r.Unit()))
-					query = fmt.Sprintf("%s %s %f", query, ResolveCompareOp(r.ruleCondition.CompareOp), value.F)
+					query = fmt.Sprintf("(%s) %s %f", query, ResolveCompareOp(r.ruleCondition.CompareOp), value.F)
 					return query, nil
 				} else {
 					return query, nil

@@ -1,9 +1,11 @@
 import { DataNode } from 'antd/es/tree';
 import { MetricsType } from 'container/MetricsApplication/constant';
 import { uniqueId } from 'lodash-es';
+import { ILog, ILogAggregateAttributesResources } from 'types/api/logs/log';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 
 import BodyTitleRenderer from './BodyTitleRenderer';
+import { typeToArrayTypeMapper } from './config';
 import { AnyObject, IFieldAttributes } from './LogDetailedView.types';
 
 export const recursiveParseJSON = (obj: string): Record<string, unknown> => {
@@ -11,6 +13,15 @@ export const recursiveParseJSON = (obj: string): Record<string, unknown> => {
 		const value = JSON.parse(obj);
 		if (typeof value === 'string') {
 			return recursiveParseJSON(value);
+		}
+		if (typeof value === 'object') {
+			Object.entries(value).forEach(([key, val]) => {
+				if (typeof val === 'string') {
+					value[key] = val.trim();
+				} else if (typeof val === 'object') {
+					value[key] = recursiveParseJSON(JSON.stringify(val));
+				}
+			});
 		}
 		return value;
 	} catch (e) {
@@ -97,40 +108,6 @@ export function flattenObject(obj: AnyObject, prefix = ''): AnyObject {
 	}, {});
 }
 
-const isFloat = (num: number): boolean => num % 1 !== 0;
-
-export const getDataTypes = (value: unknown): DataTypes => {
-	if (typeof value === 'string') {
-		return DataTypes.String;
-	}
-
-	if (typeof value === 'number') {
-		return isFloat(value) ? DataTypes.Float64 : DataTypes.Int64;
-	}
-
-	if (typeof value === 'boolean') {
-		return DataTypes.bool;
-	}
-
-	if (Array.isArray(value)) {
-		const firstElement = value[0];
-
-		if (typeof firstElement === 'string') {
-			return DataTypes.ArrayString;
-		}
-
-		if (typeof firstElement === 'boolean') {
-			return DataTypes.ArrayBool;
-		}
-
-		if (typeof firstElement === 'number') {
-			return isFloat(firstElement) ? DataTypes.ArrayFloat64 : DataTypes.ArrayInt64;
-		}
-	}
-
-	return DataTypes.Int64;
-};
-
 export const generateFieldKeyForArray = (
 	fieldKey: string,
 	dataType: DataTypes,
@@ -174,3 +151,92 @@ export const getFieldAttributes = (field: string): IFieldAttributes => {
 
 	return { dataType, newField, logType };
 };
+
+export const aggregateAttributesResourcesToString = (logData: ILog): string => {
+	const outputJson: ILogAggregateAttributesResources = {
+		body: logData.body,
+		date: logData.date,
+		id: logData.id,
+		severityNumber: logData.severityNumber,
+		severityText: logData.severityText,
+		spanId: logData.spanId,
+		timestamp: logData.timestamp,
+		traceFlags: logData.traceFlags,
+		traceId: logData.traceId,
+		attributes: {},
+		resources: {},
+		severity_text: logData.severity_text,
+	};
+
+	Object.keys(logData).forEach((key) => {
+		if (key.startsWith('attributes_')) {
+			outputJson.attributes = outputJson.attributes || {};
+			Object.assign(outputJson.attributes, logData[key as keyof ILog]);
+		} else if (key.startsWith('resources_')) {
+			outputJson.resources = outputJson.resources || {};
+			Object.assign(outputJson.resources, logData[key as keyof ILog]);
+		} else {
+			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+			// @ts-ignore
+			outputJson[key] = logData[key as keyof ILog];
+		}
+	});
+
+	return JSON.stringify(outputJson, null, 2);
+};
+
+const isFloat = (num: number): boolean => num % 1 !== 0;
+
+const isBooleanString = (str: string): boolean =>
+	str.toLowerCase() === 'true' || str.toLowerCase() === 'false';
+
+const determineType = (val: unknown): DataTypes => {
+	if (typeof val === 'string') {
+		if (isBooleanString(val)) {
+			return DataTypes.bool;
+		}
+
+		const numberValue = parseFloat(val);
+
+		if (!Number.isNaN(numberValue)) {
+			return isFloat(numberValue) ? DataTypes.Float64 : DataTypes.Int64;
+		}
+
+		return DataTypes.String;
+	}
+
+	if (typeof val === 'number') {
+		return isFloat(val) ? DataTypes.Float64 : DataTypes.Int64;
+	}
+
+	if (typeof val === 'boolean') {
+		return DataTypes.bool;
+	}
+
+	return DataTypes.EMPTY;
+};
+
+export const getDataTypes = (value: unknown): DataTypes => {
+	const getArrayType = (elementType: DataTypes): DataTypes =>
+		typeToArrayTypeMapper[elementType] || DataTypes.EMPTY;
+
+	if (Array.isArray(value)) {
+		return getArrayType(determineType(value[0]));
+	}
+
+	return determineType(value);
+};
+
+export const removeEscapeCharacters = (str: string): string =>
+	str.replace(/\\([ntfr'"\\])/g, (_: string, char: string) => {
+		const escapeMap: Record<string, string> = {
+			n: '\n',
+			t: '\t',
+			f: '\f',
+			r: '\r',
+			"'": "'",
+			'"': '"',
+			'\\': '\\',
+		};
+		return escapeMap[char as keyof typeof escapeMap];
+	});

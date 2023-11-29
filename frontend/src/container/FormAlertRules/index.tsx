@@ -1,5 +1,12 @@
 import { ExclamationCircleOutlined, SaveOutlined } from '@ant-design/icons';
-import { Col, FormInstance, Modal, Tooltip, Typography } from 'antd';
+import {
+	Col,
+	FormInstance,
+	Modal,
+	SelectProps,
+	Tooltip,
+	Typography,
+} from 'antd';
 import saveAlertApi from 'api/alerts/save';
 import testAlertApi from 'api/alerts/testAlert';
 import { FeatureKeys } from 'constants/features';
@@ -44,7 +51,7 @@ import {
 	StyledLeftContainer,
 } from './styles';
 import UserGuide from './UserGuide';
-import { toChartInterval } from './utils';
+import { getSelectedQueryOptions } from './utils';
 
 function FormAlertRules({
 	alertType,
@@ -55,9 +62,10 @@ function FormAlertRules({
 	// init namespace for translations
 	const { t } = useTranslation('alerts');
 
-	const { minTime, maxTime } = useSelector<AppState, GlobalReducer>(
-		(state) => state.globalTime,
-	);
+	const { minTime, maxTime, selectedTime: globalSelectedInterval } = useSelector<
+		AppState,
+		GlobalReducer
+	>((state) => state.globalTime);
 
 	const {
 		currentQuery,
@@ -80,6 +88,20 @@ function FormAlertRules({
 		initialValue,
 	]);
 
+	const queryOptions = useMemo(() => {
+		const queryConfig: Record<EQueryType, () => SelectProps['options']> = {
+			[EQueryType.QUERY_BUILDER]: () => [
+				...(getSelectedQueryOptions(currentQuery.builder.queryData) || []),
+				...(getSelectedQueryOptions(currentQuery.builder.queryFormulas) || []),
+			],
+			[EQueryType.PROM]: () => getSelectedQueryOptions(currentQuery.promql),
+			[EQueryType.CLICKHOUSE]: () =>
+				getSelectedQueryOptions(currentQuery.clickhouse_sql),
+		};
+
+		return queryConfig[currentQuery.queryType]?.() || [];
+	}, [currentQuery]);
+
 	const sq = useMemo(() => mapQueryDataFromApi(initQuery), [initQuery]);
 
 	useShareBuilderUrl(sq);
@@ -87,6 +109,18 @@ function FormAlertRules({
 	useEffect(() => {
 		setAlertDef(initialValue);
 	}, [initialValue]);
+
+	useEffect(() => {
+		// Set selectedQueryName based on the length of queryOptions
+		setAlertDef((def) => ({
+			...def,
+			condition: {
+				...def.condition,
+				selectedQueryName:
+					queryOptions.length > 0 ? String(queryOptions[0].value) : undefined,
+			},
+		}));
+	}, [currentQuery?.queryType, queryOptions]);
 
 	const onCancelHandler = useCallback(() => {
 		history.replace(ROUTES.LIST_ALL_ALERT);
@@ -364,12 +398,12 @@ function FormAlertRules({
 			}
 			name=""
 			query={stagedQuery}
-			selectedInterval={toChartInterval(alertDef.evalWindow)}
+			selectedInterval={globalSelectedInterval}
 			alertDef={alertDef}
 		/>
 	);
 
-	const renderPromChartPreview = (): JSX.Element => (
+	const renderPromAndChQueryChartPreview = (): JSX.Element => (
 		<ChartPreview
 			headline={
 				<PlotTag
@@ -380,21 +414,7 @@ function FormAlertRules({
 			name="Chart Preview"
 			query={stagedQuery}
 			alertDef={alertDef}
-		/>
-	);
-
-	const renderChQueryChartPreview = (): JSX.Element => (
-		<ChartPreview
-			headline={
-				<PlotTag
-					queryType={currentQuery.queryType}
-					panelType={panelType || PANEL_TYPES.TIME_SERIES}
-				/>
-			}
-			name="Chart Preview"
-			query={stagedQuery}
-			alertDef={alertDef}
-			selectedInterval={toChartInterval(alertDef.evalWindow)}
+			selectedInterval={globalSelectedInterval}
 		/>
 	);
 
@@ -431,9 +451,10 @@ function FormAlertRules({
 					>
 						{currentQuery.queryType === EQueryType.QUERY_BUILDER &&
 							renderQBChartPreview()}
-						{currentQuery.queryType === EQueryType.PROM && renderPromChartPreview()}
+						{currentQuery.queryType === EQueryType.PROM &&
+							renderPromAndChQueryChartPreview()}
 						{currentQuery.queryType === EQueryType.CLICKHOUSE &&
-							renderChQueryChartPreview()}
+							renderPromAndChQueryChartPreview()}
 
 						<StepContainer>
 							<BuilderUnitsFilter onChange={onUnitChangeHandler} />
@@ -450,6 +471,7 @@ function FormAlertRules({
 							queryCategory={currentQuery.queryType}
 							alertDef={alertDef}
 							setAlertDef={setAlertDef}
+							queryOptions={queryOptions}
 						/>
 
 						{renderBasicInfo()}

@@ -1,4 +1,4 @@
-version: "3.0"
+version: "3.3"
 
 x-clickhouse-defaults: &clickhouse-defaults
   restart: on-failure

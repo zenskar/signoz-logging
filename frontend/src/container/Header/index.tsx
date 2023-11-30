@@ -104,7 +104,7 @@ function HeaderContainer(): JSX.Element {
 		);
 	};
 
-	const { data: licenseData, isFetching } = useLicense();
+	const { data: licenseData, isFetching, status: licenseStatus } = useLicense();
 
 	const isLicenseActive =
 		licenseData?.payload?.licenses?.find((e) => e.isCurrent)?.status ===
@@ -135,14 +135,13 @@ function HeaderContainer(): JSX.Element {
 		<>
 			{showTrialExpiryBanner && (
 				<div className="trial-expiry-banner">
-					You are in free trial period. Your free trial will end on{' '}
+					You are in free trial period. Your free trial will end on
 					<span>
 						{getFormattedDate(licenseData?.payload?.trialEnd || Date.now())}.
 					</span>
 					{role === 'ADMIN' ? (
 						<span>
-							{' '}
-							Please{' '}
+							Please
 							<Button className="upgrade-link" type="link" onClick={handleUpgrade}>
 								upgrade
 							</Button>
@@ -169,7 +168,7 @@ function HeaderContainer(): JSX.Element {
 					</NavLink>
 
 					<Space size="middle" align="center">
-						{!isLicenseActive && (
+						{licenseStatus === 'success' && !isLicenseActive && (
 							<Button onClick={onClickSignozCloud} type="primary">
 								Try Signoz Cloud
 							</Button>

@@ -1,4 +1,3 @@
-import Spinner from 'components/Spinner';
 import { FeatureKeys } from 'constants/features';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import Graph from 'container/GridCardLayout/GridCard';
@@ -9,12 +8,12 @@ import { Card, GraphContainer } from 'container/MetricsApplication/styles';
 import useFeatureFlag from 'hooks/useFeatureFlag';
 import useResourceAttribute from 'hooks/useResourceAttribute';
 import { resourceAttributesToTagFilterItems } from 'hooks/useResourceAttribute/utils';
+import { OnClickPluginOpts } from 'lib/uPlotLib/plugins/onClickPlugin';
 import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { EQueryType } from 'types/common/dashboard';
 import { v4 as uuid } from 'uuid';
 
-import { ClickHandlerType } from '../Overview';
 import { Button } from '../styles';
 import { IServiceName } from '../types';
 import { handleNonInQueryRange, onViewTracePopupClick } from '../util';
@@ -25,7 +24,7 @@ function ServiceOverview({
 	selectedTraceTags,
 	selectedTimeStamp,
 	topLevelOperationsRoute,
-	topLevelOperationsLoading,
+	topLevelOperationsIsLoading,
 }: ServiceOverviewProps): JSX.Element {
 	const { servicename } = useParams<IServiceName>();
 
@@ -64,15 +63,8 @@ function ServiceOverview({
 		[servicename, isSpanMetricEnable, topLevelOperationsRoute, tagFilterItems],
 	);
 
-	const isQueryEnabled = topLevelOperationsRoute.length > 0;
-
-	if (topLevelOperationsLoading) {
-		return (
-			<Card>
-				<Spinner height="40vh" tip="Loading..." />
-			</Card>
-		);
-	}
+	const isQueryEnabled =
+		!topLevelOperationsIsLoading && topLevelOperationsRoute.length > 0;
 
 	return (
 		<>
@@ -88,7 +80,7 @@ function ServiceOverview({
 			>
 				View Traces
 			</Button>
-			<Card>
+			<Card data-testid="service_latency">
 				<GraphContainer>
 					<Graph
 						name="service_latency"
@@ -96,6 +88,7 @@ function ServiceOverview({
 						widget={latencyWidget}
 						onClickHandler={handleGraphClick('Service')}
 						isQueryEnabled={isQueryEnabled}
+						fillSpans={false}
 					/>
 				</GraphContainer>
 			</Card>
@@ -107,9 +100,9 @@ interface ServiceOverviewProps {
 	selectedTimeStamp: number;
 	selectedTraceTags: string;
 	onDragSelect: (start: number, end: number) => void;
-	handleGraphClick: (type: string) => ClickHandlerType;
+	handleGraphClick: (type: string) => OnClickPluginOpts['onClick'];
 	topLevelOperationsRoute: string[];
-	topLevelOperationsLoading: boolean;
+	topLevelOperationsIsLoading: boolean;
 }
 
 export default ServiceOverview;

@@ -77,13 +77,14 @@ function ApDexMetrics({
 
 	const isQueryEnabled =
 		topLevelOperationsRoute.length > 0 &&
-		metricsBuckets &&
+		!!metricsBuckets &&
 		metricsBuckets?.length > 0 &&
 		delta !== undefined;
 
 	return (
 		<Graph
 			name="apdex"
+			fillSpans={false}
 			widget={apDexMetricsWidget}
 			onDragSelect={onDragSelect}
 			onClickHandler={handleGraphClick('ApDex')}

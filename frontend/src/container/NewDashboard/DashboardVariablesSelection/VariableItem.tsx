@@ -5,14 +5,15 @@ import { WarningOutlined } from '@ant-design/icons';
 import { Input, Popover, Select, Typography } from 'antd';
 import dashboardVariablesQuery from 'api/dashboard/variables/dashboardVariablesQuery';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
-import useDebounce from 'hooks/useDebounce';
 import { commaValuesParser } from 'lib/dashbaordVariables/customCommaValuesParser';
 import sortValues from 'lib/dashbaordVariables/sortVariableValues';
+import { debounce } from 'lodash-es';
 import map from 'lodash-es/map';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
 import { IDashboardVariable } from 'types/api/dashboard/getAll';
 import { VariableResponseProps } from 'types/api/dashboard/variables/query';
+import { popupContainer } from 'utils/selectPopupContainer';
 
 import { variablePropsToPayloadVariables } from '../utils';
 import { SelectItemStyle, VariableContainer, VariableValue } from './styles';
@@ -27,10 +28,11 @@ interface VariableItemProps {
 	existingVariables: Record<string, IDashboardVariable>;
 	onValueUpdate: (
 		name: string,
+		id: string,
 		arg1: IDashboardVariable['selectedValue'],
 		allSelected: boolean,
 	) => void;
-	lastUpdatedVar: string;
+	variablesToGetUpdated: string[];
 }
 
 const getSelectValue = (
@@ -42,33 +44,18 @@ const getSelectValue = (
 	return selectedValue?.toString() || '';
 };
 
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function VariableItem({
 	variableData,
 	existingVariables,
 	onValueUpdate,
-	lastUpdatedVar,
+	variablesToGetUpdated,
 }: VariableItemProps): JSX.Element {
 	const [optionsData, setOptionsData] = useState<(string | number | boolean)[]>(
 		[],
 	);
 
-	const [variableValue, setVaribleValue] = useState(
-		variableData?.selectedValue?.toString() || '',
-	);
-
-	const debouncedVariableValue = useDebounce(variableValue, 500);
-
 	const [errorMessage, setErrorMessage] = useState<null | string>(null);
-
-	useEffect(() => {
-		const { selectedValue } = variableData;
-
-		if (selectedValue) {
-			setVaribleValue(selectedValue?.toString());
-		}
-
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [variableData]);
 
 	const getDependentVariables = (queryValue: string): string[] => {
 		const matches = queryValue.match(variableRegexPattern);
@@ -89,7 +76,12 @@ function VariableItem({
 		const variableName = variableData.name || '';
 
 		dependentVariables?.forEach((element) => {
-			dependentVariablesStr += `${element}${existingVariables[element]?.selectedValue}`;
+			const [, variable] =
+				Object.entries(existingVariables).find(
+					([, value]) => value.name === element,
+				) || [];
+
+			dependentVariablesStr += `${element}${variable?.selectedValue}`;
 		});
 
 		const variableKey = dependentVariablesStr.replace(/\s/g, '');
@@ -116,16 +108,10 @@ function VariableItem({
 
 					if (!areArraysEqual(newOptionsData, oldOptionsData)) {
 						/* eslint-disable no-useless-escape */
-						const re = new RegExp(`\\{\\{\\s*?\\.${lastUpdatedVar}\\s*?\\}\\}`); // regex for `{{.var}}`
-						// If the variable is dependent on the last updated variable
-						// and contains the last updated variable in its query (of the form `{{.var}}`)
-						// then we need to update the value of the variable
-						const queryValue = variableData.queryValue || '';
-						const dependVarReMatch = queryValue.match(re);
 						if (
 							variableData.type === 'QUERY' &&
-							dependVarReMatch !== null &&
-							dependVarReMatch.length > 0
+							variableData.name &&
+							variablesToGetUpdated.includes(variableData.name)
 						) {
 							let value = variableData.selectedValue;
 							let allSelected = false;
@@ -137,8 +123,9 @@ function VariableItem({
 							} else {
 								[value] = newOptionsData;
 							}
-							if (variableData.name) {
-								onValueUpdate(variableData.name, value, allSelected);
+
+							if (variableData && variableData?.name && variableData?.id) {
+								onValueUpdate(variableData.name, variableData.id, value, allSelected);
 							}
 						}
 
@@ -149,14 +136,13 @@ function VariableItem({
 				console.error(e);
 			}
 		} else if (variableData.type === 'CUSTOM') {
-			setOptionsData(
-				sortValues(
-					commaValuesParser(variableData.customValue || ''),
-					variableData.sort,
-				) as never,
-			);
+			const optionsData = sortValues(
+				commaValuesParser(variableData.customValue || ''),
+				variableData.sort,
+			) as never;
+
+			setOptionsData(optionsData);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	};
 
 	const { isLoading } = useQuery(getQueryKey(variableData), {
@@ -195,11 +181,14 @@ function VariableItem({
 				(Array.isArray(value) && value.includes(ALL_SELECT_VALUE)) ||
 				(Array.isArray(value) && value.length === 0)
 			) {
-				onValueUpdate(variableData.name, optionsData, true);
+				onValueUpdate(variableData.name, variableData.id, optionsData, true);
 			} else {
-				onValueUpdate(variableData.name, value, false);
+				onValueUpdate(variableData.name, variableData.id, value, false);
 			}
 	};
+
+	// do not debounce the above function as we do not need debounce in select variables
+	const debouncedHandleChange = debounce(handleChange, 500);
 
 	const { selectedValue } = variableData;
 	const selectedValueStringified = useMemo(() => getSelectValue(selectedValue), [
@@ -217,23 +206,15 @@ function VariableItem({
 	const enableSelectAll = variableData.multiSelect && variableData.showALLOption;
 
 	useEffect(() => {
-		if (debouncedVariableValue !== variableData?.selectedValue?.toString()) {
-			handleChange(debouncedVariableValue);
-		}
-
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [debouncedVariableValue]);
-
-	useEffect(() => {
 		// Fetch options for CUSTOM Type
 		if (variableData.type === 'CUSTOM') {
 			getOptions(null);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	}, [variableData.type, variableData.customValue]);
 
 	return (
-		<VariableContainer>
+		<VariableContainer className="variable-item">
 			<Typography.Text className="variable-name" ellipsis>
 				${variableData.name}
 			</Typography.Text>
@@ -242,9 +223,10 @@ function VariableItem({
 					<Input
 						placeholder="Enter value"
 						bordered={false}
-						value={variableValue}
+						key={variableData.selectedValue?.toString()}
+						defaultValue={variableData.selectedValue?.toString()}
 						onChange={(e): void => {
-							setVaribleValue(e.target.value || '');
+							debouncedHandleChange(e.target.value || '');
 						}}
 						style={{
 							width:
@@ -255,17 +237,24 @@ function VariableItem({
 					!errorMessage &&
 					optionsData && (
 						<Select
-							value={selectValue}
+							key={
+								selectValue && Array.isArray(selectValue)
+									? selectValue.join(' ')
+									: selectValue || variableData.id
+							}
+							defaultValue={selectValue}
 							onChange={handleChange}
 							bordered={false}
 							placeholder="Select value"
+							placement="bottomRight"
 							mode={mode}
 							dropdownMatchSelectWidth={false}
 							style={SelectItemStyle}
 							loading={isLoading}
-							showArrow
 							showSearch
 							data-testid="variable-select"
+							className="variable-select"
+							getPopupContainer={popupContainer}
 						>
 							{enableSelectAll && (
 								<Select.Option data-testid="option-ALL" value={ALL_SELECT_VALUE}>
@@ -284,7 +273,7 @@ function VariableItem({
 						</Select>
 					)
 				)}
-				{errorMessage && (
+				{variableData.type !== 'TEXTBOX' && errorMessage && (
 					<span style={{ margin: '0 0.5rem' }}>
 						<Popover
 							placement="top"

@@ -14,6 +14,7 @@ import { IDashboardVariable } from 'types/api/dashboard/getAll';
 import VariableItem from './VariableItem';
 
 const mockVariableData: IDashboardVariable = {
+	id: 'test_variable',
 	description: 'Test Variable',
 	type: 'TEXTBOX',
 	textboxValue: 'defaultValue',
@@ -52,7 +53,7 @@ describe('VariableItem', () => {
 					variableData={mockVariableData}
 					existingVariables={{}}
 					onValueUpdate={mockOnValueUpdate}
-					lastUpdatedVar=""
+					variablesToGetUpdated={[]}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -67,7 +68,7 @@ describe('VariableItem', () => {
 					variableData={mockVariableData}
 					existingVariables={{}}
 					onValueUpdate={mockOnValueUpdate}
-					lastUpdatedVar=""
+					variablesToGetUpdated={[]}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -81,7 +82,7 @@ describe('VariableItem', () => {
 					variableData={mockVariableData}
 					existingVariables={{}}
 					onValueUpdate={mockOnValueUpdate}
-					lastUpdatedVar=""
+					variablesToGetUpdated={[]}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -95,6 +96,7 @@ describe('VariableItem', () => {
 			// expect(mockOnValueUpdate).toHaveBeenCalledTimes(1);
 			expect(mockOnValueUpdate).toHaveBeenCalledWith(
 				'testVariable',
+				'test_variable',
 				'newValue',
 				false,
 			);
@@ -108,7 +110,7 @@ describe('VariableItem', () => {
 					variableData={mockCustomVariableData}
 					existingVariables={{}}
 					onValueUpdate={mockOnValueUpdate}
-					lastUpdatedVar=""
+					variablesToGetUpdated={[]}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -129,7 +131,7 @@ describe('VariableItem', () => {
 					variableData={customVariableData}
 					existingVariables={{}}
 					onValueUpdate={mockOnValueUpdate}
-					lastUpdatedVar=""
+					variablesToGetUpdated={[]}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -144,7 +146,7 @@ describe('VariableItem', () => {
 					variableData={mockCustomVariableData}
 					existingVariables={{}}
 					onValueUpdate={mockOnValueUpdate}
-					lastUpdatedVar=""
+					variablesToGetUpdated={[]}
 				/>
 			</MockQueryClientProvider>,
 		);

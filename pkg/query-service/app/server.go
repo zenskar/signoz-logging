@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -27,6 +28,8 @@ import (
 	"go.signoz.io/signoz/pkg/query-service/app/logparsingpipeline"
 	"go.signoz.io/signoz/pkg/query-service/app/opamp"
 	opAmpModel "go.signoz.io/signoz/pkg/query-service/app/opamp/model"
+	"go.signoz.io/signoz/pkg/query-service/app/preferences"
+	"go.signoz.io/signoz/pkg/query-service/common"
 	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
 
 	"go.signoz.io/signoz/pkg/query-service/app/explorer"
@@ -54,7 +57,6 @@ type ServerOptions struct {
 	// alert specific params
 	DisableRules      bool
 	RuleRepoURL       string
-	PreferDelta       bool
 	PreferSpanMetrics bool
 	MaxIdleConns      int
 	MaxOpenConns      int
@@ -66,12 +68,8 @@ type ServerOptions struct {
 
 // Server runs HTTP, Mux and a grpc server
 type Server struct {
-	// logger       *zap.Logger
-	// tracer opentracing.Tracer // TODO make part of flags.Service
 	serverOptions *ServerOptions
-	conn          net.Listener
 	ruleManager   *rules.Manager
-	separatePorts bool
 
 	// public http router
 	httpConn   net.Listener
@@ -95,6 +93,10 @@ func (s Server) HealthCheckStatus() chan healthcheck.Status {
 func NewServer(serverOptions *ServerOptions) (*Server, error) {
 
 	if err := dao.InitDao("sqlite", constants.RELATIONAL_DATASOURCE_PATH); err != nil {
+		return nil, err
+	}
+
+	if err := preferences.InitDB(constants.RELATIONAL_DATASOURCE_PATH); err != nil {
 		return nil, err
 	}
 
@@ -128,7 +130,7 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 		go clickhouseReader.Start(readerReady)
 		reader = clickhouseReader
 	} else {
-		return nil, fmt.Errorf("Storage type: %s is not supported in query service", storage)
+		return nil, fmt.Errorf("storage type: %s is not supported in query service", storage)
 	}
 	skipConfig := &model.SkipConfig{}
 	if serverOptions.SkipTopLvlOpsPath != "" {
@@ -175,7 +177,6 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 	apiHandler, err := NewAPIHandler(APIHandlerOpts{
 		Reader:                        reader,
 		SkipConfig:                    skipConfig,
-		PerferDelta:                   serverOptions.PreferDelta,
 		PreferSpanMetrics:             serverOptions.PreferSpanMetrics,
 		MaxIdleConns:                  serverOptions.MaxIdleConns,
 		MaxOpenConns:                  serverOptions.MaxOpenConns,
@@ -273,7 +274,21 @@ func (s *Server) createPublicServer(api *APIHandler) (*http.Server, error) {
 	r.Use(s.analyticsMiddleware)
 	r.Use(loggingMiddleware)
 
-	am := NewAuthMiddleware(auth.GetUserFromRequest)
+	// add auth middleware
+	getUserFromRequest := func(r *http.Request) (*model.UserPayload, error) {
+		user, err := auth.GetUserFromRequest(r)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if user.User.OrgId == "" {
+			return nil, model.UnauthorizedError(errors.New("orgId is missing in the claims"))
+		}
+
+		return user, nil
+	}
+	am := NewAuthMiddleware(getUserFromRequest)
 
 	api.RegisterRoutes(r, am)
 	api.RegisterLogsRoutes(r, am)
@@ -303,7 +318,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		path, _ := route.GetPathTemplate()
 		startTime := time.Now()
 		next.ServeHTTP(w, r)
-		zap.L().Info(path+"\ttimeTaken:"+time.Now().Sub(startTime).String(), zap.Duration("timeTaken", time.Now().Sub(startTime)), zap.String("path", path))
+		zap.L().Info(path, zap.Duration("timeTaken", time.Since(startTime)), zap.String("path", path))
 	})
 }
 
@@ -361,7 +376,7 @@ func LogCommentEnricher(next http.Handler) http.Handler {
 			"servicesTab": tab,
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), "log_comment", kvs))
+		r = r.WithContext(context.WithValue(r.Context(), common.LogCommentKey, kvs))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -374,7 +389,7 @@ func loggingMiddlewarePrivate(next http.Handler) http.Handler {
 		path, _ := route.GetPathTemplate()
 		startTime := time.Now()
 		next.ServeHTTP(w, r)
-		zap.L().Info(path+"\tprivatePort: true \ttimeTaken"+time.Now().Sub(startTime).String(), zap.Duration("timeTaken", time.Now().Sub(startTime)), zap.String("path", path), zap.Bool("tprivatePort", true))
+		zap.L().Info(path, zap.Duration("timeTaken", time.Since(startTime)), zap.String("path", path), zap.Bool("privatePort", true))
 	})
 }
 

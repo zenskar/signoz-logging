@@ -1,7 +1,7 @@
 import './Support.styles.scss';
 
 import { Button, Card, Typography } from 'antd';
-import useAnalytics from 'hooks/analytics/useAnalytics';
+import logEvent from 'api/common/logEvent';
 import {
 	Book,
 	Cable,
@@ -10,6 +10,8 @@ import {
 	MessageSquare,
 	Slack,
 } from 'lucide-react';
+import { useEffect } from 'react';
+import { useHistory } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
@@ -83,11 +85,23 @@ const supportChannels = [
 ];
 
 export default function Support(): JSX.Element {
-	const { trackEvent } = useAnalytics();
+	const history = useHistory();
 
 	const handleChannelWithRedirects = (url: string): void => {
 		window.open(url, '_blank');
 	};
+
+	useEffect(() => {
+		if (history?.location?.state) {
+			const histroyState = history?.location?.state as any;
+
+			if (histroyState && histroyState?.from) {
+				logEvent(`Support : From URL : ${histroyState.from}`, {});
+			}
+		}
+
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const handleSlackConnectRequest = (): void => {
 		const recipient = 'support@signoz.io';
@@ -114,7 +128,7 @@ export default function Support(): JSX.Element {
 	};
 
 	const handleChannelClick = (channel: Channel): void => {
-		trackEvent(`Support : ${channel.name}`);
+		logEvent(`Support : ${channel.name}`, {});
 
 		switch (channel.key) {
 			case channelsMap.documentation:

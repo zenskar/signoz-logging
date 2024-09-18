@@ -25,6 +25,11 @@ var ConfigSignozIo = "https://config.signoz.io/api/v1"
 
 var DEFAULT_TELEMETRY_ANONYMOUS = false
 
+func IsOSSTelemetryEnabled() bool {
+	ossSegmentKey := GetOrDefaultEnv("OSS_TELEMETRY_ENABLED", "true")
+	return ossSegmentKey == "true"
+}
+
 const MaxAllowedPointsInTimeSeries = 300
 
 func IsTelemetryEnabled() bool {
@@ -150,6 +155,15 @@ func GetContextTimeoutMaxAllowed() time.Duration {
 		return time.Minute
 	}
 	return contextTimeoutDuration
+}
+
+func GetEvalDelay() time.Duration {
+	evalDelayStr := GetOrDefaultEnv("RULES_EVAL_DELAY", "2m")
+	evalDelayDuration, err := time.ParseDuration(evalDelayStr)
+	if err != nil {
+		return 0
+	}
+	return evalDelayDuration
 }
 
 var ContextTimeoutMaxAllowed = GetContextTimeoutMaxAllowed()
@@ -407,3 +421,11 @@ var TracesListViewDefaultSelectedColumns = []v3.AttributeKey{
 		IsColumn: true,
 	},
 }
+
+const DefaultFilterSuggestionsAttributesLimit = 50
+const MaxFilterSuggestionsAttributesLimit = 100
+const DefaultFilterSuggestionsExamplesLimit = 2
+const MaxFilterSuggestionsExamplesLimit = 10
+
+var SpanRenderLimitStr = GetOrDefaultEnv("SPAN_RENDER_LIMIT", "2500")
+var MaxSpansInTraceStr = GetOrDefaultEnv("MAX_SPANS_IN_TRACE", "250000")

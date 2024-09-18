@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -27,7 +28,9 @@ import (
 	"go.signoz.io/signoz/ee/query-service/dao"
 	"go.signoz.io/signoz/ee/query-service/integrations/gateway"
 	"go.signoz.io/signoz/ee/query-service/interfaces"
+	"go.signoz.io/signoz/ee/query-service/rules"
 	baseauth "go.signoz.io/signoz/pkg/query-service/auth"
+	"go.signoz.io/signoz/pkg/query-service/migrate"
 	"go.signoz.io/signoz/pkg/query-service/model"
 	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
 
@@ -50,7 +53,7 @@ import (
 	baseint "go.signoz.io/signoz/pkg/query-service/interfaces"
 	basemodel "go.signoz.io/signoz/pkg/query-service/model"
 	pqle "go.signoz.io/signoz/pkg/query-service/pqlEngine"
-	rules "go.signoz.io/signoz/pkg/query-service/rules"
+	baserules "go.signoz.io/signoz/pkg/query-service/rules"
 	"go.signoz.io/signoz/pkg/query-service/telemetry"
 	"go.signoz.io/signoz/pkg/query-service/utils"
 	"go.uber.org/zap"
@@ -79,7 +82,7 @@ type ServerOptions struct {
 // Server runs HTTP api service
 type Server struct {
 	serverOptions *ServerOptions
-	ruleManager   *rules.Manager
+	ruleManager   *baserules.Manager
 
 	// public http router
 	httpConn   net.Listener
@@ -178,6 +181,13 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	go func() {
+		err = migrate.ClickHouseMigrate(reader.GetConn(), serverOptions.Cluster)
+		if err != nil {
+			zap.L().Error("error while running clickhouse migrations", zap.Error(err))
+		}
+	}()
 
 	// initiate opamp
 	_, err = opAmpModel.InitDB(localDB)
@@ -309,7 +319,7 @@ func (s *Server) createPrivateServer(apiHandler *api.APIHandler) (*http.Server, 
 		// ip here for alert manager
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: []string{"GET", "DELETE", "POST", "PUT", "PATCH"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "SIGNOZ-API-KEY"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "SIGNOZ-API-KEY", "X-SIGNOZ-QUERY-ID", "Sec-WebSocket-Protocol"},
 	})
 
 	handler := c.Handler(r)
@@ -350,11 +360,13 @@ func (s *Server) createPublicServer(apiHandler *api.APIHandler) (*http.Server, e
 	apiHandler.RegisterIntegrationRoutes(r, am)
 	apiHandler.RegisterQueryRangeV3Routes(r, am)
 	apiHandler.RegisterQueryRangeV4Routes(r, am)
+	apiHandler.RegisterWebSocketPaths(r, am)
+	apiHandler.RegisterMessagingQueuesRoutes(r, am)
 
 	c := cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: []string{"GET", "DELETE", "POST", "PUT", "PATCH", "OPTIONS"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "cache-control"},
+		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "cache-control", "X-SIGNOZ-QUERY-ID", "Sec-WebSocket-Protocol"},
 	})
 
 	handler := c.Handler(r)
@@ -366,6 +378,7 @@ func (s *Server) createPublicServer(apiHandler *api.APIHandler) (*http.Server, e
 	}, nil
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
 // loggingMiddleware is used for logging public api calls
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -377,6 +390,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
 // loggingMiddlewarePrivate is used for logging private api calls
 // from internal services like alert manager
 func loggingMiddlewarePrivate(next http.Handler) http.Handler {
@@ -389,25 +403,39 @@ func loggingMiddlewarePrivate(next http.Handler) http.Handler {
 	})
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
 type loggingResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
 func NewLoggingResponseWriter(w http.ResponseWriter) *loggingResponseWriter {
 	// WriteHeader(int) is not called if our response implicitly returns 200 OK, so
 	// we default to that status code.
 	return &loggingResponseWriter{w, http.StatusOK}
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
 // Flush implements the http.Flush interface.
 func (lrw *loggingResponseWriter) Flush() {
 	lrw.ResponseWriter.(http.Flusher).Flush()
+}
+
+// TODO(remove): Implemented at pkg/http/middleware/logging.go
+// Support websockets
+func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := lrw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("hijack not supported")
+	}
+	return h.Hijack()
 }
 
 func extractQueryRangeData(path string, r *http.Request) (map[string]interface{}, bool) {
@@ -546,6 +574,7 @@ func (s *Server) analyticsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// TODO(remove): Implemented at pkg/http/middleware/timeout.go
 func setTimeoutMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -699,7 +728,7 @@ func makeRulesManager(
 	db *sqlx.DB,
 	ch baseint.Reader,
 	disableRules bool,
-	fm baseint.FeatureLookup) (*rules.Manager, error) {
+	fm baseint.FeatureLookup) (*baserules.Manager, error) {
 
 	// create engine
 	pqle, err := pqle.FromConfigPath(promConfigPath)
@@ -715,12 +744,9 @@ func makeRulesManager(
 	}
 
 	// create manager opts
-	managerOpts := &rules.ManagerOptions{
+	managerOpts := &baserules.ManagerOptions{
 		NotifierOpts: notifierOpts,
-		Queriers: &rules.Queriers{
-			PqlEngine: pqle,
-			Ch:        ch.GetConn(),
-		},
+		PqlEngine:    pqle,
 		RepoURL:      ruleRepoURL,
 		DBConn:       db,
 		Context:      context.Background(),
@@ -728,10 +754,13 @@ func makeRulesManager(
 		DisableRules: disableRules,
 		FeatureFlags: fm,
 		Reader:       ch,
+		EvalDelay:    baseconst.GetEvalDelay(),
+
+		PrepareTaskFunc: rules.PrepareTaskFunc,
 	}
 
 	// create Manager
-	manager, err := rules.NewManager(managerOpts)
+	manager, err := baserules.NewManager(managerOpts)
 	if err != nil {
 		return nil, fmt.Errorf("rule manager error: %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
 )
 
-func TestV2FindMissingTimeRangesZeroFreshNess(t *testing.T) {
+func TestFindMissingTimeRangesZeroFreshNess(t *testing.T) {
 	// There are five scenarios:
 	// 1. Cached time range is a subset of the requested time range
 	// 2. Cached time range is a superset of the requested time range
@@ -20,12 +20,13 @@ func TestV2FindMissingTimeRangesZeroFreshNess(t *testing.T) {
 	// 4. Cached time range is a right overlap of the requested time range
 	// 5. Cached time range is a disjoint of the requested time range
 	testCases := []struct {
-		name           string
-		requestedStart int64 // in milliseconds
-		requestedEnd   int64 // in milliseconds
-		requestedStep  int64 // in seconds
-		cachedSeries   []*v3.Series
-		expectedMiss   []missInterval
+		name              string
+		requestedStart    int64 // in milliseconds
+		requestedEnd      int64 // in milliseconds
+		requestedStep     int64 // in seconds
+		cachedSeries      []*v3.Series
+		expectedMiss      []missInterval
+		replaceCachedData bool
 	}{
 		{
 			name:           "cached time range is a subset of the requested time range",
@@ -190,14 +191,18 @@ func TestV2FindMissingTimeRangesZeroFreshNess(t *testing.T) {
 					end:   1675115596722 + 180*60*1000,
 				},
 			},
+			replaceCachedData: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			misses := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, 0*time.Minute)
+			misses, replaceCachedData := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, 0*time.Minute)
 			if len(misses) != len(tc.expectedMiss) {
 				t.Errorf("expected %d misses, got %d", len(tc.expectedMiss), len(misses))
+			}
+			if replaceCachedData != tc.replaceCachedData {
+				t.Errorf("expected replaceCachedData %t, got %t", tc.replaceCachedData, replaceCachedData)
 			}
 			for i, miss := range misses {
 				if miss.start != tc.expectedMiss[i].start {
@@ -395,7 +400,7 @@ func TestV2FindMissingTimeRangesWithFluxInterval(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			misses := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, tc.fluxInterval)
+			misses, _ := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, tc.fluxInterval)
 			if len(misses) != len(tc.expectedMiss) {
 				t.Errorf("expected %d misses, got %d", len(tc.expectedMiss), len(misses))
 			}
@@ -411,12 +416,13 @@ func TestV2FindMissingTimeRangesWithFluxInterval(t *testing.T) {
 	}
 }
 
-func TestV2QueryRange(t *testing.T) {
+func TestV2QueryRangePanelGraph(t *testing.T) {
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722,
-			End:   1675115596722 + 120*60*1000,
-			Step:  60,
+			Start:   1675115596722,               // 31st Jan, 03:23:16
+			End:     1675115596722 + 120*60*1000, // 31st Jan, 05:23:16
+			Step:    60,
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeGraph,
@@ -450,8 +456,8 @@ func TestV2QueryRange(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722 + 60*60*1000,
-			End:   1675115596722 + 180*60*1000,
+			Start: 1675115596722 + 60*60*1000,  // 31st Jan, 04:23:16
+			End:   1675115596722 + 180*60*1000, // 31st Jan, 06:23:16
 			Step:  60,
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
@@ -569,19 +575,21 @@ func TestV2QueryRange(t *testing.T) {
 					"__name__":     "http_server_requests_seconds_count",
 				},
 				Points: []v3.Point{
-					{Timestamp: 1675115596722, Value: 1},
-					{Timestamp: 1675115596722 + 60*60*1000, Value: 2},
-					{Timestamp: 1675115596722 + 120*60*1000, Value: 3},
+					{Timestamp: 1675115596722, Value: 1},               // 31st Jan, 03:23:16
+					{Timestamp: 1675115596722 + 60*60*1000, Value: 2},  // 31st Jan, 04:23:16
+					{Timestamp: 1675115596722 + 120*60*1000, Value: 3}, // 31st Jan, 05:23:16
 				},
 			},
 		},
 	}
 	q := NewQuerier(opts)
 	expectedTimeRangeInQueryString := []string{
-		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115580000, 1675115580000+120*60*1000),
-		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115580000+120*60*1000, 1675115580000+180*60*1000),
-		fmt.Sprintf("timestamp >= '%d' AND timestamp <= '%d'", 1675115580000*1000000, (1675115580000+120*60*1000)*int64(1000000)),
-		fmt.Sprintf("timestamp >= '%d' AND timestamp <= '%d'", (1675115580000+60*60*1000)*int64(1000000), (1675115580000+180*60*1000)*int64(1000000)),
+		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115580000, 1675115580000+120*60*1000), // 31st Jan, 03:23:00 to 31st Jan, 05:23:00
+		// second query uses the cached data from the first query
+		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115580000+120*60*1000, 1675115580000+180*60*1000), // 31st Jan, 05:23:00 to 31st Jan, 06:23:00
+		// No caching for traces yet
+		fmt.Sprintf("timestamp >= '%d' AND timestamp <= '%d'", 1675115580000*1000000, (1675115580000+120*60*1000)*int64(1000000)),                     // 31st Jan, 03:23:00 to 31st Jan, 05:23:00
+		fmt.Sprintf("timestamp >= '%d' AND timestamp <= '%d'", (1675115580000+60*60*1000)*int64(1000000), (1675115580000+180*60*1000)*int64(1000000)), // 31st Jan, 04:23:00 to 31st Jan, 06:23:00
 	}
 
 	for i, param := range params {
@@ -600,12 +608,12 @@ func TestV2QueryRange(t *testing.T) {
 }
 
 func TestV2QueryRangeValueType(t *testing.T) {
-	// There shouldn't be any caching for value panel type
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722,
-			End:   1675115596722 + 120*60*1000,
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722,               // 31st Jan, 03:23:16
+			End:     1675115596722 + 120*60*1000, // 31st Jan, 05:23:16
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeValue,
@@ -635,9 +643,43 @@ func TestV2QueryRangeValueType(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722 + 60*60*1000,
-			End:   1675115596722 + 180*60*1000,
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722 + 60*60*1000,  // 31st Jan, 04:23:16
+			End:     1675115596722 + 180*60*1000, // 31st Jan, 06:23:16
+			Step:    60,
+			Version: "v4",
+			CompositeQuery: &v3.CompositeQuery{
+				QueryType: v3.QueryTypeBuilder,
+				PanelType: v3.PanelTypeValue,
+				BuilderQueries: map[string]*v3.BuilderQuery{
+					"A": {
+						QueryName:          "A",
+						Temporality:        v3.Delta,
+						StepInterval:       60,
+						AggregateAttribute: v3.AttributeKey{Key: "http_server_requests_seconds_count", Type: v3.AttributeKeyTypeUnspecified, DataType: "float64", IsColumn: true},
+						DataSource:         v3.DataSourceMetrics,
+						Filters: &v3.FilterSet{
+							Operator: "AND",
+							Items: []v3.FilterItem{
+								{
+									Key:      v3.AttributeKey{Key: "method", IsColumn: false},
+									Operator: "=",
+									Value:    "GET",
+								},
+							},
+						},
+						AggregateOperator: v3.AggregateOperatorSumRate,
+						TimeAggregation:   v3.TimeAggregationRate,
+						SpaceAggregation:  v3.SpaceAggregationSum,
+						Expression:        "A",
+					},
+				},
+			},
+		},
+		{
+			Start:   1675115596722 + 60*60*1000,  // 31st Jan, 04:23:16
+			End:     1675115596722 + 180*60*1000, // 31st Jan, 06:23:16
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeValue,
@@ -681,18 +723,18 @@ func TestV2QueryRangeValueType(t *testing.T) {
 					"__name__":     "http_server_requests_seconds_count",
 				},
 				Points: []v3.Point{
-					{Timestamp: 1675115596722, Value: 1},
-					{Timestamp: 1675115596722 + 60*60*1000, Value: 2},
-					{Timestamp: 1675115596722 + 120*60*1000, Value: 3},
+					{Timestamp: 1675115596722, Value: 1},               // 31st Jan, 03:23:16
+					{Timestamp: 1675115596722 + 60*60*1000, Value: 2},  // 31st Jan, 04:23:16
+					{Timestamp: 1675115596722 + 120*60*1000, Value: 3}, // 31st Jan, 05:23:16
 				},
 			},
 		},
 	}
 	q := NewQuerier(opts)
-	// No caching
 	expectedTimeRangeInQueryString := []string{
-		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115520000, 1675115580000+120*60*1000),
-		fmt.Sprintf("timestamp >= '%d' AND timestamp <= '%d'", (1675115580000+60*60*1000)*int64(1000000), (1675115580000+180*60*1000)*int64(1000000)),
+		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115520000, 1675115580000+120*60*1000),                                                 // 31st Jan, 03:23:00 to 31st Jan, 05:23:00
+		fmt.Sprintf("unix_milli >= %d AND unix_milli < %d", 1675115580000+120*60*1000, 1675115580000+180*60*1000),                                     // 31st Jan, 05:23:00 to 31st Jan, 06:23:00
+		fmt.Sprintf("timestamp >= '%d' AND timestamp <= '%d'", (1675115580000+60*60*1000)*int64(1000000), (1675115580000+180*60*1000)*int64(1000000)), // 31st Jan, 05:23:00 to 31st Jan, 06:23:00
 	}
 
 	for i, param := range params {
@@ -714,9 +756,10 @@ func TestV2QueryRangeValueType(t *testing.T) {
 func TestV2QueryRangeTimeShift(t *testing.T) {
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722,               //31, 3:23
-			End:   1675115596722 + 120*60*1000, //31, 5:23
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722,               //31, 3:23
+			End:     1675115596722 + 120*60*1000, //31, 5:23
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeGraph,
@@ -766,9 +809,10 @@ func TestV2QueryRangeTimeShift(t *testing.T) {
 func TestV2QueryRangeTimeShiftWithCache(t *testing.T) {
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722 + 60*60*1000 - 86400*1000,  //30, 4:23
-			End:   1675115596722 + 120*60*1000 - 86400*1000, //30, 5:23
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722 + 60*60*1000 - 86400*1000,  //30th Jan, 4:23
+			End:     1675115596722 + 120*60*1000 - 86400*1000, //30th Jan, 5:23
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeGraph,
@@ -793,9 +837,10 @@ func TestV2QueryRangeTimeShiftWithCache(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722,               //31, 3:23
-			End:   1675115596722 + 120*60*1000, //31, 5:23
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722,               //31st Jan, 3:23
+			End:     1675115596722 + 120*60*1000, //31st Jan, 5:23
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeGraph,
@@ -832,8 +877,8 @@ func TestV2QueryRangeTimeShiftWithCache(t *testing.T) {
 			{
 				Labels: map[string]string{},
 				Points: []v3.Point{
-					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},
-					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2},
+					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},               // 30th Jan, 4:23
+					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2}, // 30th Jan, 5:23
 				},
 			},
 		},
@@ -842,8 +887,8 @@ func TestV2QueryRangeTimeShiftWithCache(t *testing.T) {
 
 	// logs queries are generates in ns
 	expectedTimeRangeInQueryString := []string{
-		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722+60*60*1000-86400*1000)*1000000, (1675115596722+120*60*1000-86400*1000)*1000000),
-		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+60*60*1000)-86400*1000-1)*1000000),
+		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722+60*60*1000-86400*1000)*1000000, (1675115596722+120*60*1000-86400*1000)*1000000), // 30th Jan, 4:23 to 30th Jan, 5:23
+		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+120*60*1000)-86400*1000)*1000000),          // 30th Jan, 3:23 to 30th Jan, 5:23
 	}
 
 	for i, param := range params {
@@ -864,9 +909,10 @@ func TestV2QueryRangeTimeShiftWithCache(t *testing.T) {
 func TestV2QueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722 + 60*60*1000 - 86400*1000,  //30, 4:23
-			End:   1675115596722 + 120*60*1000 - 86400*1000, //30, 5:23
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722 + 60*60*1000 - 86400*1000,  //30th Jan, 4:23
+			End:     1675115596722 + 120*60*1000 - 86400*1000, //30th, 5:23
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeGraph,
@@ -892,9 +938,10 @@ func TestV2QueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722,               //31, 3:23
-			End:   1675115596722 + 120*60*1000, //31, 5:23
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722,               //31st Jan, 3:23
+			End:     1675115596722 + 120*60*1000, //31st Jan, 5:23
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
 				PanelType: v3.PanelTypeGraph,
@@ -932,8 +979,8 @@ func TestV2QueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 			{
 				Labels: map[string]string{},
 				Points: []v3.Point{
-					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},
-					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2},
+					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},               // 30th Jan, 4:23
+					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2}, // 30th Jan, 6:23
 				},
 			},
 		},
@@ -942,8 +989,8 @@ func TestV2QueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 
 	// logs queries are generates in ns
 	expectedTimeRangeInQueryString := []string{
-		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722+60*60*1000-86400*1000)*1000000, (1675115596722+120*60*1000-86400*1000)*1000000),
-		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+60*60*1000)-86400*1000-1)*1000000),
+		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722+60*60*1000-86400*1000)*1000000, (1675115596722+120*60*1000-86400*1000)*1000000), // 30th Jan, 4:23 to 30th Jan, 5:23
+		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+120*60*1000)-86400*1000)*1000000),
 	}
 
 	for i, param := range params {
@@ -964,9 +1011,10 @@ func TestV2QueryRangeValueTypePromQL(t *testing.T) {
 	// There shouldn't be any caching for value panel type
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722,
-			End:   1675115596722 + 120*60*1000,
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722,
+			End:     1675115596722 + 120*60*1000,
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypePromQL,
 				PanelType: v3.PanelTypeValue,
@@ -978,9 +1026,10 @@ func TestV2QueryRangeValueTypePromQL(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722 + 60*60*1000,
-			End:   1675115596722 + 180*60*1000,
-			Step:  5 * time.Minute.Milliseconds(),
+			Start:   1675115596722 + 60*60*1000,
+			End:     1675115596722 + 180*60*1000,
+			Step:    5 * time.Minute.Milliseconds(),
+			Version: "v4",
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypePromQL,
 				PanelType: v3.PanelTypeValue,

@@ -20,12 +20,13 @@ func TestFindMissingTimeRangesZeroFreshNess(t *testing.T) {
 	// 4. Cached time range is a right overlap of the requested time range
 	// 5. Cached time range is a disjoint of the requested time range
 	testCases := []struct {
-		name           string
-		requestedStart int64 // in milliseconds
-		requestedEnd   int64 // in milliseconds
-		requestedStep  int64 // in seconds
-		cachedSeries   []*v3.Series
-		expectedMiss   []missInterval
+		name              string
+		requestedStart    int64 // in milliseconds
+		requestedEnd      int64 // in milliseconds
+		requestedStep     int64 // in seconds
+		cachedSeries      []*v3.Series
+		expectedMiss      []missInterval
+		replaceCachedData bool
 	}{
 		{
 			name:           "cached time range is a subset of the requested time range",
@@ -190,14 +191,18 @@ func TestFindMissingTimeRangesZeroFreshNess(t *testing.T) {
 					end:   1675115596722 + 180*60*1000,
 				},
 			},
+			replaceCachedData: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			misses := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, 0*time.Minute)
+			misses, replaceCachedData := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, 0*time.Minute)
 			if len(misses) != len(tc.expectedMiss) {
 				t.Errorf("expected %d misses, got %d", len(tc.expectedMiss), len(misses))
+			}
+			if replaceCachedData != tc.replaceCachedData {
+				t.Errorf("expected replaceCachedData %t, got %t", tc.replaceCachedData, replaceCachedData)
 			}
 			for i, miss := range misses {
 				if miss.start != tc.expectedMiss[i].start {
@@ -395,7 +400,7 @@ func TestFindMissingTimeRangesWithFluxInterval(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			misses := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, tc.fluxInterval)
+			misses, _ := findMissingTimeRanges(tc.requestedStart, tc.requestedEnd, tc.requestedStep, tc.cachedSeries, tc.fluxInterval)
 			if len(misses) != len(tc.expectedMiss) {
 				t.Errorf("expected %d misses, got %d", len(tc.expectedMiss), len(misses))
 			}
@@ -758,8 +763,8 @@ func TestQueryRangeTimeShift(t *testing.T) {
 func TestQueryRangeTimeShiftWithCache(t *testing.T) {
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722 + 60*60*1000 - 86400*1000,  //30, 4:23
-			End:   1675115596722 + 120*60*1000 - 86400*1000, //30, 5:23
+			Start: 1675115596722 + 60*60*1000 - 86400*1000,  //30th Jan, 4:23
+			End:   1675115596722 + 120*60*1000 - 86400*1000, //30th Jan, 5:23
 			Step:  5 * time.Minute.Milliseconds(),
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
@@ -785,8 +790,8 @@ func TestQueryRangeTimeShiftWithCache(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722,               //31, 3:23
-			End:   1675115596722 + 120*60*1000, //31, 5:23
+			Start: 1675115596722,               //31st Jan, 3:23
+			End:   1675115596722 + 120*60*1000, //31st Jan, 5:23
 			Step:  5 * time.Minute.Milliseconds(),
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
@@ -824,8 +829,8 @@ func TestQueryRangeTimeShiftWithCache(t *testing.T) {
 			{
 				Labels: map[string]string{},
 				Points: []v3.Point{
-					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},
-					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2},
+					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},               // 30th Jan, 4:23
+					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2}, // 30th Jan, 6:23
 				},
 			},
 		},
@@ -835,7 +840,7 @@ func TestQueryRangeTimeShiftWithCache(t *testing.T) {
 	// logs queries are generates in ns
 	expectedTimeRangeInQueryString := []string{
 		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722+60*60*1000-86400*1000)*1000000, (1675115596722+120*60*1000-86400*1000)*1000000),
-		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+60*60*1000)-86400*1000-1)*1000000),
+		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+120*60*1000)-86400*1000)*1000000),
 	}
 
 	for i, param := range params {
@@ -856,8 +861,8 @@ func TestQueryRangeTimeShiftWithCache(t *testing.T) {
 func TestQueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 	params := []*v3.QueryRangeParamsV3{
 		{
-			Start: 1675115596722 + 60*60*1000 - 86400*1000,  //30, 4:23
-			End:   1675115596722 + 120*60*1000 - 86400*1000, //30, 5:23
+			Start: 1675115596722 + 60*60*1000 - 86400*1000,  //30th Jan, 4:23
+			End:   1675115596722 + 120*60*1000 - 86400*1000, //30th Jan, 5:23
 			Step:  5 * time.Minute.Milliseconds(),
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
@@ -884,8 +889,8 @@ func TestQueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 			},
 		},
 		{
-			Start: 1675115596722,               //31, 3:23
-			End:   1675115596722 + 120*60*1000, //31, 5:23
+			Start: 1675115596722,               //31st Jan, 3:23
+			End:   1675115596722 + 120*60*1000, //31st Jan, 5:23
 			Step:  5 * time.Minute.Milliseconds(),
 			CompositeQuery: &v3.CompositeQuery{
 				QueryType: v3.QueryTypeBuilder,
@@ -924,8 +929,8 @@ func TestQueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 			{
 				Labels: map[string]string{},
 				Points: []v3.Point{
-					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},
-					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2},
+					{Timestamp: 1675115596722 + 60*60*1000 - 86400*1000, Value: 1},               // 30th Jan, 4:23
+					{Timestamp: 1675115596722 + 120*60*1000 - 86400*1000 + 60*60*1000, Value: 2}, // 30th Jan, 6:23
 				},
 			},
 		},
@@ -935,7 +940,7 @@ func TestQueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 	// logs queries are generates in ns
 	expectedTimeRangeInQueryString := []string{
 		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722+60*60*1000-86400*1000)*1000000, (1675115596722+120*60*1000-86400*1000)*1000000),
-		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+60*60*1000)-86400*1000-1)*1000000),
+		fmt.Sprintf("timestamp >= %d AND timestamp <= %d", (1675115596722-86400*1000)*1000000, ((1675115596722+120*60*1000)-86400*1000)*1000000),
 	}
 
 	for i, param := range params {

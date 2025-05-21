@@ -1,42 +1,192 @@
 import { getToolTipValue } from 'components/Graph/yAxisConfig';
+import { themeColors } from 'constants/theme';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import getLabelName from 'lib/getLabelName';
+import { get } from 'lodash-es';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
 
-import { colors } from '../../getRandomColor';
 import { placement } from '../placement';
+import { generateColor } from '../utils/generateColor';
 
 dayjs.extend(customParseFormat);
 
-const createDivsFromArray = (
+interface UplotTooltipDataProps {
+	show: boolean;
+	color: string;
+	label: string;
+	focus: boolean;
+	value: number;
+	tooltipValue: string;
+	textContent: string;
+	queryName: string;
+}
+
+function getTooltipBaseValue(
+	data: any[],
+	index: number,
+	idx: number,
+	stackBarChart: boolean | undefined,
+): any {
+	if (stackBarChart && index + 1 < data.length) {
+		return data[index][idx] - data[index + 1][idx];
+	}
+
+	return data[index][idx];
+}
+
+const generateTooltipContent = (
 	seriesList: any[],
 	data: any[],
 	idx: number,
+	isDarkMode: boolean,
 	yAxisUnit?: string,
 	series?: uPlot.Options['series'],
-	fillSpans?: boolean,
+	isBillingUsageGraphs?: boolean,
+	isHistogramGraphs?: boolean,
+	isMergedSeries?: boolean,
+	stackBarChart?: boolean,
+	timezone?: string,
 	// eslint-disable-next-line sonarjs/cognitive-complexity
 ): HTMLElement => {
 	const container = document.createElement('div');
 	container.classList.add('tooltip-container');
+	const overlay = document.getElementById('overlay');
+	let tooltipCount = 0;
+
+	let tooltipTitle = '';
+	const formattedData: Record<string, UplotTooltipDataProps> = {};
+	const duplicatedLegendLabels: Record<string, true> = {};
+
+	function sortTooltipContentBasedOnValue(
+		tooltipDataObj: Record<string, UplotTooltipDataProps>,
+	): Record<string, UplotTooltipDataProps> {
+		const entries = Object.entries(tooltipDataObj);
+		entries.sort((a, b) => b[1].value - a[1].value);
+		return Object.fromEntries(entries);
+	}
 
 	if (Array.isArray(series) && series.length > 0) {
 		series.forEach((item, index) => {
-			const div = document.createElement('div');
-			div.classList.add('tooltip-content-row');
-
 			if (index === 0) {
-				const formattedDate = dayjs(data[0][idx] * 1000).format(
-					'MMM DD YYYY HH:mm:ss',
+				if (isBillingUsageGraphs) {
+					tooltipTitle = dayjs(data[0][idx] * 1000)
+						.tz(timezone)
+						.format('MMM DD YYYY');
+				} else {
+					tooltipTitle = dayjs(data[0][idx] * 1000)
+						.tz(timezone)
+						.format('MMM DD YYYY h:mm:ss A');
+				}
+			} else if (item.show) {
+				const {
+					metric = {},
+					queryName = '',
+					legend = '',
+					quantity = [],
+					unit = '',
+				} = seriesList[index - 1] || {};
+
+				const value = getTooltipBaseValue(data, index, idx, stackBarChart);
+
+				const dataIngested = quantity[idx];
+				const label = isMergedSeries
+					? ''
+					: getLabelName(metric, queryName || '', legend || '');
+
+				let color = generateColor(
+					label,
+					isDarkMode ? themeColors.chartcolors : themeColors.lightModeColor,
 				);
 
-				div.textContent = formattedDate;
-				div.classList.add('tooltip-content-header');
-			} else if (fillSpans ? item.show : item.show && data[index][idx]) {
-				div.classList.add('tooltip-content');
-				const color = colors[(index - 1) % colors.length];
+				// in case of billing graph pick colors from the series options
+				if (isBillingUsageGraphs) {
+					let clr;
+					series.forEach((item) => {
+						if (item.label === label) {
+							clr = get(item, '_fill');
+						}
+					});
+					color = clr ?? color;
+				}
 
+				let tooltipItemLabel = label;
+
+				if (Number.isFinite(value)) {
+					const tooltipValue = getToolTipValue(value, yAxisUnit);
+					const dataIngestedFormated = getToolTipValue(dataIngested);
+					if (
+						duplicatedLegendLabels[label] ||
+						Object.prototype.hasOwnProperty.call(formattedData, label)
+					) {
+						duplicatedLegendLabels[label] = true;
+						const tempDataObj = formattedData[label];
+
+						if (tempDataObj) {
+							const newLabel = `${tempDataObj.queryName}: ${tempDataObj.label}`;
+
+							tempDataObj.textContent = `${newLabel} : ${tempDataObj.tooltipValue}`;
+
+							formattedData[newLabel] = tempDataObj;
+
+							delete formattedData[label];
+						}
+
+						tooltipItemLabel = `${queryName}: ${label}`;
+					}
+
+					const dataObj = {
+						show: item.show || false,
+						color,
+						label,
+						// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+						// @ts-ignore
+						focus: item?._focus || false,
+						value,
+						tooltipValue,
+						queryName,
+						textContent: isBillingUsageGraphs
+							? `${tooltipItemLabel} : $${tooltipValue} - ${dataIngestedFormated} ${unit}`
+							: `${tooltipItemLabel} : ${tooltipValue}`,
+					};
+
+					tooltipCount += 1;
+
+					formattedData[tooltipItemLabel] = dataObj;
+				}
+			}
+		});
+	}
+
+	// Show tooltip only if atleast only series has a value at the hovered timestamp
+	if (tooltipCount <= 0) {
+		if (overlay && overlay.style.display === 'block') {
+			overlay.style.display = 'none';
+		}
+
+		return container;
+	}
+
+	const sortedData: Record<
+		string,
+		UplotTooltipDataProps
+	> = sortTooltipContentBasedOnValue(formattedData);
+
+	const div = document.createElement('div');
+	div.classList.add('tooltip-content-row');
+	div.textContent = isHistogramGraphs ? '' : tooltipTitle;
+	div.classList.add('tooltip-content-header');
+	container.appendChild(div);
+
+	const sortedKeys = Object.keys(sortedData);
+
+	if (Array.isArray(sortedKeys) && sortedKeys.length > 0) {
+		sortedKeys.forEach((key) => {
+			if (sortedData[key]) {
+				const { textContent, color, focus } = sortedData[key];
+				const div = document.createElement('div');
+				div.classList.add('tooltip-content-row');
+				div.classList.add('tooltip-content');
 				const squareBox = document.createElement('div');
 				squareBox.classList.add('pointSquare');
 
@@ -45,38 +195,54 @@ const createDivsFromArray = (
 				const text = document.createElement('div');
 				text.classList.add('tooltip-data-point');
 
-				const { metric = {}, queryName = '', legend = '' } =
-					seriesList[index - 1] || {};
-
-				const label = getLabelName(
-					metric,
-					queryName || '', // query
-					legend || '',
-				);
-
-				const value = data[index][idx] || 0;
-
-				const tooltipValue = getToolTipValue(value, yAxisUnit);
-
-				text.textContent = `${label} : ${tooltipValue || 0}`;
+				text.textContent = textContent;
 				text.style.color = color;
+
+				if (focus) {
+					text.classList.add('focus');
+				} else {
+					text.classList.remove('focus');
+				}
 
 				div.appendChild(squareBox);
 				div.appendChild(text);
-			}
 
-			container.appendChild(div);
+				container.appendChild(div);
+			}
 		});
+	}
+
+	if (overlay && overlay.style.display === 'none') {
+		overlay.style.display = 'block';
 	}
 
 	return container;
 };
 
-const tooltipPlugin = (
-	apiResponse: MetricRangePayloadProps | undefined,
-	yAxisUnit?: string,
-	fillSpans?: boolean,
-): any => {
+type ToolTipPluginProps = {
+	apiResponse: MetricRangePayloadProps | undefined;
+	yAxisUnit?: string;
+	isBillingUsageGraphs?: boolean;
+	isHistogramGraphs?: boolean;
+	isMergedSeries?: boolean;
+	stackBarChart?: boolean;
+	isDarkMode: boolean;
+	customTooltipElement?: HTMLDivElement;
+	timezone?: string;
+};
+
+const tooltipPlugin = ({
+	apiResponse,
+	yAxisUnit,
+	isBillingUsageGraphs,
+	isHistogramGraphs,
+	isMergedSeries,
+	stackBarChart,
+	isDarkMode,
+	customTooltipElement,
+	timezone,
+}: // eslint-disable-next-line sonarjs/cognitive-complexity
+ToolTipPluginProps): any => {
 	let over: HTMLElement;
 	let bound: HTMLElement;
 	let bLeft: any;
@@ -128,16 +294,24 @@ const tooltipPlugin = (
 					overlay.textContent = '';
 					const { left, top, idx } = u.cursor;
 
-					if (idx) {
+					if (Number.isInteger(idx)) {
 						const anchor = { left: left + bLeft, top: top + bTop };
-						const content = createDivsFromArray(
+						const content = generateTooltipContent(
 							apiResult,
 							u.data,
 							idx,
+							isDarkMode,
 							yAxisUnit,
 							u.series,
-							fillSpans,
+							isBillingUsageGraphs,
+							isHistogramGraphs,
+							isMergedSeries,
+							stackBarChart,
+							timezone,
 						);
+						if (customTooltipElement) {
+							content.appendChild(customTooltipElement);
+						}
 						overlay.appendChild(content);
 						placement(overlay, anchor, 'right', 'start', { bound });
 					}

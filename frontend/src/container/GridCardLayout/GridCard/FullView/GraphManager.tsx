@@ -4,7 +4,8 @@ import { Button, Input } from 'antd';
 import { CheckboxChangeEvent } from 'antd/es/checkbox';
 import { ResizeTable } from 'components/ResizeTable';
 import { useNotifications } from 'hooks/useNotifications';
-import { memo, useCallback, useState } from 'react';
+import { useDashboard } from 'providers/Dashboard/Dashboard';
+import { memo, useCallback, useEffect, useState } from 'react';
 
 import { getGraphManagerTableColumns } from './TableRender/GraphManagerColumns';
 import { ExtendedChartDataset, GraphManagerProps } from './types';
@@ -28,7 +29,12 @@ function GraphManager({
 		getDefaultTableDataSet(options, data),
 	);
 
+	useEffect(() => {
+		setTableDataSet(getDefaultTableDataSet(options, data));
+	}, [data, options]);
+
 	const { notifications } = useNotifications();
+	const { isDashboardLocked } = useDashboard();
 
 	const checkBoxOnChangeHandler = useCallback(
 		(e: CheckboxChangeEvent, index: number): void => {
@@ -66,6 +72,7 @@ function GraphManager({
 		graphVisibilityState: graphsVisibilityStates,
 		labelClickedHandler,
 		yAxisUnit,
+		isGraphDisabled: isDashboardLocked,
 	});
 
 	const filterHandler = useCallback(

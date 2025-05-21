@@ -30,9 +30,9 @@ var logOperatorsToExpr = map[v3.FilterOperator]string{
 
 func getName(v v3.AttributeKey) string {
 	if v.Type == v3.AttributeKeyTypeTag {
-		return "attributes?." + v.Key
+		return fmt.Sprintf(`attributes["%s"]`, v.Key)
 	} else if v.Type == v3.AttributeKeyTypeResource {
-		return "resource?." + v.Key
+		return fmt.Sprintf(`resource["%s"]`, v.Key)
 	}
 	return v.Key
 }
@@ -54,7 +54,9 @@ func Parse(filters *v3.FilterSet) (string, error) {
 		}
 
 		name := getName(v.Key)
+
 		var filter string
+
 		switch v.Operator {
 		// uncomment following lines when new version of expr is used
 		// case v3.FilterOperatorIn, v3.FilterOperatorNotIn:
@@ -62,8 +64,22 @@ func Parse(filters *v3.FilterSet) (string, error) {
 
 		case v3.FilterOperatorExists, v3.FilterOperatorNotExists:
 			filter = fmt.Sprintf("%s %s %s", exprFormattedValue(v.Key.Key), logOperatorsToExpr[v.Operator], getTypeName(v.Key.Type))
+
 		default:
 			filter = fmt.Sprintf("%s %s %s", name, logOperatorsToExpr[v.Operator], exprFormattedValue(v.Value))
+
+			if v.Operator == v3.FilterOperatorContains || v.Operator == v3.FilterOperatorNotContains {
+				// `contains` and `ncontains` should be case insensitive to match how they work when querying logs.
+				filter = fmt.Sprintf(
+					"lower(%s) %s lower(%s)",
+					name, logOperatorsToExpr[v.Operator], exprFormattedValue(v.Value),
+				)
+			}
+
+			// Avoid running operators on nil values
+			if v.Operator != v3.FilterOperatorEqual && v.Operator != v3.FilterOperatorNotEqual {
+				filter = fmt.Sprintf("%s != nil && %s", name, filter)
+			}
 		}
 
 		// check if the filter is a correct expression language
@@ -113,11 +129,11 @@ func exprFormattedValue(v interface{}) string {
 		case uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, float32, float64, bool:
 			return strings.Join(strings.Fields(fmt.Sprint(x)), ",")
 		default:
-			zap.S().Error("invalid type for formatted value", zap.Any("type", reflect.TypeOf(x[0])))
+			zap.L().Error("invalid type for formatted value", zap.Any("type", reflect.TypeOf(x[0])))
 			return ""
 		}
 	default:
-		zap.S().Error("invalid type for formatted value", zap.Any("type", reflect.TypeOf(x)))
+		zap.L().Error("invalid type for formatted value", zap.Any("type", reflect.TypeOf(x)))
 		return ""
 	}
 }

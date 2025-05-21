@@ -1,20 +1,29 @@
+import './WidgetHeader.styles.scss';
+
 import {
 	AlertOutlined,
+	CloudDownloadOutlined,
 	CopyOutlined,
 	DeleteOutlined,
-	DownOutlined,
 	EditFilled,
-	ExclamationCircleOutlined,
 	FullscreenOutlined,
+	InfoCircleOutlined,
+	MoreOutlined,
+	SearchOutlined,
 	WarningOutlined,
 } from '@ant-design/icons';
-import { Dropdown, MenuProps, Tooltip, Typography } from 'antd';
+import { Dropdown, Input, MenuProps, Tooltip, Typography } from 'antd';
 import Spinner from 'components/Spinner';
 import { QueryParams } from 'constants/query';
 import { PANEL_TYPES } from 'constants/queryBuilder';
-import ROUTES from 'constants/routes';
+import useCreateAlerts from 'hooks/queryBuilder/useCreateAlerts';
 import useComponentPermission from 'hooks/useComponentPermission';
+import useUrlQuery from 'hooks/useUrlQuery';
 import history from 'lib/history';
+import { RowData } from 'lib/query/createTableColumnsFromQuery';
+import { isEmpty } from 'lodash-es';
+import { CircleX, X } from 'lucide-react';
+import { unparse } from 'papaparse';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { UseQueryResult } from 'react-query';
 import { useSelector } from 'react-redux';
@@ -23,23 +32,9 @@ import { ErrorResponse, SuccessResponse } from 'types/api';
 import { Widgets } from 'types/api/dashboard/getAll';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
 import AppReducer from 'types/reducer/app';
-import { popupContainer } from 'utils/selectPopupContainer';
 
-import {
-	errorTooltipPosition,
-	overlayStyles,
-	spinnerStyles,
-	tooltipStyles,
-	WARNING_MESSAGE,
-} from './config';
+import { errorTooltipPosition, WARNING_MESSAGE } from './config';
 import { MENUITEM_KEYS_VS_LABELS, MenuItemKeys } from './contants';
-import {
-	ArrowContainer,
-	HeaderContainer,
-	HeaderContentContainer,
-	ThesholdContainer,
-	WidgetHeaderContainer,
-} from './styles';
 import { MenuItem } from './types';
 import { generateMenuList, isTWidgetOptions } from './utils';
 
@@ -57,6 +52,9 @@ interface IWidgetHeaderProps {
 	threshold?: ReactNode;
 	headerMenuList?: MenuItemKeys[];
 	isWarning: boolean;
+	isFetchingResponse: boolean;
+	tableProcessedDataRef: React.MutableRefObject<RowData[]>;
+	setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
 }
 
 function WidgetHeader({
@@ -71,28 +69,35 @@ function WidgetHeader({
 	threshold,
 	headerMenuList,
 	isWarning,
+	isFetchingResponse,
+	tableProcessedDataRef,
+	setSearchTerm,
 }: IWidgetHeaderProps): JSX.Element | null {
-	const [localHover, setLocalHover] = useState(false);
-	const [isOpen, setIsOpen] = useState<boolean>(false);
-
+	const urlQuery = useUrlQuery();
 	const onEditHandler = useCallback((): void => {
 		const widgetId = widget.id;
-		history.push(
-			`${window.location.pathname}/new?widgetId=${widgetId}&graphType=${
-				widget.panelTypes
-			}&${QueryParams.compositeQuery}=${encodeURIComponent(
-				JSON.stringify(widget.query),
-			)}`,
+		urlQuery.set(QueryParams.widgetId, widgetId);
+		urlQuery.set(QueryParams.graphType, widget.panelTypes);
+		urlQuery.set(
+			QueryParams.compositeQuery,
+			encodeURIComponent(JSON.stringify(widget.query)),
 		);
-	}, [widget.id, widget.panelTypes, widget.query]);
+		const generatedUrl = `${window.location.pathname}/new?${urlQuery}`;
+		history.push(generatedUrl);
+	}, [urlQuery, widget.id, widget.panelTypes, widget.query]);
 
-	const onCreateAlertsHandler = useCallback(() => {
-		history.push(
-			`${ROUTES.ALERTS_NEW}?${QueryParams.compositeQuery}=${encodeURIComponent(
-				JSON.stringify(widget.query),
-			)}`,
-		);
-	}, [widget]);
+	const onCreateAlertsHandler = useCreateAlerts(widget, 'dashboardView');
+
+	const onDownloadHandler = useCallback((): void => {
+		const csv = unparse(tableProcessedDataRef.current);
+		const csvBlob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		const csvUrl = URL.createObjectURL(csvBlob);
+		const downloadLink = document.createElement('a');
+		downloadLink.href = csvUrl;
+		downloadLink.download = `${!isEmpty(title) ? title : 'table-panel'}.csv`;
+		downloadLink.click();
+		downloadLink.remove();
+	}, [tableProcessedDataRef, title]);
 
 	const keyMethodMapping = useMemo(
 		() => ({
@@ -101,8 +106,16 @@ function WidgetHeader({
 			[MenuItemKeys.Delete]: onDelete,
 			[MenuItemKeys.Clone]: onClone,
 			[MenuItemKeys.CreateAlerts]: onCreateAlertsHandler,
+			[MenuItemKeys.Download]: onDownloadHandler,
 		}),
-		[onDelete, onEditHandler, onView, onClone, onCreateAlertsHandler],
+		[
+			onView,
+			onEditHandler,
+			onDelete,
+			onClone,
+			onCreateAlertsHandler,
+			onDownloadHandler,
+		],
 	);
 
 	const onMenuItemSelectHandler: MenuProps['onClick'] = useCallback(
@@ -112,7 +125,6 @@ function WidgetHeader({
 
 				if (functionToCall) {
 					functionToCall();
-					setIsOpen(false);
 				}
 			}
 		},
@@ -149,6 +161,13 @@ function WidgetHeader({
 				disabled: !editWidget,
 			},
 			{
+				key: MenuItemKeys.Download,
+				icon: <CloudDownloadOutlined />,
+				label: MENUITEM_KEYS_VS_LABELS[MenuItemKeys.Download],
+				isVisible: widget.panelTypes === PANEL_TYPES.TABLE,
+				disabled: false,
+			},
+			{
 				key: MenuItemKeys.Delete,
 				icon: <DeleteOutlined />,
 				label: MENUITEM_KEYS_VS_LABELS[MenuItemKeys.Delete],
@@ -164,14 +183,20 @@ function WidgetHeader({
 				disabled: false,
 			},
 		],
-		[headerMenuList, queryResponse.isFetching, editWidget, deleteWidget],
+		[
+			headerMenuList,
+			queryResponse.isFetching,
+			editWidget,
+			deleteWidget,
+			widget.panelTypes,
+		],
 	);
 
 	const updatedMenuList = useMemo(() => generateMenuList(actions), [actions]);
 
-	const onClickHandler = (): void => {
-		setIsOpen(!isOpen);
-	};
+	const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+
+	const globalSearchAvailable = widget.panelTypes === PANEL_TYPES.TABLE;
 
 	const menu = useMemo(
 		() => ({
@@ -186,49 +211,94 @@ function WidgetHeader({
 	}
 
 	return (
-		<WidgetHeaderContainer>
-			<Dropdown
-				getPopupContainer={popupContainer}
-				destroyPopupOnHide
-				open={isOpen}
-				onOpenChange={setIsOpen}
-				menu={menu}
-				trigger={['click']}
-				overlayStyle={overlayStyles}
-			>
-				<HeaderContainer
-					onMouseOver={(): void => setLocalHover(true)}
-					onMouseOut={(): void => setLocalHover(false)}
-					hover={localHover}
-					onClick={onClickHandler}
-				>
-					<HeaderContentContainer>
-						<Typography.Text style={{ maxWidth: '80%' }} ellipsis data-testid={title}>
+		<div className="widget-header-container">
+			{showGlobalSearch ? (
+				<Input
+					addonBefore={<SearchOutlined size={14} />}
+					placeholder="Search..."
+					bordered={false}
+					data-testid="widget-header-search-input"
+					autoFocus
+					addonAfter={
+						<X
+							size={14}
+							onClick={(e): void => {
+								e.stopPropagation();
+								e.preventDefault();
+								setShowGlobalSearch(false);
+							}}
+							className="search-header-icons"
+						/>
+					}
+					key={widget.id}
+					onChange={(e): void => {
+						setSearchTerm(e.target.value || '');
+					}}
+				/>
+			) : (
+				<>
+					<div className="widget-header-title-container">
+						<Typography.Text
+							ellipsis
+							data-testid={title}
+							className="widget-header-title"
+						>
 							{title}
 						</Typography.Text>
-						<ArrowContainer hover={parentHover}>
-							<DownOutlined />
-						</ArrowContainer>
-					</HeaderContentContainer>
-				</HeaderContainer>
-			</Dropdown>
+						{widget.description && (
+							<Tooltip
+								title={widget.description}
+								overlayClassName="long-tooltip"
+								className="info-tooltip"
+								placement="right"
+							>
+								<InfoCircleOutlined />
+							</Tooltip>
+						)}
+					</div>
+					<div className="widget-header-actions">
+						<div className="widget-api-actions">{threshold}</div>
+						{isFetchingResponse && !queryResponse.isError && (
+							<Spinner style={{ paddingRight: '0.25rem' }} />
+						)}
+						{queryResponse.isError && (
+							<Tooltip
+								title={errorMessage}
+								placement={errorTooltipPosition}
+								className="widget-api-actions"
+							>
+								<CircleX size={20} />
+							</Tooltip>
+						)}
 
-			<ThesholdContainer>{threshold}</ThesholdContainer>
-			{queryResponse.isFetching && !queryResponse.isError && (
-				<Spinner height="5vh" style={spinnerStyles} />
+						{isWarning && (
+							<Tooltip
+								title={WARNING_MESSAGE}
+								placement={errorTooltipPosition}
+								className="widget-api-actions"
+							>
+								<WarningOutlined />
+							</Tooltip>
+						)}
+						{globalSearchAvailable && (
+							<SearchOutlined
+								className="search-header-icons"
+								onClick={(): void => setShowGlobalSearch(true)}
+								data-testid="widget-header-search"
+							/>
+						)}
+						<Dropdown menu={menu} trigger={['hover']} placement="bottomRight">
+							<MoreOutlined
+								data-testid="widget-header-options"
+								className={`widget-header-more-options ${
+									parentHover ? 'widget-header-hover' : ''
+								} ${globalSearchAvailable ? 'widget-header-more-options-visible' : ''}`}
+							/>
+						</Dropdown>
+					</div>
+				</>
 			)}
-			{queryResponse.isError && (
-				<Tooltip title={errorMessage} placement={errorTooltipPosition}>
-					<ExclamationCircleOutlined style={tooltipStyles} />
-				</Tooltip>
-			)}
-
-			{isWarning && (
-				<Tooltip title={WARNING_MESSAGE} placement={errorTooltipPosition}>
-					<WarningOutlined style={tooltipStyles} />
-				</Tooltip>
-			)}
-		</WidgetHeaderContainer>
+		</div>
 	);
 }
 

@@ -5,10 +5,14 @@ import {
 	apDexToolTipUrl,
 	apDexToolTipUrlText,
 } from 'constants/apDex';
+import { ENTITY_VERSION_V4 } from 'constants/app';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import Graph from 'container/GridCardLayout/GridCard';
 import DisplayThreshold from 'container/GridCardLayout/WidgetHeader/DisplayThreshold';
-import { GraphTitle } from 'container/MetricsApplication/constant';
+import {
+	GraphTitle,
+	SERVICE_CHART_ID,
+} from 'container/MetricsApplication/constant';
 import { getWidgetQueryBuilder } from 'container/MetricsApplication/MetricsApplication.factory';
 import { apDexMetricsQueryBuilderQueries } from 'container/MetricsApplication/MetricsPageQueries/OverviewQueries';
 import { ReactNode, useMemo } from 'react';
@@ -28,7 +32,8 @@ function ApDexMetrics({
 	topLevelOperationsRoute,
 	handleGraphClick,
 }: ApDexMetricsProps): JSX.Element {
-	const { servicename } = useParams<IServiceName>();
+	const { servicename: encodedServiceName } = useParams<IServiceName>();
+	const servicename = decodeURIComponent(encodedServiceName);
 
 	const apDexMetricsWidget = useMemo(
 		() =>
@@ -59,6 +64,7 @@ function ApDexMetrics({
 					</Space>
 				),
 				panelTypes: PANEL_TYPES.TIME_SERIES,
+				id: SERVICE_CHART_ID.apdex,
 			}),
 		[
 			delta,
@@ -83,13 +89,12 @@ function ApDexMetrics({
 
 	return (
 		<Graph
-			name="apdex"
-			filterNaN
 			widget={apDexMetricsWidget}
 			onDragSelect={onDragSelect}
 			onClickHandler={handleGraphClick('ApDex')}
 			threshold={threshold}
 			isQueryEnabled={isQueryEnabled}
+			version={ENTITY_VERSION_V4}
 		/>
 	);
 }

@@ -1,4 +1,7 @@
 import { Col } from 'antd';
+import logEvent from 'api/common/logEvent';
+import { ENTITY_VERSION_V4 } from 'constants/app';
+import { QueryParams } from 'constants/query';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import Graph from 'container/GridCardLayout/GridCard';
 import {
@@ -12,8 +15,15 @@ import {
 	convertRawQueriesToTraceSelectedTags,
 	resourceAttributesToTagFilterItems,
 } from 'hooks/useResourceAttribute/utils';
-import { useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import useUrlQuery from 'hooks/useUrlQuery';
+import getStep from 'lib/getStep';
+import history from 'lib/history';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDispatch } from 'react-redux';
+import { useLocation, useParams } from 'react-router-dom';
+import store from 'store';
+import { UpdateTimeInterval } from 'store/actions';
+import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import { EQueryType } from 'types/common/dashboard';
 import { v4 as uuid } from 'uuid';
 
@@ -26,13 +36,37 @@ import {
 	handleNonInQueryRange,
 	onGraphClickHandler,
 	onViewTracePopupClick,
+	useGetAPMToTracesQueries,
 } from './util';
 
 function External(): JSX.Element {
 	const [selectedTimeStamp, setSelectedTimeStamp] = useState<number>(0);
 
-	const { servicename } = useParams<IServiceName>();
+	const { servicename: encodedServiceName } = useParams<IServiceName>();
+
+	const servicename = decodeURIComponent(encodedServiceName);
 	const { queries } = useResourceAttribute();
+
+	const urlQuery = useUrlQuery();
+	const { pathname } = useLocation();
+	const dispatch = useDispatch();
+
+	const onDragSelect = useCallback(
+		(start: number, end: number) => {
+			const startTimestamp = Math.trunc(start);
+			const endTimestamp = Math.trunc(end);
+
+			urlQuery.set(QueryParams.startTime, startTimestamp.toString());
+			urlQuery.set(QueryParams.endTime, endTimestamp.toString());
+			const generatedUrl = `${pathname}?${urlQuery.toString()}`;
+			history.push(generatedUrl);
+
+			if (startTimestamp !== endTimestamp) {
+				dispatch(UpdateTimeInterval('custom', [startTimestamp, endTimestamp]));
+			}
+		},
+		[dispatch, pathname, urlQuery],
+	);
 
 	const tagFilterItems = useMemo(
 		() =>
@@ -57,6 +91,7 @@ function External(): JSX.Element {
 				title: GraphTitle.EXTERNAL_CALL_ERROR_PERCENTAGE,
 				panelTypes: PANEL_TYPES.TIME_SERIES,
 				yAxisUnit: '%',
+				id: GraphTitle.EXTERNAL_CALL_ERROR_PERCENTAGE,
 			}),
 		[servicename, tagFilterItems],
 	);
@@ -82,9 +117,57 @@ function External(): JSX.Element {
 				title: GraphTitle.EXTERNAL_CALL_DURATION,
 				panelTypes: PANEL_TYPES.TIME_SERIES,
 				yAxisUnit: 'ms',
+				id: GraphTitle.EXTERNAL_CALL_DURATION,
+				fillSpans: true,
 			}),
 		[servicename, tagFilterItems],
 	);
+
+	const errorApmToTraceQuery = useGetAPMToTracesQueries({
+		servicename,
+		isExternalCall: true,
+		filters: [
+			{
+				id: uuid().slice(0, 8),
+				key: {
+					key: 'hasError',
+					dataType: DataTypes.bool,
+					type: 'tag',
+					isColumn: true,
+					isJSON: false,
+					id: 'hasError--bool--tag--true',
+				},
+				op: 'in',
+				value: ['true'],
+			},
+		],
+	});
+
+	const stepInterval = useMemo(
+		() =>
+			getStep({
+				end: store.getState().globalTime.maxTime,
+				inputFormat: 'ns',
+				start: store.getState().globalTime.minTime,
+			}),
+		[],
+	);
+	const logEventCalledRef = useRef(false);
+	useEffect(() => {
+		if (!logEventCalledRef.current) {
+			const selectedEnvironments = queries.find(
+				(val) => val.tagKey === 'resource_deployment_environment',
+			)?.tagValue;
+
+			logEvent('APM: Service detail page visited', {
+				selectedEnvironments,
+				resourceAttributeUsed: !!queries?.length,
+				section: 'externalMetrics',
+			});
+			logEventCalledRef.current = true;
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const externalCallRPSWidget = useMemo(
 		() =>
@@ -103,6 +186,8 @@ function External(): JSX.Element {
 				title: GraphTitle.EXTERNAL_CALL_RPS_BY_ADDRESS,
 				panelTypes: PANEL_TYPES.TIME_SERIES,
 				yAxisUnit: 'reqps',
+				id: GraphTitle.EXTERNAL_CALL_RPS_BY_ADDRESS,
+				fillSpans: true,
 			}),
 		[servicename, tagFilterItems],
 	);
@@ -124,9 +209,16 @@ function External(): JSX.Element {
 				title: GraphTitle.EXTERNAL_CALL_DURATION_BY_ADDRESS,
 				panelTypes: PANEL_TYPES.TIME_SERIES,
 				yAxisUnit: 'ms',
+				id: GraphTitle.EXTERNAL_CALL_DURATION_BY_ADDRESS,
+				fillSpans: true,
 			}),
 		[servicename, tagFilterItems],
 	);
+
+	const apmToTraceQuery = useGetAPMToTracesQueries({
+		servicename,
+		isExternalCall: true,
+	});
 
 	return (
 		<>
@@ -140,7 +232,8 @@ function External(): JSX.Element {
 							servicename,
 							selectedTraceTags,
 							timestamp: selectedTimeStamp,
-							isExternalCall: true,
+							apmToTraceQuery: errorApmToTraceQuery,
+							stepInterval,
 						})}
 					>
 						View Traces
@@ -148,9 +241,7 @@ function External(): JSX.Element {
 					<Card data-testid="external_call_error_percentage">
 						<GraphContainer>
 							<Graph
-								filterNaN
 								headerMenuList={MENU_ITEMS}
-								name="external_call_error_percentage"
 								widget={externalCallErrorWidget}
 								onClickHandler={(xValue, yValue, mouseX, mouseY): void => {
 									onGraphClickHandler(setSelectedTimeStamp)(
@@ -161,6 +252,8 @@ function External(): JSX.Element {
 										'external_call_error_percentage',
 									);
 								}}
+								onDragSelect={onDragSelect}
+								version={ENTITY_VERSION_V4}
 							/>
 						</GraphContainer>
 					</Card>
@@ -175,7 +268,8 @@ function External(): JSX.Element {
 							servicename,
 							selectedTraceTags,
 							timestamp: selectedTimeStamp,
-							isExternalCall: true,
+							apmToTraceQuery,
+							stepInterval,
 						})}
 					>
 						View Traces
@@ -184,8 +278,6 @@ function External(): JSX.Element {
 					<Card data-testid="external_call_duration">
 						<GraphContainer>
 							<Graph
-								filterNaN
-								name="external_call_duration"
 								headerMenuList={MENU_ITEMS}
 								widget={externalCallDurationWidget}
 								onClickHandler={(xValue, yValue, mouseX, mouseY): void => {
@@ -197,6 +289,8 @@ function External(): JSX.Element {
 										'external_call_duration',
 									);
 								}}
+								onDragSelect={onDragSelect}
+								version={ENTITY_VERSION_V4}
 							/>
 						</GraphContainer>
 					</Card>
@@ -213,7 +307,8 @@ function External(): JSX.Element {
 							servicename,
 							selectedTraceTags,
 							timestamp: selectedTimeStamp,
-							isExternalCall: true,
+							apmToTraceQuery,
+							stepInterval,
 						})}
 					>
 						View Traces
@@ -221,8 +316,6 @@ function External(): JSX.Element {
 					<Card data-testid="external_call_rps_by_address">
 						<GraphContainer>
 							<Graph
-								filterNaN
-								name="external_call_rps_by_address"
 								widget={externalCallRPSWidget}
 								headerMenuList={MENU_ITEMS}
 								onClickHandler={(xValue, yValue, mouseX, mouseY): Promise<void> =>
@@ -234,6 +327,8 @@ function External(): JSX.Element {
 										'external_call_rps_by_address',
 									)
 								}
+								onDragSelect={onDragSelect}
+								version={ENTITY_VERSION_V4}
 							/>
 						</GraphContainer>
 					</Card>
@@ -248,7 +343,8 @@ function External(): JSX.Element {
 							servicename,
 							selectedTraceTags,
 							timestamp: selectedTimeStamp,
-							isExternalCall: true,
+							apmToTraceQuery,
+							stepInterval,
 						})}
 					>
 						View Traces
@@ -257,10 +353,8 @@ function External(): JSX.Element {
 					<Card data-testid="external_call_duration_by_address">
 						<GraphContainer>
 							<Graph
-								name="external_call_duration_by_address"
 								widget={externalCallDurationAddressWidget}
 								headerMenuList={MENU_ITEMS}
-								filterNaN
 								onClickHandler={(xValue, yValue, mouseX, mouseY): void => {
 									onGraphClickHandler(setSelectedTimeStamp)(
 										xValue,
@@ -270,6 +364,8 @@ function External(): JSX.Element {
 										'external_call_duration_by_address',
 									);
 								}}
+								onDragSelect={onDragSelect}
+								version={ENTITY_VERSION_V4}
 							/>
 						</GraphContainer>
 					</Card>

@@ -5,11 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/SigNoz/signoz/pkg/query-service/model"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
-	"go.signoz.io/signoz/pkg/query-service/agentConf/sqlite"
-	"go.signoz.io/signoz/pkg/query-service/model"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 )
@@ -17,15 +16,6 @@ import (
 // Repo handles DDL and DML ops on ingestion rules
 type Repo struct {
 	db *sqlx.DB
-}
-
-func (r *Repo) initDB(engine string) error {
-	switch engine {
-	case "sqlite3", "sqlite":
-		return sqlite.InitDB(r.db)
-	default:
-		return fmt.Errorf("unsupported db")
-	}
 }
 
 func (r *Repo) GetConfigHistory(
@@ -38,7 +28,7 @@ func (r *Repo) GetConfigHistory(
 		element_type, 
 		COALESCE(created_by, -1) as created_by, 
 		created_at,
-		COALESCE((SELECT NAME FROM users 
+		COALESCE((SELECT display_name FROM users 
  		WHERE id = v.created_by), "unknown") created_by_name, 
 		active, 
 		is_valid, 
@@ -77,7 +67,7 @@ func (r *Repo) GetConfigVersion(
 		element_type,
 		COALESCE(created_by, -1) as created_by, 
 		created_at,
-		COALESCE((SELECT NAME FROM users 
+		COALESCE((SELECT display_name FROM users 
 		WHERE id = v.created_by), "unknown") created_by_name,
 		active, 
 		is_valid, 
@@ -110,7 +100,7 @@ func (r *Repo) GetLatestVersion(
 		element_type, 
 		COALESCE(created_by, -1) as created_by, 
 		created_at,
-		COALESCE((SELECT NAME FROM users 
+		COALESCE((SELECT display_name FROM users 
  		WHERE id = v.created_by), "unknown") created_by_name, 
 		active, 
 		is_valid, 
@@ -176,8 +166,8 @@ func (r *Repo) insertConfig(
 	defer func() {
 		if fnerr != nil {
 			// remove all the damage (invalid rows from db)
-			r.db.Exec("DELETE FROM agent_config_versions WHERE id = $1", c.ID)
-			r.db.Exec("DELETE FROM agent_config_elements WHERE version_id=$1", c.ID)
+			_, _ = r.db.Exec("DELETE FROM agent_config_versions WHERE id = $1", c.ID)
+			_, _ = r.db.Exec("DELETE FROM agent_config_elements WHERE version_id=$1", c.ID)
 		}
 	}()
 

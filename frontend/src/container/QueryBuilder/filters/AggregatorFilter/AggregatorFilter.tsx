@@ -35,6 +35,8 @@ export const AggregatorFilter = memo(function AggregatorFilter({
 	query,
 	disabled,
 	onChange,
+	defaultValue,
+	onSelect,
 }: AgregatorFilterProps): JSX.Element {
 	const queryClient = useQueryClient();
 	const [optionsData, setOptionsData] = useState<ExtendedSelectOption[]>([]);
@@ -81,8 +83,10 @@ export const AggregatorFilter = memo(function AggregatorFilter({
 										prefix: item.type || '',
 										condition: !item.isColumn,
 									}),
+									!item.isColumn && item.type ? item.type : '',
 								)}
 								dataType={item.dataType}
+								type={item.type || ''}
 							/>
 						),
 						value: `${item.key}${selectValueDivider}${createIdFromObjectFields(
@@ -181,12 +185,36 @@ export const AggregatorFilter = memo(function AggregatorFilter({
 		[getAttributesData, handleChangeCustomValue, onChange],
 	);
 
+	const handleSelect = useCallback(
+		(_: string, option: ExtendedSelectOption | ExtendedSelectOption[]): void => {
+			const currentOption = option as ExtendedSelectOption;
+
+			const aggregateAttributes = getAttributesData();
+
+			if (currentOption.key) {
+				const attribute = aggregateAttributes.find(
+					(item) => item.id === currentOption.key,
+				);
+
+				if (attribute && onSelect) {
+					onSelect(attribute);
+				}
+			}
+
+			setSearchText('');
+		},
+		[getAttributesData, onSelect],
+	);
+
 	const value = removePrefix(
 		transformStringWithPrefix({
 			str: query.aggregateAttribute.key,
 			prefix: query.aggregateAttribute.type || '',
 			condition: !query.aggregateAttribute.isColumn,
 		}),
+		!query.aggregateAttribute.isColumn && query.aggregateAttribute.type
+			? query.aggregateAttribute.type
+			: '',
 	);
 
 	return (
@@ -198,10 +226,11 @@ export const AggregatorFilter = memo(function AggregatorFilter({
 			onSearch={handleSearchText}
 			notFoundContent={isFetching ? <Spin size="small" /> : null}
 			options={optionsData}
-			value={value}
+			value={defaultValue || value}
 			onBlur={handleBlur}
 			onChange={handleChange}
 			disabled={disabled}
+			onSelect={handleSelect}
 		/>
 	);
 });

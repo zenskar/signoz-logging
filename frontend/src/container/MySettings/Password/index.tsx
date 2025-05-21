@@ -1,13 +1,12 @@
 import { Button, Card, Space, Typography } from 'antd';
-import changeMyPassword from 'api/user/changeMyPassword';
+import changeMyPassword from 'api/v1/factor_password/changeMyPassword';
 import { useNotifications } from 'hooks/useNotifications';
 import { Save } from 'lucide-react';
 import { isPasswordNotValidMessage, isPasswordValid } from 'pages/SignUp/utils';
+import { useAppContext } from 'providers/App/App';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
-import { AppState } from 'store/reducers';
-import AppReducer from 'types/reducer/app';
+import APIError from 'types/api/error';
 
 import { Password } from '../styles';
 
@@ -15,7 +14,7 @@ function PasswordContainer(): JSX.Element {
 	const [currentPassword, setCurrentPassword] = useState<string>('');
 	const [updatePassword, setUpdatePassword] = useState<string>('');
 	const { t } = useTranslation(['routes', 'settings', 'common']);
-	const { user } = useSelector<AppState, AppReducer>((state) => state.app);
+	const { user } = useAppContext();
 	const [isLoading, setIsLoading] = useState<boolean>(false);
 	const [isPasswordPolicyError, setIsPasswordPolicyError] = useState<boolean>(
 		false,
@@ -46,36 +45,22 @@ function PasswordContainer(): JSX.Element {
 				setIsLoading(false);
 				return;
 			}
-
-			const { statusCode, error } = await changeMyPassword({
+			await changeMyPassword({
 				newPassword: updatePassword,
 				oldPassword: currentPassword,
-				userId: user.userId,
+				userId: user.id,
 			});
-
-			if (statusCode === 200) {
-				notifications.success({
-					message: t('success', {
-						ns: 'common',
-					}),
-				});
-			} else {
-				notifications.error({
-					message:
-						error ||
-						t('something_went_wrong', {
-							ns: 'common',
-						}),
-				});
-			}
+			notifications.success({
+				message: t('success', {
+					ns: 'common',
+				}),
+			});
 			setIsLoading(false);
 		} catch (error) {
 			setIsLoading(false);
-
 			notifications.error({
-				message: t('something_went_wrong', {
-					ns: 'common',
-				}),
+				message: (error as APIError).error.error.code,
+				description: (error as APIError).error.error.message,
 			});
 		}
 	};

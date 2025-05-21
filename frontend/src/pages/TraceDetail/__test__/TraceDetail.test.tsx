@@ -25,6 +25,20 @@ jest.mock('container/TraceFlameGraph/index.tsx', () => ({
 	default: (): JSX.Element => <div>TraceFlameGraph</div>,
 }));
 
+jest.mock('uplot', () => {
+	const paths = {
+		spline: jest.fn(),
+		bars: jest.fn(),
+	};
+	const uplotMock = jest.fn(() => ({
+		paths,
+	}));
+	return {
+		paths,
+		default: uplotMock,
+	};
+});
+
 describe('TraceDetail', () => {
 	it('should render tracedetail', async () => {
 		const { findByText, getByText, getAllByText, getByPlaceholderText } = render(
@@ -139,9 +153,7 @@ describe('TraceDetail', () => {
 		const slider = await findByTestId('span-details-sider');
 		expect(slider).toBeInTheDocument();
 
-		fireEvent.click(
-			slider.querySelector('.ant-layout-sider-trigger') as HTMLElement,
-		);
+		fireEvent.click(slider.querySelector('.expand-collapse-btn') as HTMLElement);
 
 		expect(queryByText('Details for selected Span')).not.toBeInTheDocument();
 	});

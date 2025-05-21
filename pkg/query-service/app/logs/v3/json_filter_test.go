@@ -3,8 +3,8 @@ package v3
 import (
 	"testing"
 
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 	. "github.com/smartystreets/goconvey/convey"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
 )
 
 var testGetJSONFilterKeyData = []struct {
@@ -140,7 +140,7 @@ var testGetJSONFilterKeyData = []struct {
 func TestGetJSONFilterKey(t *testing.T) {
 	for _, tt := range testGetJSONFilterKeyData {
 		Convey("testgetKey", t, func() {
-			columnName, err := getJSONFilterKey(tt.Key, tt.Operator, tt.IsArray)
+			columnName, err := GetJSONFilterKey(tt.Key, tt.Operator, tt.IsArray)
 			if tt.Error {
 				So(err, ShouldNotBeNil)
 			} else {

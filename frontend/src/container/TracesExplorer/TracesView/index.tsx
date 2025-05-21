@@ -1,6 +1,7 @@
 import { Typography } from 'antd';
+import logEvent from 'api/common/logEvent';
 import { ResizeTable } from 'components/ResizeTable';
-import { DEFAULT_ENTITY_VERSION } from 'constants/app';
+import { ENTITY_VERSION_V4 } from 'constants/app';
 import { QueryParams } from 'constants/query';
 import { initialQueriesMap, PANEL_TYPES } from 'constants/queryBuilder';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
@@ -10,7 +11,7 @@ import { useGetQueryRange } from 'hooks/queryBuilder/useGetQueryRange';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { Pagination } from 'hooks/queryPagination';
 import useUrlQueryData from 'hooks/useUrlQueryData';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { AppState } from 'store/reducers';
 import { DataSource } from 'types/common/queryBuilder';
@@ -51,7 +52,7 @@ function TracesView({ isFilterApplied }: TracesViewProps): JSX.Element {
 				pagination: paginationQueryData,
 			},
 		},
-		DEFAULT_ENTITY_VERSION,
+		ENTITY_VERSION_V4,
 		{
 			queryKey: [
 				REACT_QUERY_KEY.GET_QUERY_RANGE,
@@ -71,6 +72,14 @@ function TracesView({ isFilterApplied }: TracesViewProps): JSX.Element {
 		() => responseData?.map((listItem) => listItem.data),
 		[responseData],
 	);
+
+	useEffect(() => {
+		if (!isLoading && !isFetching && !isError && (tableData || []).length !== 0) {
+			logEvent('Traces Explorer: Data present', {
+				panelType: 'TRACE',
+			});
+		}
+	}, [isLoading, isFetching, isError, panelType, tableData]);
 
 	return (
 		<Container>

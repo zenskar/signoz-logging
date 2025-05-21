@@ -1,18 +1,20 @@
 import { Button, Form, Input, Space, Tooltip, Typography } from 'antd';
-import getUserVersion from 'api/user/getVersion';
-import loginApi from 'api/user/login';
-import loginPrecheckApi from 'api/user/loginPrecheck';
+import getLocalStorageApi from 'api/browser/localstorage/get';
+import setLocalStorageApi from 'api/browser/localstorage/set';
+import loginApi from 'api/v1/login/login';
+import loginPrecheckApi from 'api/v1/login/loginPrecheck';
+import getUserVersion from 'api/v1/version/getVersion';
 import afterLogin from 'AppRoutes/utils';
+import { LOCALSTORAGE } from 'constants/localStorage';
 import ROUTES from 'constants/routes';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
+import { useAppContext } from 'providers/App/App';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from 'react-query';
-import { useSelector } from 'react-redux';
-import { AppState } from 'store/reducers';
+import APIError from 'types/api/error';
 import { PayloadProps as PrecheckResultType } from 'types/api/user/loginPrecheck';
-import AppReducer from 'types/reducer/app';
 
 import { FormContainer, FormWrapper, Label, ParentContainer } from './styles';
 
@@ -37,7 +39,7 @@ function Login({
 }: LoginProps): JSX.Element {
 	const { t } = useTranslation(['login']);
 	const [isLoading, setIsLoading] = useState<boolean>(false);
-	const { user } = useSelector<AppState, AppReducer>((state) => state.app);
+	const { user } = useAppContext();
 
 	const [precheckResult, setPrecheckResult] = useState<PrecheckResultType>({
 		sso: false,
@@ -85,7 +87,15 @@ function Login({
 				setIsLoading(true);
 				await afterLogin(userId, jwt, refreshjwt);
 				setIsLoading(false);
-				history.push(ROUTES.APPLICATION);
+				const fromPathname = getLocalStorageApi(
+					LOCALSTORAGE.UNAUTHENTICATED_ROUTE_HIT,
+				);
+				if (fromPathname) {
+					history.push(fromPathname);
+					setLocalStorageApi(LOCALSTORAGE.UNAUTHENTICATED_ROUTE_HIT, '');
+				} else {
+					history.push(ROUTES.APPLICATION);
+				}
 			}
 		}
 		processJwt();
@@ -157,31 +167,18 @@ function Login({
 				email,
 				password,
 			});
-			if (response.statusCode === 200) {
-				await afterLogin(
-					response.payload.userId,
-					response.payload.accessJwt,
-					response.payload.refreshJwt,
-				);
-				if (history?.location?.state) {
-					const historyState = history?.location?.state as any;
 
-					if (historyState?.from) {
-						history.push(historyState?.from);
-					} else {
-						history.push(ROUTES.APPLICATION);
-					}
-				}
-			} else {
-				notifications.error({
-					message: response.error || t('unexpected_error'),
-				});
-			}
+			afterLogin(
+				response.data.userId,
+				response.data.accessJwt,
+				response.data.refreshJwt,
+			);
 			setIsLoading(false);
 		} catch (error) {
 			setIsLoading(false);
 			notifications.error({
-				message: t('unexpected_error'),
+				message: (error as APIError).getErrorCode(),
+				description: (error as APIError).getErrorMessage(),
 			});
 		}
 	};

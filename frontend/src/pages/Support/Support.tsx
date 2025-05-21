@@ -5,8 +5,6 @@ import updateCreditCardApi from 'api/billing/checkout';
 import logEvent from 'api/common/logEvent';
 import { SOMETHING_WENT_WRONG } from 'constants/api';
 import { FeatureKeys } from 'constants/features';
-import useFeatureFlags from 'hooks/useFeatureFlag';
-import useLicense from 'hooks/useLicense';
 import { useNotifications } from 'hooks/useNotifications';
 import {
 	Book,
@@ -16,12 +14,12 @@ import {
 	Slack,
 	X,
 } from 'lucide-react';
+import { useAppContext } from 'providers/App/App';
 import { useEffect, useState } from 'react';
 import { useMutation } from 'react-query';
 import { useHistory, useLocation } from 'react-router-dom';
 import { ErrorResponse, SuccessResponse } from 'types/api';
 import { CheckoutSuccessPayloadProps } from 'types/api/billing/checkout';
-import { License } from 'types/api/licenses/def';
 
 const { Title, Text } = Typography;
 
@@ -81,8 +79,7 @@ const supportChannels = [
 export default function Support(): JSX.Element {
 	const history = useHistory();
 	const { notifications } = useNotifications();
-	const { data: licenseData, isFetching } = useLicense();
-	const [activeLicense, setActiveLicense] = useState<License | null>(null);
+	const { trialInfo, featureFlags } = useAppContext();
 	const [isAddCreditCardModalOpen, setIsAddCreditCardModalOpen] = useState(
 		false,
 	);
@@ -105,20 +102,11 @@ export default function Support(): JSX.Element {
 	}, []);
 
 	const isPremiumChatSupportEnabled =
-		useFeatureFlags(FeatureKeys.PREMIUM_SUPPORT)?.active || false;
+		featureFlags?.find((flag) => flag.name === FeatureKeys.PREMIUM_SUPPORT)
+			?.active || false;
 
 	const showAddCreditCardModal =
-		!isPremiumChatSupportEnabled &&
-		!licenseData?.payload?.trialConvertedToSubscription;
-
-	useEffect(() => {
-		const activeValidLicense =
-			licenseData?.payload?.licenses?.find(
-				(license) => license.isCurrent === true,
-			) || null;
-
-		setActiveLicense(activeValidLicense);
-	}, [licenseData, isFetching]);
+		!isPremiumChatSupportEnabled && !trialInfo?.trialConvertedToSubscription;
 
 	const handleBillingOnSuccess = (
 		data: ErrorResponse | SuccessResponse<CheckoutSuccessPayloadProps, unknown>,
@@ -155,9 +143,7 @@ export default function Support(): JSX.Element {
 		});
 
 		updateCreditCard({
-			licenseKey: activeLicense?.key || '',
-			successURL: window.location.href,
-			cancelURL: window.location.href,
+			url: window.location.origin,
 		});
 	};
 

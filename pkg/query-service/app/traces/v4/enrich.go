@@ -1,9 +1,9 @@
 package v4
 
 import (
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	"go.signoz.io/signoz/pkg/query-service/utils"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/utils"
 )
 
 // if the field is timestamp/id/value we don't need to enrich
@@ -34,8 +34,8 @@ func enrichKeyWithMetadata(key v3.AttributeKey, keys map[string]v3.AttributeKey)
 		return v
 	}
 
-	for _, key := range utils.GenerateEnrichmentKeys(key) {
-		if val, ok := keys[key]; ok {
+	for _, tkey := range utils.GenerateEnrichmentKeys(key) {
+		if val, ok := keys[tkey]; ok {
 			return val
 		}
 	}

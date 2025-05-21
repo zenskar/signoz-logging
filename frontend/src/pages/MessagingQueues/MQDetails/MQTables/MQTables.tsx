@@ -3,6 +3,11 @@
 import './MQTables.styles.scss';
 
 import { Skeleton, Table, Typography } from 'antd';
+import logEvent from 'api/common/logEvent';
+import {
+	MessagingQueueServicePayload,
+	MessagingQueuesPayloadProps,
+} from 'api/messagingQueues/getConsumerLagDetails';
 import axios from 'axios';
 import { isNumber } from 'chart.js/helpers';
 import cx from 'classnames';
@@ -19,19 +24,17 @@ import {
 	MessagingQueueServiceDetailType,
 	MessagingQueuesViewType,
 	MessagingQueuesViewTypeOptions,
+	ProducerLatencyOptions,
 	RowData,
 	SelectedTimelineQuery,
 	setConfigDetail,
 } from 'pages/MessagingQueues/MessagingQueuesUtils';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation } from 'react-query';
 import { useHistory, useLocation } from 'react-router-dom';
 import { ErrorResponse, SuccessResponse } from 'types/api';
 
-import {
-	MessagingQueueServicePayload,
-	MessagingQueuesPayloadProps,
-} from './getConsumerLagDetails';
+import { getTableDataForProducerLatencyOverview } from './MQTableUtils';
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -39,16 +42,24 @@ const INITIAL_PAGE_SIZE = 10;
 export function getColumns(
 	data: MessagingQueuesPayloadProps['payload'],
 	history: History<unknown>,
+	isProducerOverview?: boolean,
 ): RowData[] {
 	if (data?.result?.length === 0) {
 		return [];
 	}
 
+	const mergedColumns = isProducerOverview
+		? [
+				...(data?.result?.[0]?.table?.columns || []),
+				{ name: 'byte_rate', queryName: 'byte_rate' },
+		  ]
+		: data?.result?.[0]?.table?.columns;
+
 	const columns: {
 		title: string;
 		dataIndex: string;
 		key: string;
-	}[] = data?.result?.[0]?.table?.columns.map((column) => ({
+	}[] = mergedColumns.map((column) => ({
 		title: convertToTitleCase(column.name),
 		dataIndex: column.name,
 		key: column.name,
@@ -58,6 +69,8 @@ export function getColumns(
 			'throughput',
 			'avg_msg_size',
 			'error_percentage',
+			'ingestion_rate',
+			'byte_rate',
 		].includes(column.name)
 			? (value: number | string): string => {
 					if (!isNumber(value)) return value.toString();
@@ -119,6 +132,7 @@ function MessagingQueuesTable({
 	tableApi,
 	validConfigPresent = false,
 	type = 'Detail',
+	option = ProducerLatencyOptions.Producers,
 }: {
 	currentTab?: MessagingQueueServiceDetailType;
 	selectedView: MessagingQueuesViewTypeOptions;
@@ -130,6 +144,7 @@ function MessagingQueuesTable({
 	>;
 	validConfigPresent?: boolean;
 	type?: 'Detail' | 'Overview';
+	option?: ProducerLatencyOptions;
 }): JSX.Element {
 	const [columns, setColumns] = useState<any[]>([]);
 	const [tableData, setTableData] = useState<any[]>([]);
@@ -172,13 +187,25 @@ function MessagingQueuesTable({
 		});
 	};
 
+	const isProducerOverview = useMemo(
+		() =>
+			type === 'Overview' &&
+			selectedView === MessagingQueuesViewType.producerLatency.value &&
+			tableApiPayload?.detailType === 'producer',
+		[type, selectedView, tableApiPayload],
+	);
+
 	const { mutate: getViewDetails, isLoading, error, isError } = useMutation(
 		tableApi,
 		{
 			onSuccess: (data) => {
 				if (data.payload) {
-					setColumns(getColumns(data?.payload, history));
-					setTableData(getTableData(data?.payload));
+					setColumns(getColumns(data?.payload, history, isProducerOverview));
+					setTableData(
+						isProducerOverview
+							? getTableDataForProducerLatencyOverview(data?.payload)
+							: getTableData(data?.payload),
+					);
 				}
 			},
 			onError: handleConsumerDetailsOnError,
@@ -199,15 +226,29 @@ function MessagingQueuesTable({
 	const [, setSelectedRows] = useState<any>();
 	const location = useLocation();
 
-	const onRowClick = (record: { [key: string]: string }): void => {
-		const selectedKey = record.key;
+	const selectedRowKeyGenerator = (record: {
+		[key: string]: string;
+	}): React.Key => {
+		if (!isEmpty(tableApiPayload?.detailType)) {
+			return `${record.key}_${selectedView}_${tableApiPayload?.detailType}`;
+		}
+		return `${record.key}_${selectedView}`;
+	};
 
-		if (`${selectedKey}_${selectedView}` === selectedRowKey) {
+	useEffect(() => {
+		if (isEmpty(configDetailQueryData)) {
+			setSelectedRowKey(undefined);
+			setSelectedRows({});
+		}
+	}, [configDetailQueryData]);
+
+	const onRowClick = (record: { [key: string]: string }): void => {
+		if (selectedRowKeyGenerator(record) === selectedRowKey) {
 			setSelectedRowKey(undefined);
 			setSelectedRows({});
 			setConfigDetail(urlQuery, location, history, {});
 		} else {
-			setSelectedRowKey(`${selectedKey}_${selectedView}`);
+			setSelectedRowKey(selectedRowKeyGenerator(record));
 			setSelectedRows(record);
 
 			if (!isEmpty(record)) {
@@ -224,6 +265,43 @@ function MessagingQueuesTable({
 			: `${configDetailQueryData?.service_name || ''} ${
 					configDetailQueryData?.topic || ''
 			  } ${configDetailQueryData?.partition || ''}`;
+
+	const prevTableDataRef = useRef<string>();
+
+	useEffect(() => {
+		if (tableData.length > 0 && type === 'Overview') {
+			const currentTableData = JSON.stringify(tableData);
+
+			if (currentTableData !== prevTableDataRef.current) {
+				logEvent(`MQ Kafka: ${MessagingQueuesViewType[selectedView].label}`, {
+					dataRender: tableData.length,
+				});
+				prevTableDataRef.current = currentTableData;
+			}
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [option, JSON.stringify(tableData), selectedView]);
+
+	useEffect(() => {
+		if (tableData.length > 0 && type === 'Detail') {
+			const currentTableData = JSON.stringify(tableData);
+
+			if (currentTableData !== prevTableDataRef.current) {
+				logEvent(
+					`MQ Kafka: ${MessagingQueuesViewType[selectedView].label} - details`,
+					{
+						dataRender: tableData.length,
+						activeTab: currentTab,
+						topic: configDetailQueryData?.topic,
+						partition: configDetailQueryData?.partition,
+						serviceName: configDetailQueryData?.service_name,
+					},
+				);
+				prevTableDataRef.current = currentTableData;
+			}
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [currentTab, JSON.stringify(tableData), selectedView]);
 
 	return (
 		<div className="mq-tables-container">
@@ -267,7 +345,7 @@ function MessagingQueuesTable({
 								: {}
 						}
 						rowClassName={(record): any =>
-							`${record.key}_${selectedView}` === selectedRowKey
+							selectedRowKeyGenerator(record) === selectedRowKey
 								? 'ant-table-row-selected'
 								: ''
 						}

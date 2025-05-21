@@ -6,22 +6,21 @@ import (
 	"sync"
 	"time"
 
-	logsV3 "go.signoz.io/signoz/pkg/query-service/app/logs/v3"
-	logsV4 "go.signoz.io/signoz/pkg/query-service/app/logs/v4"
-	metricsV3 "go.signoz.io/signoz/pkg/query-service/app/metrics/v3"
-	"go.signoz.io/signoz/pkg/query-service/app/queryBuilder"
-	tracesV3 "go.signoz.io/signoz/pkg/query-service/app/traces/v3"
-	tracesV4 "go.signoz.io/signoz/pkg/query-service/app/traces/v4"
-	"go.signoz.io/signoz/pkg/query-service/common"
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	chErrors "go.signoz.io/signoz/pkg/query-service/errors"
-	"go.signoz.io/signoz/pkg/query-service/querycache"
-	"go.signoz.io/signoz/pkg/query-service/utils"
+	logsV4 "github.com/SigNoz/signoz/pkg/query-service/app/logs/v4"
+	metricsV3 "github.com/SigNoz/signoz/pkg/query-service/app/metrics/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/app/queryBuilder"
+	tracesV4 "github.com/SigNoz/signoz/pkg/query-service/app/traces/v4"
+	"github.com/SigNoz/signoz/pkg/query-service/common"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	chErrors "github.com/SigNoz/signoz/pkg/query-service/errors"
+	"github.com/SigNoz/signoz/pkg/query-service/querycache"
+	"github.com/SigNoz/signoz/pkg/query-service/utils"
+	"github.com/SigNoz/signoz/pkg/valuer"
 
-	"go.signoz.io/signoz/pkg/query-service/cache"
-	"go.signoz.io/signoz/pkg/query-service/interfaces"
-	"go.signoz.io/signoz/pkg/query-service/model"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/cache"
+	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
+	"github.com/SigNoz/signoz/pkg/query-service/model"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 )
@@ -42,8 +41,7 @@ type querier struct {
 
 	fluxInterval time.Duration
 
-	builder       *queryBuilder.QueryBuilder
-	featureLookUp interfaces.FeatureLookup
+	builder *queryBuilder.QueryBuilder
 
 	// used for testing
 	// TODO(srikanthccv): remove this once we have a proper mock
@@ -53,35 +51,23 @@ type querier struct {
 	timeRanges     [][]int
 	returnedSeries []*v3.Series
 	returnedErr    error
-
-	UseLogsNewSchema  bool
-	UseTraceNewSchema bool
 }
 
 type QuerierOptions struct {
-	Reader        interfaces.Reader
-	Cache         cache.Cache
-	KeyGenerator  cache.KeyGenerator
-	FluxInterval  time.Duration
-	FeatureLookup interfaces.FeatureLookup
+	Reader       interfaces.Reader
+	Cache        cache.Cache
+	KeyGenerator cache.KeyGenerator
+	FluxInterval time.Duration
 
 	// used for testing
-	TestingMode       bool
-	ReturnedSeries    []*v3.Series
-	ReturnedErr       error
-	UseLogsNewSchema  bool
-	UseTraceNewSchema bool
+	TestingMode    bool
+	ReturnedSeries []*v3.Series
+	ReturnedErr    error
 }
 
 func NewQuerier(opts QuerierOptions) interfaces.Querier {
-	logsQueryBuilder := logsV3.PrepareLogsQuery
-	if opts.UseLogsNewSchema {
-		logsQueryBuilder = logsV4.PrepareLogsQuery
-	}
-	tracesQueryBuilder := tracesV3.PrepareTracesQuery
-	if opts.UseTraceNewSchema {
-		tracesQueryBuilder = tracesV4.PrepareTracesQuery
-	}
+	logsQueryBuilder := logsV4.PrepareLogsQuery
+	tracesQueryBuilder := tracesV4.PrepareTracesQuery
 
 	qc := querycache.NewQueryCache(querycache.WithCache(opts.Cache), querycache.WithFluxInterval(opts.FluxInterval))
 
@@ -96,14 +82,11 @@ func NewQuerier(opts QuerierOptions) interfaces.Querier {
 			BuildTraceQuery:  tracesQueryBuilder,
 			BuildLogQuery:    logsQueryBuilder,
 			BuildMetricQuery: metricsV3.PrepareMetricQuery,
-		}, opts.FeatureLookup),
-		featureLookUp: opts.FeatureLookup,
+		}),
 
-		testingMode:       opts.TestingMode,
-		returnedSeries:    opts.ReturnedSeries,
-		returnedErr:       opts.ReturnedErr,
-		UseLogsNewSchema:  opts.UseLogsNewSchema,
-		UseTraceNewSchema: opts.UseTraceNewSchema,
+		testingMode:    opts.TestingMode,
+		returnedSeries: opts.ReturnedSeries,
+		returnedErr:    opts.ReturnedErr,
 	}
 }
 
@@ -161,7 +144,7 @@ func (q *querier) execPromQuery(ctx context.Context, params *model.QueryRangePar
 	return seriesList, nil
 }
 
-func (q *querier) runBuilderQueries(ctx context.Context, params *v3.QueryRangeParamsV3) ([]*v3.Result, map[string]error, error) {
+func (q *querier) runBuilderQueries(ctx context.Context, orgID valuer.UUID, params *v3.QueryRangeParamsV3) ([]*v3.Result, map[string]error, error) {
 
 	cacheKeys := q.keyGenerator.GenerateKeys(params)
 
@@ -174,9 +157,9 @@ func (q *querier) runBuilderQueries(ctx context.Context, params *v3.QueryRangePa
 		}
 		wg.Add(1)
 		if queryName == builderQuery.Expression {
-			go q.runBuilderQuery(ctx, builderQuery, params, cacheKeys, ch, &wg)
+			go q.runBuilderQuery(ctx, orgID, builderQuery, params, cacheKeys, ch, &wg)
 		} else {
-			go q.runBuilderExpression(ctx, builderQuery, params, cacheKeys, ch, &wg)
+			go q.runBuilderExpression(ctx, orgID, builderQuery, params, cacheKeys, ch, &wg)
 		}
 	}
 
@@ -207,7 +190,7 @@ func (q *querier) runBuilderQueries(ctx context.Context, params *v3.QueryRangePa
 	return results, errQueriesByName, err
 }
 
-func (q *querier) runPromQueries(ctx context.Context, params *v3.QueryRangeParamsV3) ([]*v3.Result, map[string]error, error) {
+func (q *querier) runPromQueries(ctx context.Context, orgID valuer.UUID, params *v3.QueryRangeParamsV3) ([]*v3.Result, map[string]error, error) {
 	channelResults := make(chan channelResult, len(params.CompositeQuery.PromQueries))
 	var wg sync.WaitGroup
 	cacheKeys := q.keyGenerator.GenerateKeys(params)
@@ -228,7 +211,7 @@ func (q *querier) runPromQueries(ctx context.Context, params *v3.QueryRangeParam
 				channelResults <- channelResult{Err: err, Name: queryName, Query: query.Query, Series: series}
 				return
 			}
-			misses := q.queryCache.FindMissingTimeRanges(params.Start, params.End, params.Step, cacheKey)
+			misses := q.queryCache.FindMissingTimeRanges(orgID, params.Start, params.End, params.Step, cacheKey)
 			zap.L().Info("cache misses for metrics prom query", zap.Any("misses", misses))
 			missedSeries := make([]querycache.CachedSeriesData, 0)
 			for _, miss := range misses {
@@ -244,7 +227,7 @@ func (q *querier) runPromQueries(ctx context.Context, params *v3.QueryRangeParam
 					End:   miss.End,
 				})
 			}
-			mergedSeries := q.queryCache.MergeWithCachedSeriesData(cacheKey, missedSeries)
+			mergedSeries := q.queryCache.MergeWithCachedSeriesData(orgID, cacheKey, missedSeries)
 			resultSeries := common.GetSeriesFromCachedData(mergedSeries, params.Start, params.End)
 			channelResults <- channelResult{Err: nil, Name: queryName, Query: promQuery.Query, Series: resultSeries}
 
@@ -448,11 +431,6 @@ func (q *querier) runBuilderListQueries(ctx context.Context, params *v3.QueryRan
 		len(params.CompositeQuery.BuilderQueries) == 1 &&
 		params.CompositeQuery.PanelType != v3.PanelTypeTrace {
 		for _, v := range params.CompositeQuery.BuilderQueries {
-			if (v.DataSource == v3.DataSourceLogs && !q.UseLogsNewSchema) ||
-				(v.DataSource == v3.DataSourceTraces && !q.UseTraceNewSchema) {
-				break
-			}
-
 			// only allow of logs queries with timestamp ordering desc
 			// TODO(nitya): allow for timestamp asc
 			if (v.DataSource == v3.DataSourceLogs || v.DataSource == v3.DataSourceTraces) &&
@@ -465,7 +443,15 @@ func (q *querier) runBuilderListQueries(ctx context.Context, params *v3.QueryRan
 		}
 	}
 
-	queries, err := q.builder.PrepareQueries(params)
+	queries := make(map[string]string)
+	var err error
+	if params.CompositeQuery.QueryType == v3.QueryTypeBuilder {
+		queries, err = q.builder.PrepareQueries(params)
+	} else if params.CompositeQuery.QueryType == v3.QueryTypeClickHouseSQL {
+		for name, chQuery := range params.CompositeQuery.ClickHouseQueries {
+			queries[name] = chQuery.Query
+		}
+	}
 
 	if err != nil {
 		return nil, nil, err
@@ -512,7 +498,7 @@ func (q *querier) runBuilderListQueries(ctx context.Context, params *v3.QueryRan
 	return res, nil, nil
 }
 
-func (q *querier) QueryRange(ctx context.Context, params *v3.QueryRangeParamsV3) ([]*v3.Result, map[string]error, error) {
+func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, params *v3.QueryRangeParamsV3) ([]*v3.Result, map[string]error, error) {
 	var results []*v3.Result
 	var err error
 	var errQueriesByName map[string]error
@@ -522,7 +508,7 @@ func (q *querier) QueryRange(ctx context.Context, params *v3.QueryRangeParamsV3)
 			if params.CompositeQuery.PanelType == v3.PanelTypeList || params.CompositeQuery.PanelType == v3.PanelTypeTrace {
 				results, errQueriesByName, err = q.runBuilderListQueries(ctx, params)
 			} else {
-				results, errQueriesByName, err = q.runBuilderQueries(ctx, params)
+				results, errQueriesByName, err = q.runBuilderQueries(ctx, orgID, params)
 			}
 			// in builder query, the only errors we expose are the ones that exceed the resource limits
 			// everything else is internal error as they are not actionable by the user
@@ -532,9 +518,14 @@ func (q *querier) QueryRange(ctx context.Context, params *v3.QueryRangeParamsV3)
 				}
 			}
 		case v3.QueryTypePromQL:
-			results, errQueriesByName, err = q.runPromQueries(ctx, params)
+			results, errQueriesByName, err = q.runPromQueries(ctx, orgID, params)
 		case v3.QueryTypeClickHouseSQL:
-			results, errQueriesByName, err = q.runClickHouseQueries(ctx, params)
+			ctx = context.WithValue(ctx, "enforce_max_result_rows", true)
+			if params.CompositeQuery.PanelType == v3.PanelTypeList || params.CompositeQuery.PanelType == v3.PanelTypeTrace {
+				results, errQueriesByName, err = q.runBuilderListQueries(ctx, params)
+			} else {
+				results, errQueriesByName, err = q.runClickHouseQueries(ctx, params)
+			}
 		default:
 			err = fmt.Errorf("invalid query type")
 		}

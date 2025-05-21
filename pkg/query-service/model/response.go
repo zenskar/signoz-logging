@@ -118,6 +118,13 @@ func ForbiddenError(err error) *ApiError {
 	}
 }
 
+func ExecutionError(err error) *ApiError {
+	return &ApiError{
+		Typ: ErrorExec,
+		Err: err,
+	}
+}
+
 func WrapApiError(err *ApiError, msg string) *ApiError {
 	return &ApiError{
 		Typ: err.Type(),
@@ -269,6 +276,67 @@ type SearchSpanResponseItem struct {
 	SpanKind         string            `json:"spanKind"`
 }
 
+type Span struct {
+	TimeUnixNano     uint64            `json:"timestamp"`
+	DurationNano     uint64            `json:"durationNano"`
+	SpanID           string            `json:"spanId"`
+	RootSpanID       string            `json:"rootSpanId"`
+	TraceID          string            `json:"traceId"`
+	HasError         bool              `json:"hasError"`
+	Kind             int32             `json:"kind"`
+	ServiceName      string            `json:"serviceName"`
+	Name             string            `json:"name"`
+	References       []OtelSpanRef     `json:"references,omitempty"`
+	TagMap           map[string]string `json:"tagMap"`
+	Events           []string          `json:"event"`
+	RootName         string            `json:"rootName"`
+	StatusMessage    string            `json:"statusMessage"`
+	StatusCodeString string            `json:"statusCodeString"`
+	SpanKind         string            `json:"spanKind"`
+	Children         []*Span           `json:"children"`
+
+	// the below two fields are for frontend to render the spans
+	SubTreeNodeCount uint64 `json:"subTreeNodeCount"`
+	HasChildren      bool   `json:"hasChildren"`
+	HasSiblings      bool   `json:"hasSiblings"`
+	Level            uint64 `json:"level"`
+}
+
+type FlamegraphSpan struct {
+	TimeUnixNano uint64            `json:"timestamp"`
+	DurationNano uint64            `json:"durationNano"`
+	SpanID       string            `json:"spanId"`
+	TraceID      string            `json:"traceId"`
+	HasError     bool              `json:"hasError"`
+	ServiceName  string            `json:"serviceName"`
+	Name         string            `json:"name"`
+	Level        int64             `json:"level"`
+	References   []OtelSpanRef     `json:"references,omitempty"`
+	Children     []*FlamegraphSpan `json:"children"`
+}
+
+type GetWaterfallSpansForTraceWithMetadataResponse struct {
+	StartTimestampMillis          uint64            `json:"startTimestampMillis"`
+	EndTimestampMillis            uint64            `json:"endTimestampMillis"`
+	DurationNano                  uint64            `json:"durationNano"`
+	RootServiceName               string            `json:"rootServiceName"`
+	RootServiceEntryPoint         string            `json:"rootServiceEntryPoint"`
+	TotalSpansCount               uint64            `json:"totalSpansCount"`
+	TotalErrorSpansCount          uint64            `json:"totalErrorSpansCount"`
+	ServiceNameToTotalDurationMap map[string]uint64 `json:"serviceNameToTotalDurationMap"`
+	Spans                         []*Span           `json:"spans"`
+	HasMissingSpans               bool              `json:"hasMissingSpans"`
+	// this is needed for frontend and query service sync
+	UncollapsedSpans []string `json:"uncollapsedSpans"`
+}
+
+type GetFlamegraphSpansForTraceResponse struct {
+	StartTimestampMillis uint64              `json:"startTimestampMillis"`
+	EndTimestampMillis   uint64              `json:"endTimestampMillis"`
+	DurationNano         uint64              `json:"durationNano"`
+	Spans                [][]*FlamegraphSpan `json:"spans"`
+}
+
 type OtelSpanRef struct {
 	TraceId string `json:"traceId,omitempty"`
 	SpanId  string `json:"spanId,omitempty"`
@@ -286,7 +354,7 @@ func (item *SearchSpanResponseItem) GetValues() []interface{} {
 
 	references := []OtelSpanRef{}
 	jsonbody, _ := json.Marshal(item.References)
-	json.Unmarshal(jsonbody, &references)
+	_ = json.Unmarshal(jsonbody, &references)
 
 	referencesStringArray := []string{}
 	for _, item := range references {
@@ -509,15 +577,15 @@ type ShowCreateTableStatement struct {
 	Statement string `json:"statement" ch:"statement"`
 }
 
-type LogField struct {
+type Field struct {
 	Name     string `json:"name" ch:"name"`
 	DataType string `json:"dataType" ch:"datatype"`
 	Type     string `json:"type"`
 }
 
 type GetFieldsResponse struct {
-	Selected    []LogField `json:"selected"`
-	Interesting []LogField `json:"interesting"`
+	Selected    []Field `json:"selected"`
+	Interesting []Field `json:"interesting"`
 }
 
 // Represents a log record in query service requests and responses.
@@ -618,6 +686,7 @@ type TagsInfo struct {
 
 type AlertsInfo struct {
 	TotalAlerts                  int      `json:"totalAlerts"`
+	TotalActiveAlerts            int      `json:"totalActiveAlerts"`
 	LogsBasedAlerts              int      `json:"logsBasedAlerts"`
 	MetricBasedAlerts            int      `json:"metricBasedAlerts"`
 	AnomalyBasedAlerts           int      `json:"anomalyBasedAlerts"`
@@ -656,8 +725,10 @@ type DashboardsInfo struct {
 	TracesBasedPanels               int      `json:"tracesBasedPanels"`
 	DashboardNames                  []string `json:"dashboardNames"`
 	QueriesWithTSV2                 int      `json:"queriesWithTSV2"`
+	QueriesWithTagAttrs             int      `json:"queriesWithTagAttrs"`
 	DashboardsWithLogsChQuery       int      `json:"dashboardsWithLogsChQuery"`
 	DashboardsWithTraceChQuery      int      `json:"dashboardsWithTraceChQuery"`
+	DashboardNamesWithTraceChQuery  []string `json:"dashboardNamesWithTraceChQuery"`
 	LogsPanelsWithAttrContainsOp    int      `json:"logsPanelsWithAttrContainsOp"`
 }
 
@@ -679,7 +750,7 @@ type ClusterInfo struct {
 func (ci *ClusterInfo) GetMapFromStruct() map[string]interface{} {
 	var clusterInfoMap map[string]interface{}
 	data, _ := json.Marshal(*ci)
-	json.Unmarshal(data, &clusterInfoMap)
+	_ = json.Unmarshal(data, &clusterInfoMap)
 	return clusterInfoMap
 }
 

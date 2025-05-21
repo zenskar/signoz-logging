@@ -1,33 +1,28 @@
 import './InfraMonitoring.styles.scss';
 
-import { LoadingOutlined } from '@ant-design/icons';
-import {
-	Spin,
-	Table,
-	TablePaginationConfig,
-	TableProps,
-	Typography,
-} from 'antd';
-import { SorterResult } from 'antd/es/table/interface';
+import { VerticalAlignTopOutlined } from '@ant-design/icons';
+import { Button, Tooltip, Typography } from 'antd';
+import logEvent from 'api/common/logEvent';
 import { HostListPayload } from 'api/infraMonitoring/getHostLists';
 import HostMetricDetail from 'components/HostMetricsDetail';
-import NoLogs from 'container/NoLogs/NoLogs';
+import QuickFilters from 'components/QuickFilters/QuickFilters';
+import { QuickFiltersSource } from 'components/QuickFilters/types';
+import { InfraMonitoringEvents } from 'constants/events';
+import { usePageSize } from 'container/InfraMonitoringK8s/utils';
 import { useGetHostList } from 'hooks/infraMonitoring/useGetHostList';
-import { useCallback, useMemo, useState } from 'react';
+import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
+import { useQueryOperations } from 'hooks/queryBuilder/useQueryBuilderOperations';
+import { Filter } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { AppState } from 'store/reducers';
-import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
-import { DataSource } from 'types/common/queryBuilder';
+import { IBuilderQuery, Query } from 'types/api/queryBuilder/queryBuilderData';
 import { GlobalReducer } from 'types/reducer/globalTime';
 
 import HostsListControls from './HostsListControls';
-import {
-	formatDataForTable,
-	getHostListsQuery,
-	getHostsListColumns,
-	HostRowData,
-} from './utils';
-
+import HostsListTable from './HostsListTable';
+import { getHostListsQuery, HostsQuickFiltersConfig } from './utils';
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function HostsList(): JSX.Element {
 	const { maxTime, minTime } = useSelector<AppState, GlobalReducer>(
 		(state) => state.globalTime,
@@ -38,6 +33,7 @@ function HostsList(): JSX.Element {
 		items: [],
 		op: 'and',
 	});
+	const [showFilters, setShowFilters] = useState<boolean>(true);
 
 	const [orderBy, setOrderBy] = useState<{
 		columnName: string;
@@ -46,7 +42,7 @@ function HostsList(): JSX.Element {
 
 	const [selectedHostName, setSelectedHostName] = useState<string | null>(null);
 
-	const pageSize = 10;
+	const { pageSize, setPageSize } = usePageSize('hosts');
 
 	const query = useMemo(() => {
 		const baseQuery = getHostListsQuery();
@@ -59,7 +55,7 @@ function HostsList(): JSX.Element {
 			end: Math.floor(maxTime / 1000000),
 			orderBy,
 		};
-	}, [currentPage, filters, minTime, maxTime, orderBy]);
+	}, [pageSize, currentPage, filters, minTime, maxTime, orderBy]);
 
 	const { data, isFetching, isLoading, isError } = useGetHostList(
 		query as HostListPayload,
@@ -72,50 +68,42 @@ function HostsList(): JSX.Element {
 	const hostMetricsData = useMemo(() => data?.payload?.data?.records || [], [
 		data,
 	]);
-	const totalCount = data?.payload?.data?.total || 0;
 
-	const formattedHostMetricsData = useMemo(
-		() => formatDataForTable(hostMetricsData),
-		[hostMetricsData],
-	);
+	const { currentQuery } = useQueryBuilder();
 
-	const columns = useMemo(() => getHostsListColumns(), []);
-
-	const isDataPresent =
-		!isLoading && !isFetching && !isError && hostMetricsData.length === 0;
-
-	const handleTableChange: TableProps<HostRowData>['onChange'] = useCallback(
-		(
-			pagination: TablePaginationConfig,
-			_filters: Record<string, (string | number | boolean)[] | null>,
-			sorter: SorterResult<HostRowData> | SorterResult<HostRowData>[],
-		): void => {
-			if (pagination.current) {
-				setCurrentPage(pagination.current);
-			}
-
-			if ('field' in sorter && sorter.order) {
-				setOrderBy({
-					columnName: sorter.field as string,
-					order: sorter.order === 'ascend' ? 'asc' : 'desc',
-				});
-			} else {
-				setOrderBy(null);
-			}
-		},
-		[],
-	);
+	const { handleChangeQueryData } = useQueryOperations({
+		index: 0,
+		query: currentQuery.builder.queryData[0],
+		entityVersion: '',
+	});
 
 	const handleFiltersChange = useCallback(
 		(value: IBuilderQuery['filters']): void => {
 			const isNewFilterAdded = value.items.length !== filters.items.length;
+			setFilters(value);
+			handleChangeQueryData('filters', value);
 			if (isNewFilterAdded) {
-				setFilters(value);
 				setCurrentPage(1);
+
+				if (value.items.length > 0) {
+					logEvent(InfraMonitoringEvents.FilterApplied, {
+						entity: InfraMonitoringEvents.HostEntity,
+						page: InfraMonitoringEvents.ListPage,
+					});
+				}
 			}
 		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[filters],
 	);
+
+	useEffect(() => {
+		logEvent(InfraMonitoringEvents.PageVisited, {
+			total: data?.payload?.data?.total,
+			entity: InfraMonitoringEvents.HostEntity,
+			page: InfraMonitoringEvents.ListPage,
+		});
+	}, [data?.payload?.data?.total]);
 
 	const selectedHostData = useMemo(() => {
 		if (!selectedHostName) return null;
@@ -124,57 +112,73 @@ function HostsList(): JSX.Element {
 		);
 	}, [selectedHostName, hostMetricsData]);
 
-	const handleRowClick = (record: HostRowData): void => {
-		setSelectedHostName(record.hostName);
-	};
-
 	const handleCloseHostDetail = (): void => {
 		setSelectedHostName(null);
 	};
 
+	const handleFilterVisibilityChange = (): void => {
+		setShowFilters(!showFilters);
+	};
+
+	const handleQuickFiltersChange = (query: Query): void => {
+		handleChangeQueryData('filters', query.builder.queryData[0].filters);
+		handleFiltersChange(query.builder.queryData[0].filters);
+	};
+
 	return (
 		<div className="hosts-list">
-			<HostsListControls handleFiltersChange={handleFiltersChange} />
-			{isError && <Typography>{data?.error || 'Something went wrong'}</Typography>}
-
-			{isDataPresent && filters.items.length === 0 && (
-				<NoLogs dataSource={DataSource.METRICS} />
-			)}
-
-			{!isFetching &&
-				!isLoading &&
-				formattedHostMetricsData.length === 0 &&
-				filters.items.length > 0 && (
-					<div className="no-hosts-message">No hosts match the applied filters.</div>
+			<div className="hosts-list-content">
+				{showFilters && (
+					<div className="hosts-quick-filters-container">
+						<div className="hosts-quick-filters-container-header">
+							<Typography.Text>Filters</Typography.Text>
+							<Tooltip title="Collapse Filters">
+								<VerticalAlignTopOutlined
+									rotate={270}
+									onClick={handleFilterVisibilityChange}
+								/>
+							</Tooltip>
+						</div>
+						<QuickFilters
+							source={QuickFiltersSource.INFRA_MONITORING}
+							config={HostsQuickFiltersConfig}
+							handleFilterVisibilityChange={handleFilterVisibilityChange}
+							onFilterChange={handleQuickFiltersChange}
+						/>
+					</div>
 				)}
-
-			{!isError && (
-				<Table
-					className="hosts-list-table"
-					dataSource={isFetching || isLoading ? [] : formattedHostMetricsData}
-					columns={columns}
-					pagination={{
-						current: currentPage,
-						pageSize,
-						total: totalCount,
-						showSizeChanger: false,
-						hideOnSinglePage: true,
-					}}
-					scroll={{ x: true }}
-					loading={{
-						spinning: isFetching || isLoading,
-						indicator: <Spin indicator={<LoadingOutlined size={14} spin />} />,
-					}}
-					tableLayout="fixed"
-					rowKey={(record): string => record.hostName}
-					onChange={handleTableChange}
-					onRow={(record): { onClick: () => void; className: string } => ({
-						onClick: (): void => handleRowClick(record),
-						className: 'clickable-row',
-					})}
-				/>
-			)}
-
+				<div className="hosts-list-table-container">
+					<div className="hosts-list-table-header">
+						{!showFilters && (
+							<div className="quick-filters-toggle-container">
+								<Button
+									className="periscope-btn ghost"
+									type="text"
+									size="small"
+									onClick={handleFilterVisibilityChange}
+								>
+									<Filter size={14} />
+								</Button>
+							</div>
+						)}
+						<HostsListControls handleFiltersChange={handleFiltersChange} />
+					</div>
+					<HostsListTable
+						isLoading={isLoading}
+						isFetching={isFetching}
+						isError={isError}
+						tableData={data}
+						hostMetricsData={hostMetricsData}
+						filters={filters}
+						currentPage={currentPage}
+						setCurrentPage={setCurrentPage}
+						setSelectedHostName={setSelectedHostName}
+						pageSize={pageSize}
+						setPageSize={setPageSize}
+						setOrderBy={setOrderBy}
+					/>
+				</div>
+			</div>
 			<HostMetricDetail
 				host={selectedHostData}
 				isModalTimeSelection

@@ -9,16 +9,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SigNoz/signoz/pkg/modules/quickfilter"
+	quickfilterscore "github.com/SigNoz/signoz/pkg/modules/quickfilter/core"
+
+	"github.com/SigNoz/signoz/pkg/http/middleware"
+	"github.com/SigNoz/signoz/pkg/instrumentation/instrumentationtest"
+	"github.com/SigNoz/signoz/pkg/modules/organization/implorganization"
+	"github.com/SigNoz/signoz/pkg/modules/user"
+	"github.com/SigNoz/signoz/pkg/modules/user/impluser"
+	"github.com/SigNoz/signoz/pkg/query-service/app"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	"github.com/SigNoz/signoz/pkg/query-service/featureManager"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/utils"
+	"github.com/SigNoz/signoz/pkg/signoz"
+	"github.com/SigNoz/signoz/pkg/types"
 	mockhouse "github.com/srikanthccv/ClickHouse-go-mock"
 	"github.com/stretchr/testify/require"
-	"go.signoz.io/signoz/pkg/query-service/app"
-	"go.signoz.io/signoz/pkg/query-service/auth"
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	"go.signoz.io/signoz/pkg/query-service/dao"
-	"go.signoz.io/signoz/pkg/query-service/featureManager"
-	"go.signoz.io/signoz/pkg/query-service/model"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	"go.signoz.io/signoz/pkg/query-service/utils"
 	"go.uber.org/zap"
 )
 
@@ -199,9 +206,9 @@ func (tb *FilterSuggestionsTestBed) mockAttribKeysQueryResponse(
 	attribsToReturn []v3.AttributeKey,
 ) {
 	cols := []mockhouse.ColumnType{}
-	cols = append(cols, mockhouse.ColumnType{Type: "String", Name: "tagKey"})
-	cols = append(cols, mockhouse.ColumnType{Type: "String", Name: "tagType"})
-	cols = append(cols, mockhouse.ColumnType{Type: "String", Name: "tagDataType"})
+	cols = append(cols, mockhouse.ColumnType{Type: "String", Name: "tag_key"})
+	cols = append(cols, mockhouse.ColumnType{Type: "String", Name: "tag_type"})
+	cols = append(cols, mockhouse.ColumnType{Type: "String", Name: "tag_data_type"})
 
 	values := [][]any{}
 	for _, a := range attribsToReturn {
@@ -213,7 +220,7 @@ func (tb *FilterSuggestionsTestBed) mockAttribKeysQueryResponse(
 	}
 
 	tb.mockClickhouse.ExpectQuery(
-		"select.*from.*signoz_logs.distributed_tag_attributes.*",
+		"select.*from.*signoz_logs.distributed_tag_attributes_v2.*",
 	).WithArgs(
 		constants.DefaultFilterSuggestionsAttributesLimit,
 	).WillReturnRows(
@@ -236,10 +243,9 @@ func (tb *FilterSuggestionsTestBed) mockAttribValuesQueryResponse(
 	stringValuesToReturn [][]string,
 ) {
 	resultCols := []mockhouse.ColumnType{
-		{Type: "String", Name: "tagKey"},
-		{Type: "String", Name: "stringTagValue"},
-		{Type: "Nullable(Int64)", Name: "int64TagValue"},
-		{Type: "Nullable(Float64)", Name: "float64TagValue"},
+		{Type: "String", Name: "tag_key"},
+		{Type: "String", Name: "string_value"},
+		{Type: "Nullable(Int64)", Name: "number_value"},
 	}
 
 	expectedAttribKeysInQuery := []any{}
@@ -248,21 +254,22 @@ func (tb *FilterSuggestionsTestBed) mockAttribValuesQueryResponse(
 		expectedAttribKeysInQuery = append(expectedAttribKeysInQuery, attrib.Key)
 		for _, stringTagValue := range stringValuesToReturn[idx] {
 			mockResultRows = append(mockResultRows, []any{
-				attrib.Key, stringTagValue, nil, nil,
+				attrib.Key, stringTagValue, nil,
 			})
 		}
 	}
 
 	tb.mockClickhouse.ExpectQuery(
-		"select.*tagKey.*stringTagValue.*int64TagValue.*float64TagValue.*distributed_tag_attributes.*tagKey",
+		"select.*tag_key.*string_value.*number_value.*distributed_tag_attributes_v2.*tag_key",
 	).WithArgs(expectedAttribKeysInQuery...).WillReturnRows(mockhouse.NewRows(resultCols, mockResultRows))
 }
 
 type FilterSuggestionsTestBed struct {
 	t              *testing.T
-	testUser       *model.User
+	testUser       *types.User
 	qsHttpHandler  http.Handler
 	mockClickhouse mockhouse.ClickConnMockCommon
+	userModule     user.Module
 }
 
 func (tb *FilterSuggestionsTestBed) GetQBFilterSuggestionsForLogs(
@@ -293,24 +300,37 @@ func NewFilterSuggestionsTestBed(t *testing.T) *FilterSuggestionsTestBed {
 	testDB := utils.NewQueryServiceDBForTests(t)
 
 	fm := featureManager.StartManager()
-	reader, mockClickhouse := NewMockClickhouseReader(t, testDB, fm)
+	reader, mockClickhouse := NewMockClickhouseReader(t, testDB)
 	mockClickhouse.MatchExpectationsInOrder(false)
+
+	userModule := impluser.NewModule(impluser.NewStore(testDB))
+	userHandler := impluser.NewHandler(userModule)
+	modules := signoz.NewModules(testDB, userModule)
+	quickFilterModule := quickfilter.NewAPI(quickfilterscore.NewQuickFilters(quickfilterscore.NewStore(testDB)))
 
 	apiHandler, err := app.NewAPIHandler(app.APIHandlerOpts{
 		Reader:       reader,
-		AppDao:       dao.DB(),
 		FeatureFlags: fm,
+		JWT:          jwt,
+		Signoz: &signoz.SigNoz{
+			Modules:  modules,
+			Handlers: signoz.NewHandlers(modules, userHandler),
+		},
+		QuickFilters: quickFilterModule,
 	})
 	if err != nil {
 		t.Fatalf("could not create a new ApiHandler: %v", err)
 	}
 
 	router := app.NewRouter()
-	am := app.NewAuthMiddleware(auth.GetUserFromRequest)
+	//add the jwt middleware
+	router.Use(middleware.NewAuth(zap.L(), jwt, []string{"Authorization", "Sec-WebSocket-Protocol"}).Wrap)
+	am := middleware.NewAuthZ(instrumentationtest.New().Logger())
 	apiHandler.RegisterRoutes(router, am)
 	apiHandler.RegisterQueryRangeV3Routes(router, am)
 
-	user, apiErr := createTestUser()
+	organizationModule := implorganization.NewModule(implorganization.NewStore(testDB))
+	user, apiErr := createTestUser(organizationModule, userModule)
 	if apiErr != nil {
 		t.Fatalf("could not create a test user: %v", apiErr)
 	}
@@ -327,6 +347,7 @@ func NewFilterSuggestionsTestBed(t *testing.T) *FilterSuggestionsTestBed {
 		testUser:       user,
 		qsHttpHandler:  router,
 		mockClickhouse: mockClickhouse,
+		userModule:     userModule,
 	}
 }
 
@@ -343,7 +364,7 @@ func (tb *FilterSuggestionsTestBed) QSGetRequest(
 	}
 
 	req, err := AuthenticatedRequestForTest(
-		tb.testUser, path, nil,
+		tb.userModule, tb.testUser, path, nil,
 	)
 	if err != nil {
 		tb.t.Fatalf("couldn't create authenticated test request: %v", err)

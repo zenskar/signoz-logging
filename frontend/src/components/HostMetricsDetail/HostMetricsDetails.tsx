@@ -11,6 +11,8 @@ import {
 	Typography,
 } from 'antd';
 import { RadioChangeEvent } from 'antd/lib';
+import logEvent from 'api/common/logEvent';
+import { InfraMonitoringEvents } from 'constants/events';
 import { QueryParams } from 'constants/query';
 import {
 	initialQueryBuilderFormValuesMap,
@@ -55,7 +57,6 @@ import HostMetricLogsDetailedView from './HostMetricsLogs/HostMetricLogsDetailed
 import HostMetricTraces from './HostMetricTraces/HostMetricTraces';
 import Metrics from './Metrics/Metrics';
 import Processes from './Processes/Processes';
-
 // eslint-disable-next-line sonarjs/cognitive-complexity
 function HostMetricsDetails({
 	host,
@@ -119,6 +120,16 @@ function HostMetricsDetails({
 	);
 
 	useEffect(() => {
+		if (host) {
+			logEvent(InfraMonitoringEvents.PageVisited, {
+				entity: InfraMonitoringEvents.HostEntity,
+				page: InfraMonitoringEvents.DetailedPage,
+			});
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [host]);
+
+	useEffect(() => {
 		setLogFilters(initialFilters);
 		setTracesFilters(initialFilters);
 	}, [initialFilters]);
@@ -138,11 +149,16 @@ function HostMetricsDetails({
 
 	const handleTabChange = (e: RadioChangeEvent): void => {
 		setSelectedView(e.target.value);
+		logEvent(InfraMonitoringEvents.TabChanged, {
+			entity: InfraMonitoringEvents.HostEntity,
+			view: e.target.value,
+		});
 	};
 
 	const handleTimeChange = useCallback(
 		(interval: Time | CustomTimeType, dateTimeRange?: [number, number]): void => {
 			setSelectedInterval(interval as Time);
+
 			if (interval === 'custom' && dateTimeRange) {
 				setModalTimeRange({
 					startTime: Math.floor(dateTimeRange[0] / 1000),
@@ -156,7 +172,14 @@ function HostMetricsDetails({
 					endTime: Math.floor(maxTime / 1000000000),
 				});
 			}
+
+			logEvent(InfraMonitoringEvents.TimeUpdated, {
+				entity: InfraMonitoringEvents.HostEntity,
+				interval,
+				page: InfraMonitoringEvents.DetailedPage,
+			});
 		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[],
 	);
 
@@ -171,6 +194,14 @@ function HostMetricsDetails({
 					(item) => item.key?.key !== 'id' && item.key?.key !== 'host.name',
 				);
 
+				if (newFilters.length > 0) {
+					logEvent(InfraMonitoringEvents.FilterApplied, {
+						entity: InfraMonitoringEvents.HostEntity,
+						view: InfraMonitoringEvents.LogsView,
+						page: InfraMonitoringEvents.DetailedPage,
+					});
+				}
+
 				return {
 					op: 'AND',
 					items: [
@@ -181,6 +212,7 @@ function HostMetricsDetails({
 				};
 			});
 		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[],
 	);
 
@@ -190,6 +222,15 @@ function HostMetricsDetails({
 				const hostNameFilter = prevFilters.items.find(
 					(item) => item.key?.key === 'host.name',
 				);
+
+				if (value.items.length > 0) {
+					logEvent(InfraMonitoringEvents.FilterApplied, {
+						entity: InfraMonitoringEvents.HostEntity,
+						view: InfraMonitoringEvents.TracesView,
+						page: InfraMonitoringEvents.DetailedPage,
+					});
+				}
+
 				return {
 					op: 'AND',
 					items: [
@@ -199,6 +240,7 @@ function HostMetricsDetails({
 				};
 			});
 		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[],
 	);
 
@@ -210,6 +252,12 @@ function HostMetricsDetails({
 			urlQuery.set(QueryParams.startTime, modalTimeRange.startTime.toString());
 			urlQuery.set(QueryParams.endTime, modalTimeRange.endTime.toString());
 		}
+
+		logEvent(InfraMonitoringEvents.ExploreClicked, {
+			view: selectedView,
+			entity: InfraMonitoringEvents.HostEntity,
+			page: InfraMonitoringEvents.DetailedPage,
+		});
 
 		if (selectedView === VIEW_TYPES.LOGS) {
 			const filtersWithoutPagination = {

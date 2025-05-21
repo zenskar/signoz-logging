@@ -5,9 +5,9 @@ import (
 	"math"
 	"strings"
 
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	"go.signoz.io/signoz/pkg/query-service/utils"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/utils"
 )
 
 var AggregateOperatorToPercentile = map[v3.AggregateOperator]float64{
@@ -297,6 +297,9 @@ func buildTracesQuery(start, end, step int64, mq *v3.BuilderQuery, _ string, pan
 	aggregationKey := ""
 	if mq.AggregateAttribute.Key != "" {
 		aggregationKey = getColumnName(mq.AggregateAttribute)
+		if mq.AggregateAttribute.Key == "timestamp" {
+			aggregationKey = "toUnixTimestamp64Nano(timestamp)"
+		}
 	}
 
 	switch mq.AggregateOperator {
@@ -307,10 +310,6 @@ func buildTracesQuery(start, end, step int64, mq *v3.BuilderQuery, _ string, pan
 		v3.AggregateOperatorRate:
 
 		rate := float64(step)
-		if options.PreferRPM {
-			rate = rate / 60.0
-		}
-
 		op := fmt.Sprintf("%s(%s)/%f", AggregateOperatorToSQLFunc[mq.AggregateOperator], aggregationKey, rate)
 		query := fmt.Sprintf(queryTmpl, op, filterSubQuery, groupBy, having, orderBy)
 		return query, nil
@@ -353,13 +352,13 @@ func buildTracesQuery(start, end, step int64, mq *v3.BuilderQuery, _ string, pan
 	case v3.AggregateOperatorNoOp:
 		var query string
 		if panelType == v3.PanelTypeTrace {
-			withSubQuery := fmt.Sprintf(constants.TracesExplorerViewSQLSelectWithSubQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_LOCAL_TABLENAME, spanIndexTableTimeFilter, filterSubQuery)
+			withSubQuery := fmt.Sprintf(constants.TracesExplorerViewSQLSelectWithSubQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_LOCAL_TABLENAME, spanIndexTableTimeFilter)
 			withSubQuery = AddLimitToQuery(withSubQuery, mq.Limit)
 			if mq.Offset != 0 {
 				withSubQuery = AddOffsetToQuery(withSubQuery, mq.Offset)
 			}
 			// query = withSubQuery + ") " + fmt.Sprintf(constants.TracesExplorerViewSQLSelectQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_TABLENAME, constants.SIGNOZ_SPAN_INDEX_TABLENAME)
-			query = fmt.Sprintf(constants.TracesExplorerViewSQLSelectBeforeSubQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_TABLENAME) + withSubQuery + ") " + fmt.Sprintf(constants.TracesExplorerViewSQLSelectAfterSubQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_TABLENAME, spanIndexTableTimeFilter)
+			query = fmt.Sprintf(constants.TracesExplorerViewSQLSelectBeforeSubQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_TABLENAME) + withSubQuery + ") " + fmt.Sprintf(constants.TracesExplorerViewSQLSelectAfterSubQuery, constants.SIGNOZ_TRACE_DBNAME, constants.SIGNOZ_SPAN_INDEX_TABLENAME, spanIndexTableTimeFilter, filterSubQuery)
 		} else if panelType == v3.PanelTypeList {
 			if len(mq.SelectColumns) == 0 {
 				return "", fmt.Errorf("select columns cannot be empty for panelType %s", panelType)

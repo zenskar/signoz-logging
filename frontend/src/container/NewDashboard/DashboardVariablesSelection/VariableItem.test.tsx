@@ -49,6 +49,12 @@ describe('VariableItem', () => {
 					onValueUpdate={mockOnValueUpdate}
 					variablesToGetUpdated={[]}
 					setVariablesToGetUpdated={(): void => {}}
+					dependencyData={{
+						order: [],
+						graph: {},
+						parentDependencyGraph: {},
+						hasCycle: false,
+					}}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -65,6 +71,12 @@ describe('VariableItem', () => {
 					onValueUpdate={mockOnValueUpdate}
 					variablesToGetUpdated={[]}
 					setVariablesToGetUpdated={(): void => {}}
+					dependencyData={{
+						order: [],
+						graph: {},
+						parentDependencyGraph: {},
+						hasCycle: false,
+					}}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -80,6 +92,12 @@ describe('VariableItem', () => {
 					onValueUpdate={mockOnValueUpdate}
 					variablesToGetUpdated={[]}
 					setVariablesToGetUpdated={(): void => {}}
+					dependencyData={{
+						order: [],
+						graph: {},
+						parentDependencyGraph: {},
+						hasCycle: false,
+					}}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -109,6 +127,12 @@ describe('VariableItem', () => {
 					onValueUpdate={mockOnValueUpdate}
 					variablesToGetUpdated={[]}
 					setVariablesToGetUpdated={(): void => {}}
+					dependencyData={{
+						order: [],
+						graph: {},
+						parentDependencyGraph: {},
+						hasCycle: false,
+					}}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -133,6 +157,12 @@ describe('VariableItem', () => {
 					onValueUpdate={mockOnValueUpdate}
 					variablesToGetUpdated={[]}
 					setVariablesToGetUpdated={(): void => {}}
+					dependencyData={{
+						order: [],
+						graph: {},
+						parentDependencyGraph: {},
+						hasCycle: false,
+					}}
 				/>
 			</MockQueryClientProvider>,
 		);
@@ -149,6 +179,12 @@ describe('VariableItem', () => {
 					onValueUpdate={mockOnValueUpdate}
 					variablesToGetUpdated={[]}
 					setVariablesToGetUpdated={(): void => {}}
+					dependencyData={{
+						order: [],
+						graph: {},
+						parentDependencyGraph: {},
+						hasCycle: false,
+					}}
 				/>
 			</MockQueryClientProvider>,
 		);

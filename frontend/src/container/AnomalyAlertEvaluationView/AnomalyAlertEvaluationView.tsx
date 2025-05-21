@@ -1,8 +1,7 @@
 import 'uplot/dist/uPlot.min.css';
 import './AnomalyAlertEvaluationView.styles.scss';
 
-import { Checkbox, Typography } from 'antd';
-import Search from 'antd/es/input/Search';
+import { Checkbox, Input, Typography } from 'antd';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import useDebouncedFn from 'hooks/useDebouncedFunction';
 import { useResizeObserver } from 'hooks/useDimensions';
@@ -10,10 +9,13 @@ import getAxes from 'lib/uPlotLib/utils/getAxes';
 import { getUplotChartDataForAnomalyDetection } from 'lib/uPlotLib/utils/getUplotChartData';
 import { getYAxisScaleForAnomalyDetection } from 'lib/uPlotLib/utils/getYAxisScale';
 import { LineChart } from 'lucide-react';
+import { useTimezone } from 'providers/Timezone';
 import { useEffect, useRef, useState } from 'react';
 import uPlot from 'uplot';
 
 import tooltipPlugin from './tooltipPlugin';
+
+const { Search } = Input;
 
 function UplotChart({
 	data,
@@ -148,10 +150,12 @@ function AnomalyAlertEvaluationView({
 		  ]
 		: [];
 
+	const { timezone } = useTimezone();
+
 	const options = {
 		width: dimensions.width,
 		height: dimensions.height - 36,
-		plugins: [bandsPlugin, tooltipPlugin(isDarkMode)],
+		plugins: [bandsPlugin, tooltipPlugin(isDarkMode, timezone.value)],
 		focus: {
 			alpha: 0.3,
 		},
@@ -255,7 +259,9 @@ function AnomalyAlertEvaluationView({
 		grid: {
 			show: true,
 		},
-		axes: getAxes(isDarkMode, yAxisUnit),
+		axes: getAxes({ isDarkMode, yAxisUnit }),
+		tzDate: (timestamp: number): Date =>
+			uPlot.tzDate(new Date(timestamp * 1e3), timezone.value),
 	};
 
 	const handleSearch = (searchText: string): void => {

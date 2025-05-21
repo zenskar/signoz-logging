@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"go.signoz.io/signoz/pkg/query-service/model"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/model"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 )
 
 const (
@@ -17,12 +17,6 @@ const (
 	DebugHttpPort   = "0.0.0.0:6060" // Address to serve http (pprof)
 	OpAmpWsEndpoint = "0.0.0.0:4320" // address for opamp websocket
 )
-
-type ContextKey string
-
-const ContextUserKey ContextKey = "user"
-
-var ConfigSignozIo = "https://config.signoz.io/api/v1"
 
 var DEFAULT_TELEMETRY_ANONYMOUS = false
 
@@ -50,16 +44,9 @@ const TraceTTL = "traces"
 const MetricsTTL = "metrics"
 const LogsTTL = "logs"
 
-const DurationSort = "DurationSort"
-const TimestampSort = "TimestampSort"
-const PreferRPM = "PreferRPM"
-
-func GetAlertManagerApiPrefix() string {
-	if os.Getenv("ALERTMANAGER_API_PREFIX") != "" {
-		return os.Getenv("ALERTMANAGER_API_PREFIX")
-	}
-	return "http://alertmanager:9093/api/"
-}
+const SpanSearchScopeRoot = "isroot"
+const SpanSearchScopeEntryPoint = "isentrypoint"
+const OrderBySpanCount = "span_count"
 
 var TELEMETRY_HEART_BEAT_DURATION_MINUTES = GetOrDefaultEnvInt("TELEMETRY_HEART_BEAT_DURATION_MINUTES", 720)
 
@@ -67,72 +54,17 @@ var TELEMETRY_ACTIVE_USER_DURATION_MINUTES = GetOrDefaultEnvInt("TELEMETRY_ACTIV
 
 var InviteEmailTemplate = GetOrDefaultEnv("INVITE_EMAIL_TEMPLATE", "/root/templates/invitation_email_template.html")
 
-// Alert manager channel subpath
-var AmChannelApiPath = GetOrDefaultEnv("ALERTMANAGER_API_CHANNEL_PATH", "v1/routes")
-
-var OTLPTarget = GetOrDefaultEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-var LogExportBatchSize = GetOrDefaultEnv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "512")
-
-var RELATIONAL_DATASOURCE_PATH = GetOrDefaultEnv("SIGNOZ_LOCAL_DB_PATH", "/var/lib/signoz/signoz.db")
-
-var DurationSortFeature = GetOrDefaultEnv("DURATION_SORT_FEATURE", "true")
-
-var TimestampSortFeature = GetOrDefaultEnv("TIMESTAMP_SORT_FEATURE", "true")
-
-var PreferRPMFeature = GetOrDefaultEnv("PREFER_RPM_FEATURE", "false")
+var MetricsExplorerClickhouseThreads = GetOrDefaultEnvInt("METRICS_EXPLORER_CLICKHOUSE_THREADS", 8)
+var UpdatedMetricsMetadataCachePrefix = GetOrDefaultEnv("METRICS_UPDATED_METADATA_CACHE_KEY", "UPDATED_METRICS_METADATA")
 
 // TODO(srikanthccv): remove after backfilling is done
 func UseMetricsPreAggregation() bool {
 	return GetOrDefaultEnv("USE_METRICS_PRE_AGGREGATION", "true") == "true"
 }
 
-func EnableHostsInfraMonitoring() bool {
-	return GetOrDefaultEnv("ENABLE_INFRA_METRICS", "true") == "true"
-}
-
 var KafkaSpanEval = GetOrDefaultEnv("KAFKA_SPAN_EVAL", "false")
 
-func IsDurationSortFeatureEnabled() bool {
-	isDurationSortFeatureEnabledStr := DurationSortFeature
-	isDurationSortFeatureEnabledBool, err := strconv.ParseBool(isDurationSortFeatureEnabledStr)
-	if err != nil {
-		return false
-	}
-	return isDurationSortFeatureEnabledBool
-}
-
-func IsTimestampSortFeatureEnabled() bool {
-	isTimestampSortFeatureEnabledStr := TimestampSortFeature
-	isTimestampSortFeatureEnabledBool, err := strconv.ParseBool(isTimestampSortFeatureEnabledStr)
-	if err != nil {
-		return false
-	}
-	return isTimestampSortFeatureEnabledBool
-}
-
-func IsPreferRPMFeatureEnabled() bool {
-	preferRPMFeatureEnabledStr := PreferRPMFeature
-	preferRPMFeatureEnabledBool, err := strconv.ParseBool(preferRPMFeatureEnabledStr)
-	if err != nil {
-		return false
-	}
-	return preferRPMFeatureEnabledBool
-}
-
 var DEFAULT_FEATURE_SET = model.FeatureSet{
-	model.Feature{
-		Name:       DurationSort,
-		Active:     IsDurationSortFeatureEnabled(),
-		Usage:      0,
-		UsageLimit: -1,
-		Route:      "",
-	}, model.Feature{
-		Name:       TimestampSort,
-		Active:     IsTimestampSortFeatureEnabled(),
-		Usage:      0,
-		UsageLimit: -1,
-		Route:      "",
-	},
 	model.Feature{
 		Name:       model.UseSpanMetrics,
 		Active:     false,
@@ -140,33 +72,6 @@ var DEFAULT_FEATURE_SET = model.FeatureSet{
 		UsageLimit: -1,
 		Route:      "",
 	},
-	model.Feature{
-		Name:       PreferRPM,
-		Active:     IsPreferRPMFeatureEnabled(),
-		Usage:      0,
-		UsageLimit: -1,
-		Route:      "",
-	},
-}
-
-func GetContextTimeout() time.Duration {
-	contextTimeoutStr := GetOrDefaultEnv("CONTEXT_TIMEOUT", "60")
-	contextTimeoutDuration, err := time.ParseDuration(contextTimeoutStr + "s")
-	if err != nil {
-		return time.Minute
-	}
-	return contextTimeoutDuration
-}
-
-var ContextTimeout = GetContextTimeout()
-
-func GetContextTimeoutMaxAllowed() time.Duration {
-	contextTimeoutStr := GetOrDefaultEnv("CONTEXT_TIMEOUT_MAX_ALLOWED", "600")
-	contextTimeoutDuration, err := time.ParseDuration(contextTimeoutStr + "s")
-	if err != nil {
-		return time.Minute
-	}
-	return contextTimeoutDuration
 }
 
 func GetEvalDelay() time.Duration {
@@ -177,8 +82,6 @@ func GetEvalDelay() time.Duration {
 	}
 	return evalDelayDuration
 }
-
-var ContextTimeoutMaxAllowed = GetContextTimeoutMaxAllowed()
 
 const (
 	TraceID                        = "traceID"
@@ -248,12 +151,13 @@ const (
 	SIGNOZ_TIMESERIES_v4_1DAY_LOCAL_TABLENAME  = "time_series_v4_1day"
 	SIGNOZ_TIMESERIES_v4_1WEEK_LOCAL_TABLENAME = "time_series_v4_1week"
 	SIGNOZ_TIMESERIES_v4_1DAY_TABLENAME        = "distributed_time_series_v4_1day"
+	SIGNOZ_TOP_LEVEL_OPERATIONS_TABLENAME      = "distributed_top_level_operations"
+	SIGNOZ_TIMESERIES_v4_TABLENAME             = "distributed_time_series_v4"
+	SIGNOZ_TIMESERIES_v4_1WEEK_TABLENAME       = "distributed_time_series_v4_1week"
+	SIGNOZ_TIMESERIES_v4_6HRS_TABLENAME        = "distributed_time_series_v4_6hrs"
+	SIGNOZ_ATTRIBUTES_METADATA_TABLENAME       = "distributed_attributes_metadata"
+	SIGNOZ_ATTRIBUTES_METADATA_LOCAL_TABLENAME = "attributes_metadata"
 )
-
-var TimeoutExcludedRoutes = map[string]bool{
-	"/api/v1/logs/tail":     true,
-	"/api/v3/logs/livetail": true,
-}
 
 // alert related constants
 const (
@@ -290,7 +194,7 @@ const (
 	UINT8                 = "Uint8"
 )
 
-var StaticSelectedLogFields = []model.LogField{
+var StaticSelectedLogFields = []model.Field{
 	{
 		Name:     "timestamp",
 		DataType: UINT32,
@@ -345,14 +249,17 @@ const (
 		"resources_string, " +
 		"scope_string "
 	TracesExplorerViewSQLSelectWithSubQuery = "(SELECT traceID, durationNano, " +
-		"serviceName, name FROM %s.%s WHERE parentSpanID = '' AND %s %s ORDER BY durationNano DESC LIMIT 1 BY traceID "
+		"serviceName, name FROM %s.%s WHERE parentSpanID = '' AND %s ORDER BY durationNano DESC LIMIT 1 BY traceID"
 	TracesExplorerViewSQLSelectBeforeSubQuery = "SELECT subQuery.serviceName, subQuery.name, count() AS " +
 		"span_count, subQuery.durationNano, subQuery.traceID AS traceID FROM %s.%s INNER JOIN ( SELECT * FROM "
-	TracesExplorerViewSQLSelectAfterSubQuery = "AS inner_subquery ) AS subQuery ON %s.%s.traceID = subQuery.traceID WHERE %s " +
-		"GROUP BY subQuery.traceID, subQuery.durationNano, subQuery.name, subQuery.serviceName ORDER BY subQuery.durationNano desc LIMIT 1 BY subQuery.traceID"
+	TracesExplorerViewSQLSelectAfterSubQuery = "AS inner_subquery ) AS subQuery ON %s.%s.traceID = subQuery.traceID WHERE %s %s " +
+		"GROUP BY subQuery.traceID, subQuery.durationNano, subQuery.name, subQuery.serviceName ORDER BY subQuery.durationNano desc LIMIT 1 BY subQuery.traceID "
 	TracesExplorerViewSQLSelectQuery = "SELECT subQuery.serviceName, subQuery.name, count() AS " +
 		"span_count, subQuery.durationNano, traceID FROM %s.%s GLOBAL INNER JOIN subQuery ON %s.traceID = subQuery.traceID GROUP " +
 		"BY traceID, subQuery.durationNano, subQuery.name, subQuery.serviceName ORDER BY subQuery.durationNano desc;"
+	TracesExplorerSpanCountWithSubQuery  = "(SELECT trace_id, count() as span_count FROM %s.%s WHERE %s %s GROUP BY trace_id ORDER BY span_count DESC LIMIT 1 BY trace_id"
+	TraceExplorerSpanCountBeforeSubQuery = "SELECT serviceName, name, subQuery.span_count as span_count, durationNano, trace_id as traceID from %s.%s GLOBAL INNER JOIN ( SELECT * FROM "
+	TraceExplorerSpanCountAfterSubQuery  = "AS inner_subquery ) AS subQuery ON %s.%s.trace_id = subQuery.trace_id WHERE parent_span_id = '' AND %s ORDER BY subQuery.span_count DESC"
 )
 
 // ReservedColumnTargetAliases identifies result value from a user
@@ -734,3 +641,21 @@ func init() {
 }
 
 const TRACE_V4_MAX_PAGINATION_LIMIT = 10000
+
+const MaxResultRowsForCHQuery = 1_000_000
+
+var ChDataTypeMap = map[string]string{
+	"string":  "String",
+	"bool":    "Bool",
+	"int64":   "Float64",
+	"float64": "Float64",
+}
+
+var MaterializedDataTypeMap = map[string]string{
+	"string":  "string",
+	"bool":    "bool",
+	"int64":   "number",
+	"float64": "number",
+}
+
+const InspectMetricsMaxTimeDiff = 1800000

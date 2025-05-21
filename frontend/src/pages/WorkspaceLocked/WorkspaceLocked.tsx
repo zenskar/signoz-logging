@@ -19,17 +19,14 @@ import {
 import updateCreditCardApi from 'api/billing/checkout';
 import logEvent from 'api/common/logEvent';
 import ROUTES from 'constants/routes';
-import useLicense from 'hooks/useLicense';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
 import { CircleArrowRight } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useAppContext } from 'providers/App/App';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from 'react-query';
-import { useSelector } from 'react-redux';
-import { AppState } from 'store/reducers';
-import { License } from 'types/api/licenses/def';
-import AppReducer from 'types/reducer/app';
+import { LicensePlatform } from 'types/api/licensesV3/getActive';
 import { getFormattedDate } from 'utils/timeUtils';
 
 import CustomerStoryCard from './CustomerStoryCard';
@@ -42,17 +39,16 @@ import {
 } from './workspaceLocked.data';
 
 export default function WorkspaceBlocked(): JSX.Element {
-	const { role } = useSelector<AppState, AppReducer>((state) => state.app);
-	const isAdmin = role === 'ADMIN';
-	const [activeLicense, setActiveLicense] = useState<License | null>(null);
+	const {
+		user,
+		isFetchingActiveLicenseV3,
+		trialInfo,
+		activeLicenseV3,
+	} = useAppContext();
+	const isAdmin = user.role === 'ADMIN';
 	const { notifications } = useNotifications();
 
 	const { t } = useTranslation(['workspaceLocked']);
-	const {
-		isFetching: isFetchingLicenseData,
-		isLoading: isLoadingLicenseData,
-		data: licensesData,
-	} = useLicense();
 
 	useEffect((): void => {
 		logEvent('Workspace Blocked: Screen Viewed', {});
@@ -74,21 +70,21 @@ export default function WorkspaceBlocked(): JSX.Element {
 	};
 
 	useEffect(() => {
-		if (!isFetchingLicenseData) {
-			const shouldBlockWorkspace = licensesData?.payload?.workSpaceBlock;
+		if (!isFetchingActiveLicenseV3) {
+			const shouldBlockWorkspace = trialInfo?.workSpaceBlock;
 
-			if (!shouldBlockWorkspace) {
-				history.push(ROUTES.APPLICATION);
+			if (
+				!shouldBlockWorkspace ||
+				activeLicenseV3?.platform === LicensePlatform.SELF_HOSTED
+			) {
+				history.push(ROUTES.HOME);
 			}
-
-			const activeValidLicense =
-				licensesData?.payload?.licenses?.find(
-					(license) => license.isCurrent === true,
-				) || null;
-
-			setActiveLicense(activeValidLicense);
 		}
-	}, [isFetchingLicenseData, licensesData]);
+	}, [
+		isFetchingActiveLicenseV3,
+		trialInfo?.workSpaceBlock,
+		activeLicenseV3?.platform,
+	]);
 
 	const { mutate: updateCreditCard, isLoading } = useMutation(
 		updateCreditCardApi,
@@ -113,12 +109,10 @@ export default function WorkspaceBlocked(): JSX.Element {
 		logEvent('Workspace Blocked: User Clicked Update Credit Card', {});
 
 		updateCreditCard({
-			licenseKey: activeLicense?.key || '',
-			successURL: window.location.origin,
-			cancelURL: window.location.origin,
+			url: window.location.origin,
 		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [activeLicense?.key, updateCreditCard]);
+	}, [updateCreditCard]);
 
 	const handleExtendTrial = (): void => {
 		logEvent('Workspace Blocked: User Clicked Extend Trial', {});
@@ -134,6 +128,12 @@ export default function WorkspaceBlocked(): JSX.Element {
 				</Typography>
 			),
 		});
+	};
+
+	const handleViewBilling = (): void => {
+		logEvent('Workspace Blocked: User Clicked View Billing', {});
+
+		history.push(ROUTES.BILLING);
 	};
 
 	const renderCustomerStories = (
@@ -286,6 +286,18 @@ export default function WorkspaceBlocked(): JSX.Element {
 							{t('trialPlanExpired')}
 						</span>
 						<span className="workspace-locked__modal__header__actions">
+							{isAdmin && (
+								<Button
+									className="workspace-locked__modal__header__actions__billing"
+									type="link"
+									size="small"
+									role="button"
+									onClick={handleViewBilling}
+								>
+									View Billing
+								</Button>
+							)}
+
 							<Typography.Text className="workspace-locked__modal__title">
 								Got Questions?
 							</Typography.Text>
@@ -308,7 +320,7 @@ export default function WorkspaceBlocked(): JSX.Element {
 				width="65%"
 			>
 				<div className="workspace-locked__container">
-					{isLoadingLicenseData || !licensesData ? (
+					{isFetchingActiveLicenseV3 || !trialInfo ? (
 						<Skeleton />
 					) : (
 						<>
@@ -323,9 +335,7 @@ export default function WorkspaceBlocked(): JSX.Element {
 											<br />
 											{t('yourDataIsSafe')}{' '}
 											<span className="workspace-locked__details__highlight">
-												{getFormattedDate(
-													licensesData.payload?.gracePeriodEnd || Date.now(),
-												)}
+												{getFormattedDate(trialInfo?.gracePeriodEnd || Date.now())}
 											</span>{' '}
 											{t('actNow')}
 										</Typography.Paragraph>

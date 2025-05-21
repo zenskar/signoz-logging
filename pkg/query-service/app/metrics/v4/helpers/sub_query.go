@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	"go.signoz.io/signoz/pkg/query-service/utils"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/utils"
 )
 
 var (
@@ -261,8 +261,9 @@ func PrepareTimeseriesFilterQuery(start, end int64, mq *v3.BuilderQuery) (string
 	var fs *v3.FilterSet = mq.Filters
 	var groupTags []v3.AttributeKey = mq.GroupBy
 
-	conditions = append(conditions, fmt.Sprintf("metric_name = %s", utils.ClickHouseFormattedValue(mq.AggregateAttribute.Key)))
+	conditions = append(conditions, fmt.Sprintf("metric_name IN %s", utils.ClickHouseFormattedMetricNames(mq.AggregateAttribute.Key)))
 	conditions = append(conditions, fmt.Sprintf("temporality = '%s'", mq.Temporality))
+	conditions = append(conditions, "__normalized = true")
 
 	start, end, tableName := whichTSTableToUse(start, end, mq)
 
@@ -270,12 +271,19 @@ func PrepareTimeseriesFilterQuery(start, end int64, mq *v3.BuilderQuery) (string
 
 	if fs != nil && len(fs.Items) != 0 {
 		for _, item := range fs.Items {
+			if item.Key.Key == "__value" {
+				continue
+			}
+
 			toFormat := item.Value
 			op := v3.FilterOperator(strings.ToLower(strings.TrimSpace(string(item.Operator))))
 			if op == v3.FilterOperatorContains || op == v3.FilterOperatorNotContains {
 				toFormat = fmt.Sprintf("%%%s%%", toFormat)
 			}
-			fmtVal := utils.ClickHouseFormattedValue(toFormat)
+			var fmtVal string
+			if op != v3.FilterOperatorExists && op != v3.FilterOperatorNotExists {
+				fmtVal = utils.ClickHouseFormattedValue(toFormat)
+			}
 			switch op {
 			case v3.FilterOperatorEqual:
 				conditions = append(conditions, fmt.Sprintf("JSONExtractString(labels, '%s') = %s", item.Key.Key, fmtVal))
@@ -318,7 +326,7 @@ func PrepareTimeseriesFilterQuery(start, end int64, mq *v3.BuilderQuery) (string
 
 	var selectLabels string
 	for _, tag := range groupTags {
-		selectLabels += fmt.Sprintf("JSONExtractString(labels, '%s') as %s, ", tag.Key, tag.Key)
+		selectLabels += fmt.Sprintf("JSONExtractString(labels, '%s') as %s, ", tag.Key, utils.AddBackTickToFormatTag(tag.Key))
 	}
 
 	// The table JOIN key always exists
@@ -341,8 +349,9 @@ func PrepareTimeseriesFilterQueryV3(start, end int64, mq *v3.BuilderQuery) (stri
 	var fs *v3.FilterSet = mq.Filters
 	var groupTags []v3.AttributeKey = mq.GroupBy
 
-	conditions = append(conditions, fmt.Sprintf("metric_name = %s", utils.ClickHouseFormattedValue(mq.AggregateAttribute.Key)))
+	conditions = append(conditions, fmt.Sprintf("metric_name IN %s", utils.ClickHouseFormattedMetricNames(mq.AggregateAttribute.Key)))
 	conditions = append(conditions, fmt.Sprintf("temporality = '%s'", mq.Temporality))
+	conditions = append(conditions, "__normalized = true")
 
 	start, end, tableName := whichTSTableToUse(start, end, mq)
 
@@ -402,7 +411,7 @@ func PrepareTimeseriesFilterQueryV3(start, end int64, mq *v3.BuilderQuery) (stri
 		selectLabels += "labels, "
 	} else {
 		for _, tag := range groupTags {
-			selectLabels += fmt.Sprintf("JSONExtractString(labels, '%s') as %s, ", tag.Key, tag.Key)
+			selectLabels += fmt.Sprintf("JSONExtractString(labels, '%s') as %s, ", tag.Key, utils.AddBackTickToFormatTag(tag.Key))
 		}
 	}
 

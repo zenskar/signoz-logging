@@ -1,5 +1,9 @@
 import Loadable from 'components/Loadable';
 
+export const Home = Loadable(
+	() => import(/* webpackChunkName: "Home" */ 'pages/HomePage/HomePage'),
+);
+
 export const ServicesTablePage = Loadable(
 	() => import(/* webpackChunkName: "ServicesTablePage" */ 'pages/Services'),
 );
@@ -38,12 +42,27 @@ export const TracesSaveViews = Loadable(
 		import(/* webpackChunkName: "Traces Save Views" */ 'pages/TracesModulePage'),
 );
 
+export const TracesFunnels = Loadable(
+	() =>
+		import(/* webpackChunkName: "Traces Funnels" */ 'pages/TracesModulePage'),
+);
+export const TracesFunnelDetails = Loadable(
+	// eslint-disable-next-line sonarjs/no-identical-functions
+	() =>
+		import(
+			/* webpackChunkName: "Traces Funnel Details" */ 'pages/TracesModulePage'
+		),
+);
+
 export const TraceFilter = Loadable(
 	() => import(/* webpackChunkName: "Trace Filter Page" */ 'pages/Trace'),
 );
 
 export const TraceDetail = Loadable(
-	() => import(/* webpackChunkName: "TraceDetail Page" */ 'pages/TraceDetail'),
+	() =>
+		import(
+			/* webpackChunkName: "TraceDetail Page" */ 'pages/TraceDetailV2/index'
+		),
 );
 
 export const UsageExplorerPage = Loadable(
@@ -68,6 +87,10 @@ export const Onboarding = Loadable(
 
 export const OrgOnboarding = Loadable(
 	() => import(/* webpackChunkName: "OrgOnboarding" */ 'pages/OrgOnboarding'),
+);
+
+export const OnboardingV2 = Loadable(
+	() => import(/* webpackChunkName: "Onboarding V2" */ 'pages/OnboardingPageV2'),
 );
 
 export const DashboardPage = Loadable(
@@ -145,6 +168,11 @@ export const MySettings = Loadable(
 	() => import(/* webpackChunkName: "All MySettings" */ 'pages/MySettings'),
 );
 
+export const CustomDomainSettings = Loadable(
+	() =>
+		import(/* webpackChunkName: "Custom Domain Settings" */ 'pages/Settings'),
+);
+
 export const Logs = Loadable(
 	() => import(/* webpackChunkName: "Logs" */ 'pages/LogsModulePage'),
 );
@@ -180,7 +208,7 @@ export const PasswordReset = Loadable(
 export const SomethingWentWrong = Loadable(
 	() =>
 		import(
-			/* webpackChunkName: "SomethingWentWrong" */ 'pages/SomethingWentWrong'
+			/* webpackChunkName: "ErrorBoundaryFallback" */ 'pages/ErrorBoundaryFallback/ErrorBoundaryFallback'
 		),
 );
 
@@ -206,6 +234,20 @@ export const WorkspaceBlocked = Loadable(
 		import(/* webpackChunkName: "WorkspaceLocked" */ 'pages/WorkspaceLocked'),
 );
 
+export const WorkspaceSuspended = Loadable(
+	() =>
+		import(
+			/* webpackChunkName: "WorkspaceSuspended" */ 'pages/WorkspaceSuspended/WorkspaceSuspended'
+		),
+);
+
+export const WorkspaceAccessRestricted = Loadable(
+	() =>
+		import(
+			/* webpackChunkName: "WorkspaceAccessRestricted" */ 'pages/WorkspaceAccessRestricted'
+		),
+);
+
 export const ShortcutsPage = Loadable(
 	() => import(/* webpackChunkName: "ShortcutsPage" */ 'pages/Shortcuts'),
 );
@@ -217,7 +259,7 @@ export const InstalledIntegrations = Loadable(
 		),
 );
 
-export const MessagingQueues = Loadable(
+export const MessagingQueuesMainPage = Loadable(
 	() =>
 		import(/* webpackChunkName: "MessagingQueues" */ 'pages/MessagingQueues'),
 );
@@ -234,4 +276,27 @@ export const InfrastructureMonitoring = Loadable(
 		import(
 			/* webpackChunkName: "InfrastructureMonitoring" */ 'pages/InfrastructureMonitoring'
 		),
+);
+
+export const CeleryTask = Loadable(
+	() =>
+		import(
+			/* webpackChunkName: "CeleryTask" */ 'pages/Celery/CeleryTask/CeleryTask'
+		),
+);
+
+export const CeleryOverview = Loadable(
+	() =>
+		import(
+			/* webpackChunkName: "CeleryOverview" */ 'pages/Celery/CeleryOverview/CeleryOverview'
+		),
+);
+
+export const MetricsExplorer = Loadable(
+	() =>
+		import(/* webpackChunkName: "MetricsExplorer" */ 'pages/MetricsExplorer'),
+);
+
+export const ApiMonitoring = Loadable(
+	() => import(/* webpackChunkName: "ApiMonitoring" */ 'pages/ApiMonitoring'),
 );

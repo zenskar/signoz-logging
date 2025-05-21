@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	"go.signoz.io/signoz/pkg/query-service/utils"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/utils"
 )
 
 func EnrichmentRequired(params *v3.QueryRangeParamsV3) bool {
@@ -92,7 +92,7 @@ func Enrich(params *v3.QueryRangeParamsV3, fields map[string]v3.AttributeKey) {
 		if query.Expression != queryName && query.DataSource != v3.DataSourceLogs {
 			continue
 		}
-		EnrichLogsQuery(query, fields)
+		_ = EnrichLogsQuery(query, fields)
 	}
 }
 
@@ -167,6 +167,22 @@ func jsonFilterEnrich(filter v3.FilterItem) v3.FilterItem {
 	// check if the value is a int, float, string, bool
 	valueType := ""
 	switch filter.Value.(type) {
+	// even the filter value is an array the actual type of the value is string.
+	case []interface{}:
+		// check first value type in array and use that
+		if len(filter.Value.([]interface{})) > 0 {
+			firstVal := filter.Value.([]interface{})[0]
+			switch firstVal.(type) {
+			case uint8, uint16, uint32, uint64, int, int8, int16, int32, int64:
+				valueType = "int64"
+			case float32, float64:
+				valueType = "float64"
+			case bool:
+				valueType = "bool"
+			default:
+				valueType = "string"
+			}
+		}
 	case uint8, uint16, uint32, uint64, int, int8, int16, int32, int64:
 		valueType = "int64"
 	case float32, float64:

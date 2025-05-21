@@ -5,17 +5,18 @@ import (
 	"math"
 	"sort"
 
-	"go.signoz.io/signoz/pkg/query-service/app/metrics/v4/helpers"
-	"go.signoz.io/signoz/pkg/query-service/common"
-	"go.signoz.io/signoz/pkg/query-service/interfaces"
-	"go.signoz.io/signoz/pkg/query-service/model"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	"go.signoz.io/signoz/pkg/query-service/postprocess"
+	"github.com/SigNoz/signoz/pkg/query-service/app/metrics/v4/helpers"
+	"github.com/SigNoz/signoz/pkg/query-service/common"
+	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
+	"github.com/SigNoz/signoz/pkg/query-service/model"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/postprocess"
+	"github.com/SigNoz/signoz/pkg/valuer"
 	"golang.org/x/exp/slices"
 )
 
 var (
-	metricToUseForJobs = "k8s_pod_cpu_utilization"
+	metricToUseForJobs = "k8s_job_desired_successful_pods"
 	k8sJobNameAttrKey  = "k8s_job_name"
 
 	metricNamesForJobs = map[string]string{
@@ -32,17 +33,17 @@ var (
 	}
 
 	queryNamesForJobs = map[string][]string{
-		"cpu":             {"A"},
-		"cpu_request":     {"B", "A"},
-		"cpu_limit":       {"C", "A"},
-		"memory":          {"D"},
-		"memory_request":  {"E", "D"},
-		"memory_limit":    {"F", "D"},
-		"restarts":        {"G", "A"},
-		"desired_pods":    {"H"},
-		"active_pods":     {"I"},
-		"failed_pods":     {"J"},
-		"successful_pods": {"K"},
+		"cpu":                     {"A"},
+		"cpu_request":             {"B", "A"},
+		"cpu_limit":               {"C", "A"},
+		"memory":                  {"D"},
+		"memory_request":          {"E", "D"},
+		"memory_limit":            {"F", "D"},
+		"restarts":                {"G", "A"},
+		"desired_successful_pods": {"H"},
+		"active_pods":             {"I"},
+		"failed_pods":             {"J"},
+		"successful_pods":         {"K"},
 	}
 
 	builderQueriesForJobs = map[string]*v3.BuilderQuery{
@@ -242,7 +243,7 @@ func (d *JobsRepo) getMetadataAttributes(ctx context.Context, req model.JobListR
 	return jobAttrs, nil
 }
 
-func (d *JobsRepo) getTopJobGroups(ctx context.Context, req model.JobListRequest, q *v3.QueryRangeParamsV3) ([]map[string]string, []map[string]string, error) {
+func (d *JobsRepo) getTopJobGroups(ctx context.Context, orgID valuer.UUID, req model.JobListRequest, q *v3.QueryRangeParamsV3) ([]map[string]string, []map[string]string, error) {
 	step, timeSeriesTableName, samplesTableName := getParamsForTopJobs(req)
 
 	queryNames := queryNamesForJobs[req.OrderBy.ColumnName]
@@ -273,7 +274,7 @@ func (d *JobsRepo) getTopJobGroups(ctx context.Context, req model.JobListRequest
 		topJobGroupsQueryRangeParams.CompositeQuery.BuilderQueries[queryName] = query
 	}
 
-	queryResponse, _, err := d.querierV2.QueryRange(ctx, topJobGroupsQueryRangeParams)
+	queryResponse, _, err := d.querierV2.QueryRange(ctx, orgID, topJobGroupsQueryRangeParams)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -312,7 +313,7 @@ func (d *JobsRepo) getTopJobGroups(ctx context.Context, req model.JobListRequest
 	return topJobGroups, allJobGroups, nil
 }
 
-func (d *JobsRepo) GetJobList(ctx context.Context, req model.JobListRequest) (model.JobListResponse, error) {
+func (d *JobsRepo) GetJobList(ctx context.Context, orgID valuer.UUID, req model.JobListRequest) (model.JobListResponse, error) {
 	resp := model.JobListResponse{}
 
 	if req.Limit == 0 {
@@ -340,7 +341,7 @@ func (d *JobsRepo) GetJobList(ctx context.Context, req model.JobListRequest) (mo
 
 	// add additional queries for jobs
 	for _, jobQuery := range builderQueriesForJobs {
-		query.CompositeQuery.BuilderQueries[jobQuery.QueryName] = jobQuery
+		query.CompositeQuery.BuilderQueries[jobQuery.QueryName] = jobQuery.Clone()
 	}
 
 	for _, query := range query.CompositeQuery.BuilderQueries {
@@ -364,7 +365,7 @@ func (d *JobsRepo) GetJobList(ctx context.Context, req model.JobListRequest) (mo
 		return resp, err
 	}
 
-	topJobGroups, allJobGroups, err := d.getTopJobGroups(ctx, req, query)
+	topJobGroups, allJobGroups, err := d.getTopJobGroups(ctx, orgID, req, query)
 	if err != nil {
 		return resp, err
 	}
@@ -398,7 +399,7 @@ func (d *JobsRepo) GetJobList(ctx context.Context, req model.JobListRequest) (mo
 		}
 	}
 
-	queryResponse, _, err := d.querierV2.QueryRange(ctx, query)
+	queryResponse, _, err := d.querierV2.QueryRange(ctx, orgID, query)
 	if err != nil {
 		return resp, err
 	}
@@ -475,7 +476,7 @@ func (d *JobsRepo) GetJobList(ctx context.Context, req model.JobListRequest) (mo
 			}
 
 			record.Meta = map[string]string{}
-			if _, ok := jobAttrs[record.JobName]; ok {
+			if _, ok := jobAttrs[record.JobName]; ok && record.JobName != "" {
 				record.Meta = jobAttrs[record.JobName]
 			}
 
@@ -493,6 +494,8 @@ func (d *JobsRepo) GetJobList(ctx context.Context, req model.JobListRequest) (mo
 	}
 	resp.Total = len(allJobGroups)
 	resp.Records = records
+
+	resp.SortBy(req.OrderBy)
 
 	return resp, nil
 }

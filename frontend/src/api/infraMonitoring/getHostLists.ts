@@ -1,4 +1,4 @@
-import { ApiBaseInstance } from 'api';
+import axios from 'api';
 import { ErrorResponseHandler } from 'api/ErrorResponseHandler';
 import { AxiosError } from 'axios';
 import { ErrorResponse, SuccessResponse } from 'types/api';
@@ -48,6 +48,8 @@ export interface HostListResponse {
 		records: HostData[];
 		groups: null;
 		total: number;
+		sentAnyHostMetricsData: boolean;
+		isSendingK8SAgentMetrics: boolean;
 	};
 }
 
@@ -57,7 +59,7 @@ export const getHostLists = async (
 	headers?: Record<string, string>,
 ): Promise<SuccessResponse<HostListResponse> | ErrorResponse> => {
 	try {
-		const response = await ApiBaseInstance.post('/hosts/list', props, {
+		const response = await axios.post('/hosts/list', props, {
 			signal,
 			headers,
 		});

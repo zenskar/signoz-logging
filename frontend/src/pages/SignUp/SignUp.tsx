@@ -1,32 +1,24 @@
-import { Button, Form, Input, Space, Switch, Typography } from 'antd';
+import { Button, Form, Input, Typography } from 'antd';
 import logEvent from 'api/common/logEvent';
-import editOrg from 'api/user/editOrg';
-import getInviteDetails from 'api/user/getInviteDetails';
-import loginApi from 'api/user/login';
-import signUpApi from 'api/user/signup';
+import accept from 'api/v1/invite/id/accept';
+import getInviteDetails from 'api/v1/invite/id/get';
+import loginApi from 'api/v1/login/login';
+import signUpApi from 'api/v1/register/signup';
 import afterLogin from 'AppRoutes/utils';
 import WelcomeLeftContainer from 'components/WelcomeLeftContainer';
-import { FeatureKeys } from 'constants/features';
 import ROUTES from 'constants/routes';
-import useFeatureFlag from 'hooks/useFeatureFlag';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from 'react-query';
 import { useLocation } from 'react-router-dom';
-import { SuccessResponse } from 'types/api';
-import { PayloadProps } from 'types/api/user/getUser';
+import { SuccessResponseV2 } from 'types/api';
+import APIError from 'types/api/error';
+import { InviteDetails } from 'types/api/user/getInviteDetails';
 import { PayloadProps as LoginPrecheckPayloadProps } from 'types/api/user/loginPrecheck';
-import { isCloudUser } from 'utils/app';
 
-import {
-	ButtonContainer,
-	FormContainer,
-	FormWrapper,
-	Label,
-	MarginTop,
-} from './styles';
+import { ButtonContainer, FormContainer, FormWrapper, Label } from './styles';
 import { isPasswordNotValidMessage, isPasswordValid } from './utils';
 
 const { Title } = Typography;
@@ -61,9 +53,10 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 	const token = params.get('token');
 	const [isDetailsDisable, setIsDetailsDisable] = useState<boolean>(false);
 
-	const isOnboardingEnabled = useFeatureFlag(FeatureKeys.ONBOARDING)?.active;
-
-	const getInviteDetailsResponse = useQuery({
+	const getInviteDetailsResponse = useQuery<
+		SuccessResponseV2<InviteDetails>,
+		APIError
+	>({
 		queryFn: () =>
 			getInviteDetails({
 				inviteId: token || '',
@@ -78,9 +71,9 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 	useEffect(() => {
 		if (
 			getInviteDetailsResponse.status === 'success' &&
-			getInviteDetailsResponse.data.payload
+			getInviteDetailsResponse.data.data
 		) {
-			const responseDetails = getInviteDetailsResponse.data.payload;
+			const responseDetails = getInviteDetailsResponse.data.data;
 			if (responseDetails.precheck) setPrecheck(responseDetails.precheck);
 			form.setFieldValue('firstName', responseDetails.name);
 			form.setFieldValue('email', responseDetails.email);
@@ -96,7 +89,7 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
-		getInviteDetailsResponse.data?.payload,
+		getInviteDetailsResponse.data?.data,
 		form,
 		getInviteDetailsResponse.status,
 	]);
@@ -104,34 +97,30 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 	useEffect(() => {
 		if (
 			getInviteDetailsResponse.status === 'success' &&
-			getInviteDetailsResponse.data?.error
+			getInviteDetailsResponse?.error
 		) {
-			const { error } = getInviteDetailsResponse.data;
+			const { error } = getInviteDetailsResponse;
 			notifications.error({
-				message: error,
+				message: (error as APIError).getErrorCode(),
+				description: (error as APIError).getErrorMessage(),
 			});
 		}
 	}, [
+		getInviteDetailsResponse,
 		getInviteDetailsResponse.data,
 		getInviteDetailsResponse.status,
 		notifications,
 	]);
 
-	const isPreferenceVisible = token === null;
+	const isSignUp = token === null;
 
-	const commonHandler = async (
-		values: FormValues,
-		callback: (
-			e: SuccessResponse<PayloadProps>,
-			values: FormValues,
-		) => Promise<void> | VoidFunction,
-	): Promise<void> => {
+	const signUp = async (values: FormValues): Promise<void> => {
 		try {
 			const { organizationName, password, firstName, email } = values;
 			const response = await signUpApi({
 				email,
 				name: firstName,
-				orgName: organizationName,
+				orgDisplayName: organizationName,
 				password,
 				token: params.get('token') || undefined,
 			});
@@ -142,51 +131,39 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 					password,
 				});
 
-				if (loginResponse.statusCode === 200) {
-					const { payload } = loginResponse;
-					const userResponse = await afterLogin(
-						payload.userId,
-						payload.accessJwt,
-						payload.refreshJwt,
-					);
-					if (userResponse) {
-						callback(userResponse, values);
-					}
-				} else {
-					notifications.error({
-						message: loginResponse.error || t('unexpected_error'),
-					});
-				}
-			} else {
-				notifications.error({
-					message: response.error || t('unexpected_error'),
-				});
+				const { data } = loginResponse;
+				await afterLogin(data.userId, data.accessJwt, data.refreshJwt);
 			}
 		} catch (error) {
 			notifications.error({
-				message: t('unexpected_error'),
+				message: (error as APIError).getErrorCode(),
+				description: (error as APIError).getErrorMessage(),
 			});
 		}
 	};
 
-	const onAdminAfterLogin = async (
-		userResponse: SuccessResponse<PayloadProps>,
-		values: FormValues,
-	): Promise<void> => {
-		const editResponse = await editOrg({
-			isAnonymous: values.isAnonymous,
-			name: values.organizationName,
-			hasOptedUpdates: values.hasOptedUpdates,
-			orgId: userResponse.payload.orgId,
-		});
-		if (editResponse.statusCode === 200) {
-			history.push(ROUTES.APPLICATION);
-		} else {
+	const acceptInvite = async (values: FormValues): Promise<void> => {
+		try {
+			const { password, email, firstName } = values;
+			await accept({
+				password,
+				token: params.get('token') || '',
+				displayName: firstName,
+			});
+			const loginResponse = await loginApi({
+				email,
+				password,
+			});
+			const { data } = loginResponse;
+			await afterLogin(data.userId, data.accessJwt, data.refreshJwt);
+		} catch (error) {
 			notifications.error({
-				message: editResponse.error || t('unexpected_error'),
+				message: (error as APIError).getErrorCode(),
+				description: (error as APIError).getErrorMessage(),
 			});
 		}
 	};
+
 	const handleSubmitSSO = async (): Promise<void> => {
 		if (!params.get('token')) {
 			notifications.error({
@@ -195,34 +172,23 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 			return;
 		}
 		setLoading(true);
-
 		try {
-			const values = form.getFieldsValue();
-			const response = await signUpApi({
-				email: values.email,
-				name: values.firstName,
-				orgName: values.organizationName,
-				password: values.password,
-				token: params.get('token') || undefined,
+			const response = await accept({
+				password: '',
+				token: params.get('token') || '',
 				sourceUrl: encodeURIComponent(window.location.href),
 			});
 
-			if (response.statusCode === 200) {
-				if (response.payload?.sso) {
-					if (response.payload?.ssoUrl) {
-						window.location.href = response.payload?.ssoUrl;
-					} else {
-						notifications.error({
-							message: t('failed_to_initiate_login'),
-						});
-						// take user to login page as there is nothing to do here
-						history.push(ROUTES.LOGIN);
-					}
+			if (response.data?.sso) {
+				if (response.data?.ssoUrl) {
+					window.location.href = response.data?.ssoUrl;
+				} else {
+					notifications.error({
+						message: t('failed_to_initiate_login'),
+					});
+					// take user to login page as there is nothing to do here
+					history.push(ROUTES.LOGIN);
 				}
-			} else {
-				notifications.error({
-					message: response.error || t('unexpected_error'),
-				});
 			}
 		} catch (error) {
 			notifications.error({
@@ -233,6 +199,7 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 		setLoading(false);
 	};
 
+	// eslint-disable-next-line sonarjs/cognitive-complexity
 	const handleSubmit = (): void => {
 		(async (): Promise<void> => {
 			try {
@@ -249,24 +216,14 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 					return;
 				}
 
-				if (isPreferenceVisible) {
-					await commonHandler(values, onAdminAfterLogin);
-				} else {
+				if (isSignUp) {
+					await signUp(values);
 					logEvent('Account Created Successfully', {
 						email: values.email,
 						name: values.firstName,
 					});
-
-					await commonHandler(
-						values,
-						async (): Promise<void> => {
-							if (isOnboardingEnabled && isCloudUser()) {
-								history.push(ROUTES.GET_STARTED);
-							} else {
-								history.push(ROUTES.APPLICATION);
-							}
-						},
-					);
+				} else {
+					await acceptInvite(values);
 				}
 
 				setLoading(false);
@@ -280,7 +237,7 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 	};
 
 	const getIsNameVisible = (): boolean =>
-		!(form.getFieldValue('firstName') === 0 && !isPreferenceVisible);
+		!(form.getFieldValue('firstName') === 0 && !isSignUp);
 
 	const isNameVisible = getIsNameVisible();
 
@@ -316,7 +273,6 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 				<FormContainer
 					onFinish={!precheck.sso ? handleSubmit : handleSubmitSSO}
 					onValuesChange={handleValuesChange}
-					initialValues={{ hasOptedUpdates: true, isAnonymous: false }}
 					form={form}
 				>
 					<Title level={4}>Create your account</Title>
@@ -397,35 +353,7 @@ function SignUp({ version }: SignUpProps): JSX.Element {
 							)}
 						</div>
 					)}
-
-					{isPreferenceVisible && (
-						<>
-							<MarginTop marginTop="2.4375rem">
-								<Space>
-									<FormContainer.Item
-										noStyle
-										name="hasOptedUpdates"
-										valuePropName="checked"
-									>
-										<Switch />
-									</FormContainer.Item>
-
-									<Typography>{t('prompt_keepme_posted')} </Typography>
-								</Space>
-							</MarginTop>
-
-							<MarginTop marginTop="0.5rem">
-								<Space>
-									<FormContainer.Item noStyle name="isAnonymous" valuePropName="checked">
-										<Switch />
-									</FormContainer.Item>
-									<Typography>{t('prompt_anonymise')}</Typography>
-								</Space>
-							</MarginTop>
-						</>
-					)}
-
-					{isPreferenceVisible && (
+					{isSignUp && (
 						<Typography.Paragraph
 							italic
 							style={{

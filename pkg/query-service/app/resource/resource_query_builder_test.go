@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 )
 
 func Test_buildResourceFilter(t *testing.T) {
@@ -234,6 +234,22 @@ func Test_buildResourceIndexFilter(t *testing.T) {
 				value: `Application"`,
 			},
 			want: `labels like '%service.name%Application\\\\"%'`,
+		},
+		{
+			name: "test exists",
+			args: args{
+				key: "service.name",
+				op:  v3.FilterOperatorExists,
+			},
+			want: `lower(labels) like '%service.name%'`,
+		},
+		{
+			name: "test not exists",
+			args: args{
+				key: "service.name",
+				op:  v3.FilterOperatorNotExists,
+			},
+			want: `lower(labels) not like '%service.name%'`,
 		},
 	}
 	for _, tt := range tests {

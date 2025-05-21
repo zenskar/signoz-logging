@@ -9,6 +9,9 @@ function TablePanelWrapper({
 	queryResponse,
 	tableProcessedDataRef,
 	searchTerm,
+	openTracesButton,
+	onOpenTraceBtnClick,
+	customOnRowClick,
 }: PanelWrapperProps): JSX.Element {
 	const panelData =
 		(queryResponse.data?.payload?.data?.result?.[0] as any)?.table || [];
@@ -22,6 +25,12 @@ function TablePanelWrapper({
 			tableProcessedDataRef={tableProcessedDataRef}
 			sticky={widget.panelTypes === PANEL_TYPES.TABLE}
 			searchTerm={searchTerm}
+			openTracesButton={openTracesButton}
+			onOpenTraceBtnClick={onOpenTraceBtnClick}
+			customOnRowClick={customOnRowClick}
+			widgetId={widget.id}
+			renderColumnCell={widget.renderColumnCell}
+			customColTitles={widget.customColTitles}
 			// eslint-disable-next-line react/jsx-props-no-spreading
 			{...GRID_TABLE_CONFIG}
 		/>

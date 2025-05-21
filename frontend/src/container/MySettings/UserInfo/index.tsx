@@ -2,28 +2,23 @@ import '../MySettings.styles.scss';
 import './UserInfo.styles.scss';
 
 import { Button, Card, Flex, Input, Space, Typography } from 'antd';
-import editUser from 'api/user/editUser';
+import editUser from 'api/v1/user/id/update';
 import { useNotifications } from 'hooks/useNotifications';
 import { PencilIcon } from 'lucide-react';
+import { useAppContext } from 'providers/App/App';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
-import { Dispatch } from 'redux';
-import { AppState } from 'store/reducers';
-import AppActions from 'types/actions';
-import { UPDATE_USER } from 'types/actions/app';
-import AppReducer from 'types/reducer/app';
+import APIError from 'types/api/error';
 
 import { NameInput } from '../styles';
 
 function UserInfo(): JSX.Element {
-	const { user, role, org, userFlags } = useSelector<AppState, AppReducer>(
-		(state) => state.app,
-	);
+	const { user, org, updateUser } = useAppContext();
 	const { t } = useTranslation();
-	const dispatch = useDispatch<Dispatch<AppActions>>();
 
-	const [changedName, setChangedName] = useState<string>(user?.name || '');
+	const [changedName, setChangedName] = useState<string>(
+		user?.displayName || '',
+	);
 	const [loading, setLoading] = useState<boolean>(false);
 
 	const { notifications } = useNotifications();
@@ -35,41 +30,25 @@ function UserInfo(): JSX.Element {
 	const onClickUpdateHandler = async (): Promise<void> => {
 		try {
 			setLoading(true);
-			const { statusCode } = await editUser({
-				name: changedName,
-				userId: user.userId,
+			await editUser({
+				displayName: changedName,
+				userId: user.id,
 			});
 
-			if (statusCode === 200) {
-				notifications.success({
-					message: t('success', {
-						ns: 'common',
-					}),
-				});
-				dispatch({
-					type: UPDATE_USER,
-					payload: {
-						...user,
-						name: changedName,
-						ROLE: role || 'ADMIN',
-						orgId: org[0].id,
-						orgName: org[0].name,
-						userFlags: userFlags || {},
-					},
-				});
-			} else {
-				notifications.error({
-					message: t('something_went_wrong', {
-						ns: 'common',
-					}),
-				});
-			}
+			notifications.success({
+				message: t('success', {
+					ns: 'common',
+				}),
+			});
+			updateUser({
+				...user,
+				displayName: changedName,
+			});
 			setLoading(false);
 		} catch (error) {
 			notifications.error({
-				message: t('something_went_wrong', {
-					ns: 'common',
-				}),
+				message: (error as APIError).getErrorCode(),
+				description: (error as APIError).getErrorMessage(),
 			});
 		}
 		setLoading(false);
@@ -132,7 +111,7 @@ function UserInfo(): JSX.Element {
 					</Typography>
 					<Input
 						className="userInfo-value"
-						value={role || ''}
+						value={user.role || ''}
 						disabled
 						data-testid="role-textbox"
 					/>

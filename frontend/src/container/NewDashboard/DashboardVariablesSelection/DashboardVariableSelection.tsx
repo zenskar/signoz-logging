@@ -1,9 +1,21 @@
-import { Row } from 'antd';
-import { isNull } from 'lodash-es';
+import './DashboardVariableSelection.styles.scss';
+
+import { Alert, Row } from 'antd';
+import { isEmpty } from 'lodash-es';
 import { useDashboard } from 'providers/Dashboard/Dashboard';
 import { memo, useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
+import { AppState } from 'store/reducers';
 import { IDashboardVariable } from 'types/api/dashboard/getAll';
+import { GlobalReducer } from 'types/reducer/globalTime';
 
+import {
+	buildDependencies,
+	buildDependencyGraph,
+	buildParentDependencyGraph,
+	IDependencyData,
+	onUpdateVariableNode,
+} from './util';
 import VariableItem from './VariableItem';
 
 function DashboardVariableSelection(): JSX.Element | null {
@@ -20,6 +32,14 @@ function DashboardVariableSelection(): JSX.Element | null {
 	const { variables } = data || {};
 
 	const [variablesTableData, setVariablesTableData] = useState<any>([]);
+
+	const [dependencyData, setDependencyData] = useState<IDependencyData | null>(
+		null,
+	);
+
+	const { maxTime, minTime } = useSelector<AppState, GlobalReducer>(
+		(state) => state.globalTime,
+	);
 
 	useEffect(() => {
 		if (variables) {
@@ -43,35 +63,48 @@ function DashboardVariableSelection(): JSX.Element | null {
 		}
 	}, [variables]);
 
-	const onVarChanged = (name: string): void => {
-		/**
-		 * this function takes care of adding the dependent variables to current update queue and removing
-		 * the updated variable name from the queue
-		 */
-		const dependentVariables = variablesTableData
-			?.map((variable: any) => {
-				if (variable.type === 'QUERY') {
-					const re = new RegExp(`\\{\\{\\s*?\\.${name}\\s*?\\}\\}`); // regex for `{{.var}}`
-					const queryValue = variable.queryValue || '';
-					const dependVarReMatch = queryValue.match(re);
-					if (dependVarReMatch !== null && dependVarReMatch.length > 0) {
-						return variable.name;
-					}
-				}
-				return null;
-			})
-			.filter((val: string | null) => !isNull(val));
-		setVariablesToGetUpdated((prev) => [
-			...prev.filter((v) => v !== name),
-			...dependentVariables,
-		]);
-	};
+	useEffect(() => {
+		if (variablesTableData.length > 0) {
+			const depGrp = buildDependencies(variablesTableData);
+			const { order, graph, hasCycle, cycleNodes } = buildDependencyGraph(depGrp);
+			const parentDependencyGraph = buildParentDependencyGraph(graph);
+
+			// cleanup order to only include variables that are of type 'QUERY'
+			const cleanedOrder = order.filter((variable) => {
+				const variableData = variablesTableData.find(
+					(v: IDashboardVariable) => v.name === variable,
+				);
+				return variableData?.type === 'QUERY';
+			});
+
+			setDependencyData({
+				order: cleanedOrder,
+				graph,
+				parentDependencyGraph,
+				hasCycle,
+				cycleNodes,
+			});
+		}
+	}, [setVariablesToGetUpdated, variables, variablesTableData]);
+
+	// this handles the case where the dependency order changes i.e. variable list updated via creation or deletion etc. and we need to refetch the variables
+	// also trigger when the global time changes
+	useEffect(
+		() => {
+			if (!isEmpty(dependencyData?.order)) {
+				setVariablesToGetUpdated(dependencyData?.order || []);
+			}
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[JSON.stringify(dependencyData?.order), minTime, maxTime],
+	);
 
 	const onValueUpdate = (
 		name: string,
 		id: string,
 		value: IDashboardVariable['selectedValue'],
 		allSelected: boolean,
+		// isMountedCall?: boolean,
 		// eslint-disable-next-line sonarjs/cognitive-complexity
 	): void => {
 		if (id) {
@@ -111,7 +144,20 @@ function DashboardVariableSelection(): JSX.Element | null {
 				});
 			}
 
-			onVarChanged(name);
+			if (dependencyData) {
+				const updatedVariables: string[] = [];
+				onUpdateVariableNode(
+					name,
+					dependencyData.graph,
+					dependencyData.order,
+					(node) => updatedVariables.push(node),
+				);
+				setVariablesToGetUpdated((prev) => [
+					...new Set([...prev, ...updatedVariables.filter((v) => v !== name)]),
+				]);
+			} else {
+				setVariablesToGetUpdated((prev) => prev.filter((v) => v !== name));
+			}
 		}
 	};
 
@@ -124,24 +170,37 @@ function DashboardVariableSelection(): JSX.Element | null {
 	);
 
 	return (
-		<Row style={{ display: 'flex', gap: '12px' }}>
-			{orderBasedSortedVariables &&
-				Array.isArray(orderBasedSortedVariables) &&
-				orderBasedSortedVariables.length > 0 &&
-				orderBasedSortedVariables.map((variable) => (
-					<VariableItem
-						key={`${variable.name}${variable.id}}${variable.order}`}
-						existingVariables={variables}
-						variableData={{
-							name: variable.name,
-							...variable,
-						}}
-						onValueUpdate={onValueUpdate}
-						variablesToGetUpdated={variablesToGetUpdated}
-						setVariablesToGetUpdated={setVariablesToGetUpdated}
-					/>
-				))}
-		</Row>
+		<>
+			{dependencyData?.hasCycle && (
+				<Alert
+					message={`Circular dependency detected: ${dependencyData?.cycleNodes?.join(
+						' → ',
+					)}`}
+					type="error"
+					showIcon
+					className="cycle-error-alert"
+				/>
+			)}
+			<Row style={{ display: 'flex', gap: '12px' }}>
+				{orderBasedSortedVariables &&
+					Array.isArray(orderBasedSortedVariables) &&
+					orderBasedSortedVariables.length > 0 &&
+					orderBasedSortedVariables.map((variable) => (
+						<VariableItem
+							key={`${variable.name}${variable.id}}${variable.order}`}
+							existingVariables={variables}
+							variableData={{
+								name: variable.name,
+								...variable,
+							}}
+							onValueUpdate={onValueUpdate}
+							variablesToGetUpdated={variablesToGetUpdated}
+							setVariablesToGetUpdated={setVariablesToGetUpdated}
+							dependencyData={dependencyData}
+						/>
+					))}
+			</Row>
+		</>
 	);
 }
 

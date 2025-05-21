@@ -10,10 +10,11 @@ import {
 import { getWidgetQueryBuilder } from 'container/MetricsApplication/MetricsApplication.factory';
 import { latency } from 'container/MetricsApplication/MetricsPageQueries/OverviewQueries';
 import { Card, GraphContainer } from 'container/MetricsApplication/styles';
-import useFeatureFlag from 'hooks/useFeatureFlag';
 import useResourceAttribute from 'hooks/useResourceAttribute';
 import { resourceAttributesToTagFilterItems } from 'hooks/useResourceAttribute/utils';
+import { useSafeNavigate } from 'hooks/useSafeNavigate';
 import { OnClickPluginOpts } from 'lib/uPlotLib/plugins/onClickPlugin';
+import { useAppContext } from 'providers/App/App';
 import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { EQueryType } from 'types/common/dashboard';
@@ -40,8 +41,10 @@ function ServiceOverview({
 	const { servicename: encodedServiceName } = useParams<IServiceName>();
 	const servicename = decodeURIComponent(encodedServiceName);
 
-	const isSpanMetricEnable = useFeatureFlag(FeatureKeys.USE_SPAN_METRICS)
-		?.active;
+	const { featureFlags } = useAppContext();
+	const isSpanMetricEnable =
+		featureFlags?.find((flag) => flag.name === FeatureKeys.USE_SPAN_METRICS)
+			?.active || false;
 
 	const { queries } = useResourceAttribute();
 
@@ -53,24 +56,28 @@ function ServiceOverview({
 		[isSpanMetricEnable, queries],
 	);
 
-	const latencyWidget = getWidgetQueryBuilder({
-		query: {
-			queryType: EQueryType.QUERY_BUILDER,
-			promql: [],
-			builder: latency({
-				servicename,
-				tagFilterItems,
-				isSpanMetricEnable,
-				topLevelOperationsRoute,
+	const latencyWidget = useMemo(
+		() =>
+			getWidgetQueryBuilder({
+				query: {
+					queryType: EQueryType.QUERY_BUILDER,
+					promql: [],
+					builder: latency({
+						servicename,
+						tagFilterItems,
+						isSpanMetricEnable,
+						topLevelOperationsRoute,
+					}),
+					clickhouse_sql: [],
+					id: uuid(),
+				},
+				title: GraphTitle.LATENCY,
+				panelTypes: PANEL_TYPES.TIME_SERIES,
+				yAxisUnit: 'ns',
+				id: SERVICE_CHART_ID.latency,
 			}),
-			clickhouse_sql: [],
-			id: uuid(),
-		},
-		title: GraphTitle.LATENCY,
-		panelTypes: PANEL_TYPES.TIME_SERIES,
-		yAxisUnit: 'ns',
-		id: SERVICE_CHART_ID.latency,
-	});
+		[isSpanMetricEnable, servicename, tagFilterItems, topLevelOperationsRoute],
+	);
 
 	const isQueryEnabled =
 		!topLevelOperationsIsLoading && topLevelOperationsRoute.length > 0;
@@ -78,6 +85,8 @@ function ServiceOverview({
 	const apmToTraceQuery = useGetAPMToTracesQueries({ servicename });
 
 	const apmToLogQuery = useGetAPMToLogsQueries({ servicename });
+
+	const { safeNavigate } = useSafeNavigate();
 
 	return (
 		<>
@@ -90,6 +99,7 @@ function ServiceOverview({
 					apmToTraceQuery: apmToLogQuery,
 					isViewLogsClicked: true,
 					stepInterval,
+					safeNavigate,
 				})}
 				onViewTracesClick={onViewTracePopupClick({
 					servicename,
@@ -97,6 +107,7 @@ function ServiceOverview({
 					timestamp: selectedTimeStamp,
 					apmToTraceQuery,
 					stepInterval,
+					safeNavigate,
 				})}
 			/>
 			<Card data-testid="service_latency">

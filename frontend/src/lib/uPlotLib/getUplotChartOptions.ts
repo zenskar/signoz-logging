@@ -55,6 +55,11 @@ export interface GetUPlotChartOptions {
 	>;
 	customTooltipElement?: HTMLDivElement;
 	verticalLineTimestamp?: number;
+	tzDate?: (timestamp: number) => Date;
+	timezone?: string;
+	customSeries?: (data: QueryData[]) => uPlot.Series[];
+	isLogScale?: boolean;
+	colorMapping?: Record<string, string>;
 }
 
 /** the function converts series A , series B , series C to
@@ -158,6 +163,11 @@ export const getUPlotChartOptions = ({
 	setHiddenGraph,
 	customTooltipElement,
 	verticalLineTimestamp,
+	tzDate,
+	timezone,
+	customSeries,
+	isLogScale,
+	colorMapping,
 }: GetUPlotChartOptions): uPlot.Options => {
 	const timeScaleProps = getXAxisScale(minTimeScale, maxTimeScale);
 
@@ -196,6 +206,7 @@ export const getUPlotChartOptions = ({
 				fill: (): string => '#fff',
 			},
 		},
+		tzDate,
 		padding: [16, 16, 8, 8],
 		bands,
 		scales: {
@@ -213,14 +224,17 @@ export const getUPlotChartOptions = ({
 					softMax,
 					softMin,
 				}),
+				distr: isLogScale ? 3 : 1,
 			},
 		},
 		plugins: [
 			tooltipPlugin({
 				apiResponse,
 				yAxisUnit,
-				stackBarChart,
 				isDarkMode,
+				stackBarChart,
+				timezone,
+				colorMapping,
 				customTooltipElement,
 			}),
 			onClickPlugin({
@@ -364,19 +378,21 @@ export const getUPlotChartOptions = ({
 				},
 			],
 		},
-		series: getSeries({
-			series:
-				stackBarChart && isUndefined(hiddenGraph)
-					? series
-					: apiResponse?.data?.result,
-			widgetMetaData: apiResponse?.data.result,
-			graphsVisibilityStates,
-			panelType,
-			currentQuery,
-			stackBarChart,
-			hiddenGraph,
-			isDarkMode,
-		}),
-		axes: getAxes(isDarkMode, yAxisUnit),
+		series: customSeries
+			? customSeries(apiResponse?.data?.result || [])
+			: getSeries({
+					series:
+						stackBarChart && isUndefined(hiddenGraph)
+							? series || []
+							: apiResponse?.data?.result || [],
+					widgetMetaData: apiResponse?.data?.result || [],
+					graphsVisibilityStates,
+					panelType,
+					currentQuery,
+					stackBarChart,
+					hiddenGraph,
+					isDarkMode,
+			  }),
+		axes: getAxes({ isDarkMode, yAxisUnit, panelType, isLogScale }),
 	};
 };

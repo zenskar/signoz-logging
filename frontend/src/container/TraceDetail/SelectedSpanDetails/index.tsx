@@ -19,6 +19,8 @@ import Events from './Events';
 import { CardContainer, CustomSubText, styles } from './styles';
 import Tags from './Tags';
 
+const FIVE_MINUTES_IN_MS = 5 * 60 * 1000;
+
 function SelectedSpanDetails(props: SelectedSpanDetailsProps): JSX.Element {
 	const { maxTime, minTime } = useSelector<AppState, GlobalReducer>(
 		(state) => state.globalTime,
@@ -86,8 +88,10 @@ function SelectedSpanDetails(props: SelectedSpanDetailsProps): JSX.Element {
 		history.push(
 			`${ROUTES.LOGS_EXPLORER}?${createQueryParams({
 				[QueryParams.compositeQuery]: JSON.stringify(query),
-				[QueryParams.startTime]: minTime,
-				[QueryParams.endTime]: maxTime,
+				// we subtract 5 minutes from the start time to handle the cases when the trace duration is in nanoseconds
+				[QueryParams.startTime]: traceStartTime - FIVE_MINUTES_IN_MS,
+				// we add 5 minutes to the end time for nano second duration traces
+				[QueryParams.endTime]: traceEndTime + FIVE_MINUTES_IN_MS,
 			})}`,
 		);
 	};

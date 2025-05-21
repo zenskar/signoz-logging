@@ -6,6 +6,7 @@ import { Button, Popover, Switch, Typography } from 'antd';
 import getLocalStorageKey from 'api/browser/localstorage/get';
 import setLocalStorageKey from 'api/browser/localstorage/set';
 import CustomTimePicker from 'components/CustomTimePicker/CustomTimePicker';
+import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import { LOCALSTORAGE } from 'constants/localStorage';
 import { QueryParams } from 'constants/query';
 import {
@@ -22,16 +23,18 @@ import { QueryHistoryState } from 'container/LiveLogs/types';
 import NewExplorerCTA from 'container/NewExplorerCTA';
 import dayjs, { Dayjs } from 'dayjs';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
+import { useSafeNavigate } from 'hooks/useSafeNavigate';
 import useUrlQuery from 'hooks/useUrlQuery';
 import GetMinMax, { isValidTimeFormat } from 'lib/getMinMax';
 import getTimeString from 'lib/getTimeString';
-import history from 'lib/history';
 import { isObject } from 'lodash-es';
 import { Check, Copy, Info, Send, Undo } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTimezone } from 'providers/Timezone';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from 'react-query';
-import { connect, useSelector } from 'react-redux';
+import { connect, useDispatch, useSelector } from 'react-redux';
 import { RouteComponentProps, withRouter } from 'react-router-dom';
+import { useNavigationType } from 'react-router-dom-v5-compat';
 import { useCopyToClipboard } from 'react-use';
 import { bindActionCreators, Dispatch } from 'redux';
 import { ThunkDispatch } from 'redux-thunk';
@@ -41,6 +44,7 @@ import AppActions from 'types/actions';
 import { ErrorResponse, SuccessResponse } from 'types/api';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
 import { GlobalReducer } from 'types/reducer/globalTime';
+import { normalizeTimeToMs } from 'utils/timeUtils';
 
 import AutoRefresh from '../AutoRefreshV2';
 import { DateTimeRangeType } from '../CustomDateTimeModal';
@@ -71,8 +75,13 @@ function DateTimeSelection({
 	isModalTimeSelection = false,
 	onTimeChange,
 	modalSelectedInterval,
+	modalInitialStartTime,
+	modalInitialEndTime,
 }: Props): JSX.Element {
 	const [formSelector] = Form.useForm();
+	const { safeNavigate } = useSafeNavigate();
+	const navigationType = useNavigationType(); // Returns 'POP' for back/forward navigation
+	const dispatch = useDispatch();
 
 	const [hasSelectedTimeError, setHasSelectedTimeError] = useState(false);
 	const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -86,6 +95,36 @@ function DateTimeSelection({
 	const [isValidteRelativeTime, setIsValidteRelativeTime] = useState(false);
 	const [, handleCopyToClipboard] = useCopyToClipboard();
 	const [isURLCopied, setIsURLCopied] = useState(false);
+
+	// Prioritize props for initial modal time, fallback to URL params
+	let initialModalStartTime = 0;
+	if (modalInitialStartTime !== undefined) {
+		initialModalStartTime = modalInitialStartTime;
+	} else if (searchStartTime) {
+		initialModalStartTime = parseInt(searchStartTime, 10);
+	}
+
+	let initialModalEndTime = 0;
+	if (modalInitialEndTime !== undefined) {
+		initialModalEndTime = modalInitialEndTime;
+	} else if (searchEndTime) {
+		initialModalEndTime = parseInt(searchEndTime, 10);
+	}
+
+	const [modalStartTime, setModalStartTime] = useState<number>(
+		initialModalStartTime,
+	);
+	const [modalEndTime, setModalEndTime] = useState<number>(initialModalEndTime);
+
+	// Effect to update modal time state when props change
+	useEffect(() => {
+		if (modalInitialStartTime !== undefined) {
+			setModalStartTime(modalInitialStartTime);
+		}
+		if (modalInitialEndTime !== undefined) {
+			setModalEndTime(modalInitialEndTime);
+		}
+	}, [modalInitialStartTime, modalInitialEndTime]);
 
 	const {
 		localstorageStartTime,
@@ -187,8 +226,8 @@ function DateTimeSelection({
 
 		const path = `${ROUTES.LIVE_LOGS}?${QueryParams.compositeQuery}=${JSONCompositeQuery}`;
 
-		history.push(path, queryHistoryState);
-	}, [panelType, queryClient, stagedQuery]);
+		safeNavigate(path, { state: queryHistoryState });
+	}, [panelType, queryClient, safeNavigate, stagedQuery]);
 
 	const { maxTime, minTime, selectedTime } = useSelector<
 		AppState,
@@ -201,11 +240,10 @@ function DateTimeSelection({
 		timeInterval: Time | CustomTimeType = '15m',
 	): string | Time => {
 		if (startTime && endTime && timeInterval === 'custom') {
-			const format = 'DD/MM/YYYY HH:mm';
+			const format = DATE_TIME_FORMATS.UK_DATETIME;
 
 			const startString = startTime.format(format);
 			const endString = endTime.format(format);
-
 			return `${startString} - ${endString}`;
 		}
 		return timeInterval;
@@ -307,11 +345,6 @@ function DateTimeSelection({
 		return `Refreshed ${secondsDiff} sec ago`;
 	}, [maxTime, minTime, selectedTime]);
 
-	const isLogsExplorerPage = useMemo(
-		() => location.pathname === ROUTES.LOGS_EXPLORER,
-		[location.pathname],
-	);
-
 	const onSelectHandler = useCallback(
 		(value: Time | CustomTimeType): void => {
 			if (isModalTimeSelection) {
@@ -340,15 +373,13 @@ function DateTimeSelection({
 				return;
 			}
 
-			if (!isLogsExplorerPage) {
-				urlQuery.delete('startTime');
-				urlQuery.delete('endTime');
+			urlQuery.delete('startTime');
+			urlQuery.delete('endTime');
 
-				urlQuery.set(QueryParams.relativeTime, value);
+			urlQuery.set(QueryParams.relativeTime, value);
 
-				const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
-				history.replace(generatedUrl);
-			}
+			const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
+			safeNavigate(generatedUrl);
 
 			// For logs explorer - time range handling is managed in useCopyLogLink.ts:52
 
@@ -361,11 +392,11 @@ function DateTimeSelection({
 		},
 		[
 			initQueryBuilderData,
-			isLogsExplorerPage,
 			isModalTimeSelection,
 			location.pathname,
 			onTimeChange,
 			refreshButtonHidden,
+			safeNavigate,
 			stagedQuery,
 			updateLocalStorageForRoutes,
 			updateTimeInterval,
@@ -382,9 +413,6 @@ function DateTimeSelection({
 			onSelectHandler(defaultRelativeTime);
 		}
 	}, [defaultRelativeTime, onSelectHandler]);
-
-	const [modalStartTime, setModalStartTime] = useState<number>(0);
-	const [modalEndTime, setModalEndTime] = useState<number>(0);
 
 	// eslint-disable-next-line sonarjs/cognitive-complexity
 	const onCustomDateHandler = (dateTimeRange: DateTimeRangeType): void => {
@@ -426,16 +454,14 @@ function DateTimeSelection({
 
 				updateLocalStorageForRoutes(JSON.stringify({ startTime, endTime }));
 
-				if (!isLogsExplorerPage) {
-					urlQuery.set(
-						QueryParams.startTime,
-						startTime?.toDate().getTime().toString(),
-					);
-					urlQuery.set(QueryParams.endTime, endTime?.toDate().getTime().toString());
-					urlQuery.delete(QueryParams.relativeTime);
-					const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
-					history.replace(generatedUrl);
-				}
+				urlQuery.set(
+					QueryParams.startTime,
+					startTime?.toDate().getTime().toString(),
+				);
+				urlQuery.set(QueryParams.endTime, endTime?.toDate().getTime().toString());
+				urlQuery.delete(QueryParams.relativeTime);
+				const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
+				safeNavigate(generatedUrl);
 			}
 		}
 	};
@@ -454,15 +480,13 @@ function DateTimeSelection({
 
 		setIsValidteRelativeTime(true);
 
-		if (!isLogsExplorerPage) {
-			urlQuery.delete('startTime');
-			urlQuery.delete('endTime');
+		urlQuery.delete('startTime');
+		urlQuery.delete('endTime');
 
-			urlQuery.set(QueryParams.relativeTime, dateTimeStr);
+		urlQuery.set(QueryParams.relativeTime, dateTimeStr);
 
-			const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
-			history.replace(generatedUrl);
-		}
+		const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
+		safeNavigate(generatedUrl);
 
 		if (!stagedQuery) {
 			return;
@@ -503,6 +527,77 @@ function DateTimeSelection({
 		return time;
 	};
 
+	const handleAbsoluteTimeSync = useCallback(
+		(
+			startTime: string,
+			endTime: string,
+			currentMinTime: number,
+			currentMaxTime: number,
+		): void => {
+			const startTs = normalizeTimeToMs(startTime);
+			const endTs = normalizeTimeToMs(endTime);
+
+			const timeComparison = {
+				url: {
+					start: dayjs(startTs).startOf('minute'),
+					end: dayjs(endTs).startOf('minute'),
+				},
+				current: {
+					start: dayjs(normalizeTimeToMs(currentMinTime)).startOf('minute'),
+					end: dayjs(normalizeTimeToMs(currentMaxTime)).startOf('minute'),
+				},
+			};
+
+			const hasTimeChanged =
+				!timeComparison.current.start.isSame(timeComparison.url.start) ||
+				!timeComparison.current.end.isSame(timeComparison.url.end);
+
+			if (hasTimeChanged) {
+				dispatch(UpdateTimeInterval('custom', [startTs, endTs]));
+			}
+		},
+		[dispatch],
+	);
+
+	const handleRelativeTimeSync = useCallback(
+		(relativeTime: string): void => {
+			updateTimeInterval(relativeTime as Time);
+			setIsValidteRelativeTime(true);
+			setRefreshButtonHidden(false);
+		},
+		[updateTimeInterval],
+	);
+
+	// Sync time picker state with URL on browser navigation
+	useEffect(() => {
+		if (navigationType !== 'POP') return;
+
+		if (searchStartTime && searchEndTime) {
+			handleAbsoluteTimeSync(searchStartTime, searchEndTime, minTime, maxTime);
+			return;
+		}
+
+		if (
+			relativeTimeFromUrl &&
+			isValidTimeFormat(relativeTimeFromUrl) &&
+			relativeTimeFromUrl !== selectedTime
+		) {
+			handleRelativeTimeSync(relativeTimeFromUrl);
+		}
+	}, [
+		navigationType,
+		searchStartTime,
+		searchEndTime,
+		relativeTimeFromUrl,
+		selectedTime,
+		minTime,
+		maxTime,
+		dispatch,
+		updateTimeInterval,
+		handleAbsoluteTimeSync,
+		handleRelativeTimeSync,
+	]);
+
 	// this is triggred when we change the routes and based on that we are changing the default options
 	useEffect(() => {
 		const metricsTimeDuration = getLocalStorageKey(
@@ -518,6 +613,16 @@ function DateTimeSelection({
 
 		const currentRoute = location.pathname;
 
+		// Give priority to relativeTime from URL if it exists and start /end time are not present in the url, to sync the relative time in URL param with the time picker
+		if (
+			!searchStartTime &&
+			!searchEndTime &&
+			relativeTimeFromUrl &&
+			isValidTimeFormat(relativeTimeFromUrl)
+		) {
+			handleRelativeTimeSync(relativeTimeFromUrl);
+		}
+
 		// set the default relative time for alert history and overview pages if relative time is not specified
 		if (
 			(!urlQuery.has(QueryParams.startTime) ||
@@ -529,7 +634,7 @@ function DateTimeSelection({
 			updateTimeInterval(defaultRelativeTime);
 			urlQuery.set(QueryParams.relativeTime, defaultRelativeTime);
 			const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
-			history.replace(generatedUrl);
+			safeNavigate(generatedUrl);
 			return;
 		}
 
@@ -567,7 +672,7 @@ function DateTimeSelection({
 
 		const generatedUrl = `${location.pathname}?${urlQuery.toString()}`;
 
-		history.replace(generatedUrl);
+		safeNavigate(generatedUrl);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [location.pathname, updateTimeInterval, globalTimeLoading]);
 
@@ -660,6 +765,8 @@ function DateTimeSelection({
 		);
 	};
 
+	const { timezone } = useTimezone();
+
 	return (
 		<div className="date-time-selector">
 			{showResetButton && selectedTime !== defaultRelativeTime && (
@@ -713,8 +820,12 @@ function DateTimeSelection({
 							setIsValidteRelativeTime(isValid);
 						}}
 						selectedValue={getInputLabel(
-							dayjs(isModalTimeSelection ? modalStartTime : minTime / 1000000),
-							dayjs(isModalTimeSelection ? modalEndTime : maxTime / 1000000),
+							dayjs(isModalTimeSelection ? modalStartTime : minTime / 1000000).tz(
+								timezone.value,
+							),
+							dayjs(isModalTimeSelection ? modalEndTime : maxTime / 1000000).tz(
+								timezone.value,
+							),
 							isModalTimeSelection ? modalSelectedInterval : selectedTime,
 						)}
 						data-testid="dropDown"
@@ -777,6 +888,8 @@ interface DateTimeSelectionV2Props {
 		dateTimeRange?: [number, number],
 	) => void;
 	modalSelectedInterval?: Time;
+	modalInitialStartTime?: number;
+	modalInitialEndTime?: number;
 }
 
 DateTimeSelection.defaultProps = {
@@ -788,6 +901,8 @@ DateTimeSelection.defaultProps = {
 	isModalTimeSelection: false,
 	onTimeChange: (): void => {},
 	modalSelectedInterval: RelativeTimeMap['5m'] as Time,
+	modalInitialStartTime: undefined,
+	modalInitialEndTime: undefined,
 };
 interface DispatchProps {
 	updateTimeInterval: (

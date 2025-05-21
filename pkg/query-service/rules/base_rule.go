@@ -8,11 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"go.signoz.io/signoz/pkg/query-service/converter"
-	"go.signoz.io/signoz/pkg/query-service/interfaces"
-	"go.signoz.io/signoz/pkg/query-service/model"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
-	qslabels "go.signoz.io/signoz/pkg/query-service/utils/labels"
+	"github.com/SigNoz/signoz/pkg/query-service/converter"
+	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
+	"github.com/SigNoz/signoz/pkg/query-service/model"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	qslabels "github.com/SigNoz/signoz/pkg/query-service/utils/labels"
+	"github.com/SigNoz/signoz/pkg/sqlstore"
+	ruletypes "github.com/SigNoz/signoz/pkg/types/ruletypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
 	"go.uber.org/zap"
 )
 
@@ -20,13 +23,14 @@ import (
 type BaseRule struct {
 	id             string
 	name           string
+	orgID          valuer.UUID
 	source         string
 	handledRestart bool
 
 	// Type of the rule
-	typ AlertType
+	typ ruletypes.AlertType
 
-	ruleCondition *RuleCondition
+	ruleCondition *ruletypes.RuleCondition
 	// evalWindow is the time window used for evaluating the rule
 	// i.e each time we lookback from the current time, we look at data for the last
 	// evalWindow duration
@@ -51,9 +55,9 @@ type BaseRule struct {
 	// the timestamp of the last evaluation
 	evaluationTimestamp time.Time
 
-	health    RuleHealth
+	health    ruletypes.RuleHealth
 	lastError error
-	Active    map[uint64]*Alert
+	Active    map[uint64]*ruletypes.Alert
 
 	// lastTimestampWithDatapoints is the timestamp of the last datapoint we observed
 	// for this rule
@@ -78,6 +82,8 @@ type BaseRule struct {
 	// querying the v4 table on low cardinal temporality column
 	// should be fast but we can still avoid the query if we have the data in memory
 	TemporalityMap map[string]map[v3.Temporality]bool
+
+	sqlstore sqlstore.SQLStore
 }
 
 type RuleOption func(*BaseRule)
@@ -106,13 +112,20 @@ func WithLogger(logger *zap.Logger) RuleOption {
 	}
 }
 
-func NewBaseRule(id string, p *PostableRule, reader interfaces.Reader, opts ...RuleOption) (*BaseRule, error) {
+func WithSQLStore(sqlstore sqlstore.SQLStore) RuleOption {
+	return func(r *BaseRule) {
+		r.sqlstore = sqlstore
+	}
+}
+
+func NewBaseRule(id string, orgID valuer.UUID, p *ruletypes.PostableRule, reader interfaces.Reader, opts ...RuleOption) (*BaseRule, error) {
 	if p.RuleCondition == nil || !p.RuleCondition.IsValid() {
 		return nil, fmt.Errorf("invalid rule condition")
 	}
 
 	baseRule := &BaseRule{
 		id:                id,
+		orgID:             orgID,
 		name:              p.AlertName,
 		source:            p.Source,
 		typ:               p.AlertType,
@@ -121,8 +134,8 @@ func NewBaseRule(id string, p *PostableRule, reader interfaces.Reader, opts ...R
 		labels:            qslabels.FromMap(p.Labels),
 		annotations:       qslabels.FromMap(p.Annotations),
 		preferredChannels: p.PreferredChannels,
-		health:            HealthUnknown,
-		Active:            map[uint64]*Alert{},
+		health:            ruletypes.HealthUnknown,
+		Active:            map[uint64]*ruletypes.Alert{},
 		reader:            reader,
 		TemporalityMap:    make(map[string]map[v3.Temporality]bool),
 	}
@@ -154,25 +167,25 @@ func (r *BaseRule) targetVal() float64 {
 	return value.F
 }
 
-func (r *BaseRule) matchType() MatchType {
+func (r *BaseRule) matchType() ruletypes.MatchType {
 	if r.ruleCondition == nil {
-		return AtleastOnce
+		return ruletypes.AtleastOnce
 	}
 	return r.ruleCondition.MatchType
 }
 
-func (r *BaseRule) compareOp() CompareOp {
+func (r *BaseRule) compareOp() ruletypes.CompareOp {
 	if r.ruleCondition == nil {
-		return ValueIsEq
+		return ruletypes.ValueIsEq
 	}
 	return r.ruleCondition.CompareOp
 }
 
-func (r *BaseRule) currentAlerts() []*Alert {
+func (r *BaseRule) currentAlerts() []*ruletypes.Alert {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
-	alerts := make([]*Alert, 0, len(r.Active))
+	alerts := make([]*ruletypes.Alert, 0, len(r.Active))
 	for _, a := range r.Active {
 		anew := *a
 		alerts = append(alerts, &anew)
@@ -207,15 +220,16 @@ func (r *ThresholdRule) hostFromSource() string {
 	return fmt.Sprintf("%s://%s", parsedUrl.Scheme, parsedUrl.Hostname())
 }
 
-func (r *BaseRule) ID() string                       { return r.id }
-func (r *BaseRule) Name() string                     { return r.name }
-func (r *BaseRule) Condition() *RuleCondition        { return r.ruleCondition }
-func (r *BaseRule) Labels() qslabels.BaseLabels      { return r.labels }
-func (r *BaseRule) Annotations() qslabels.BaseLabels { return r.annotations }
-func (r *BaseRule) PreferredChannels() []string      { return r.preferredChannels }
+func (r *BaseRule) ID() string                          { return r.id }
+func (r *BaseRule) OrgID() valuer.UUID                  { return r.orgID }
+func (r *BaseRule) Name() string                        { return r.name }
+func (r *BaseRule) Condition() *ruletypes.RuleCondition { return r.ruleCondition }
+func (r *BaseRule) Labels() qslabels.BaseLabels         { return r.labels }
+func (r *BaseRule) Annotations() qslabels.BaseLabels    { return r.annotations }
+func (r *BaseRule) PreferredChannels() []string         { return r.preferredChannels }
 
 func (r *BaseRule) GeneratorURL() string {
-	return prepareRuleGeneratorURL(r.ID(), r.source)
+	return ruletypes.PrepareRuleGeneratorURL(r.ID(), r.source)
 }
 
 func (r *BaseRule) Unit() string {
@@ -252,13 +266,13 @@ func (r *BaseRule) LastError() error {
 	return r.lastError
 }
 
-func (r *BaseRule) SetHealth(health RuleHealth) {
+func (r *BaseRule) SetHealth(health ruletypes.RuleHealth) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	r.health = health
 }
 
-func (r *BaseRule) Health() RuleHealth {
+func (r *BaseRule) Health() ruletypes.RuleHealth {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	return r.health
@@ -298,8 +312,8 @@ func (r *BaseRule) State() model.AlertState {
 	return maxState
 }
 
-func (r *BaseRule) ActiveAlerts() []*Alert {
-	var res []*Alert
+func (r *BaseRule) ActiveAlerts() []*ruletypes.Alert {
+	var res []*ruletypes.Alert
 	for _, a := range r.currentAlerts() {
 		if a.ResolvedAt.IsZero() {
 			res = append(res, a)
@@ -309,9 +323,23 @@ func (r *BaseRule) ActiveAlerts() []*Alert {
 }
 
 func (r *BaseRule) SendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {
-	alerts := []*Alert{}
-	r.ForEachActiveAlert(func(alert *Alert) {
-		if alert.needsSending(ts, resendDelay) {
+	var orgID string
+	err := r.
+		sqlstore.
+		BunDB().
+		NewSelect().
+		Table("organizations").
+		ColumnExpr("id").
+		Limit(1).
+		Scan(ctx, &orgID)
+	if err != nil {
+		r.logger.Error("failed to get org ids", zap.Error(err))
+		return
+	}
+
+	alerts := []*ruletypes.Alert{}
+	r.ForEachActiveAlert(func(alert *ruletypes.Alert) {
+		if alert.NeedsSending(ts, resendDelay) {
 			alert.LastSentAt = ts
 			delta := resendDelay
 			if interval > resendDelay {
@@ -322,10 +350,10 @@ func (r *BaseRule) SendAlerts(ctx context.Context, ts time.Time, resendDelay tim
 			alerts = append(alerts, &anew)
 		}
 	})
-	notifyFunc(ctx, "", alerts...)
+	notifyFunc(ctx, orgID, "", alerts...)
 }
 
-func (r *BaseRule) ForEachActiveAlert(f func(*Alert)) {
+func (r *BaseRule) ForEachActiveAlert(f func(*ruletypes.Alert)) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
@@ -334,8 +362,8 @@ func (r *BaseRule) ForEachActiveAlert(f func(*Alert)) {
 	}
 }
 
-func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
-	var alertSmpl Sample
+func (r *BaseRule) ShouldAlert(series v3.Series) (ruletypes.Sample, bool) {
+	var alertSmpl ruletypes.Sample
 	var shouldAlert bool
 	var lbls qslabels.Labels
 
@@ -358,54 +386,54 @@ func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
 	}
 
 	switch r.matchType() {
-	case AtleastOnce:
+	case ruletypes.AtleastOnce:
 		// If any sample matches the condition, the rule is firing.
-		if r.compareOp() == ValueIsAbove {
+		if r.compareOp() == ruletypes.ValueIsAbove {
 			for _, smpl := range series.Points {
 				if smpl.Value > r.targetVal() {
-					alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+					alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 					shouldAlert = true
 					break
 				}
 			}
-		} else if r.compareOp() == ValueIsBelow {
+		} else if r.compareOp() == ruletypes.ValueIsBelow {
 			for _, smpl := range series.Points {
 				if smpl.Value < r.targetVal() {
-					alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+					alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 					shouldAlert = true
 					break
 				}
 			}
-		} else if r.compareOp() == ValueIsEq {
+		} else if r.compareOp() == ruletypes.ValueIsEq {
 			for _, smpl := range series.Points {
 				if smpl.Value == r.targetVal() {
-					alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+					alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 					shouldAlert = true
 					break
 				}
 			}
-		} else if r.compareOp() == ValueIsNotEq {
+		} else if r.compareOp() == ruletypes.ValueIsNotEq {
 			for _, smpl := range series.Points {
 				if smpl.Value != r.targetVal() {
-					alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+					alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 					shouldAlert = true
 					break
 				}
 			}
-		} else if r.compareOp() == ValueOutsideBounds {
+		} else if r.compareOp() == ruletypes.ValueOutsideBounds {
 			for _, smpl := range series.Points {
 				if math.Abs(smpl.Value) >= r.targetVal() {
-					alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+					alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 					shouldAlert = true
 					break
 				}
 			}
 		}
-	case AllTheTimes:
+	case ruletypes.AllTheTimes:
 		// If all samples match the condition, the rule is firing.
 		shouldAlert = true
-		alertSmpl = Sample{Point: Point{V: r.targetVal()}, Metric: lbls}
-		if r.compareOp() == ValueIsAbove {
+		alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: r.targetVal()}, Metric: lbls}
+		if r.compareOp() == ruletypes.ValueIsAbove {
 			for _, smpl := range series.Points {
 				if smpl.Value <= r.targetVal() {
 					shouldAlert = false
@@ -420,9 +448,9 @@ func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
 						minValue = smpl.Value
 					}
 				}
-				alertSmpl = Sample{Point: Point{V: minValue}, Metric: lbls}
+				alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: minValue}, Metric: lbls}
 			}
-		} else if r.compareOp() == ValueIsBelow {
+		} else if r.compareOp() == ruletypes.ValueIsBelow {
 			for _, smpl := range series.Points {
 				if smpl.Value >= r.targetVal() {
 					shouldAlert = false
@@ -436,16 +464,16 @@ func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
 						maxValue = smpl.Value
 					}
 				}
-				alertSmpl = Sample{Point: Point{V: maxValue}, Metric: lbls}
+				alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: maxValue}, Metric: lbls}
 			}
-		} else if r.compareOp() == ValueIsEq {
+		} else if r.compareOp() == ruletypes.ValueIsEq {
 			for _, smpl := range series.Points {
 				if smpl.Value != r.targetVal() {
 					shouldAlert = false
 					break
 				}
 			}
-		} else if r.compareOp() == ValueIsNotEq {
+		} else if r.compareOp() == ruletypes.ValueIsNotEq {
 			for _, smpl := range series.Points {
 				if smpl.Value == r.targetVal() {
 					shouldAlert = false
@@ -456,21 +484,21 @@ func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
 			if shouldAlert {
 				for _, smpl := range series.Points {
 					if !math.IsInf(smpl.Value, 0) && !math.IsNaN(smpl.Value) {
-						alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+						alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 						break
 					}
 				}
 			}
-		} else if r.compareOp() == ValueOutsideBounds {
+		} else if r.compareOp() == ruletypes.ValueOutsideBounds {
 			for _, smpl := range series.Points {
 				if math.Abs(smpl.Value) < r.targetVal() {
-					alertSmpl = Sample{Point: Point{V: smpl.Value}, Metric: lbls}
+					alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: smpl.Value}, Metric: lbls}
 					shouldAlert = false
 					break
 				}
 			}
 		}
-	case OnAverage:
+	case ruletypes.OnAverage:
 		// If the average of all samples matches the condition, the rule is firing.
 		var sum, count float64
 		for _, smpl := range series.Points {
@@ -481,29 +509,29 @@ func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
 			count++
 		}
 		avg := sum / count
-		alertSmpl = Sample{Point: Point{V: avg}, Metric: lbls}
-		if r.compareOp() == ValueIsAbove {
+		alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: avg}, Metric: lbls}
+		if r.compareOp() == ruletypes.ValueIsAbove {
 			if avg > r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsBelow {
+		} else if r.compareOp() == ruletypes.ValueIsBelow {
 			if avg < r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsEq {
+		} else if r.compareOp() == ruletypes.ValueIsEq {
 			if avg == r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsNotEq {
+		} else if r.compareOp() == ruletypes.ValueIsNotEq {
 			if avg != r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueOutsideBounds {
+		} else if r.compareOp() == ruletypes.ValueOutsideBounds {
 			if math.Abs(avg) >= r.targetVal() {
 				shouldAlert = true
 			}
 		}
-	case InTotal:
+	case ruletypes.InTotal:
 		// If the sum of all samples matches the condition, the rule is firing.
 		var sum float64
 
@@ -513,45 +541,45 @@ func (r *BaseRule) ShouldAlert(series v3.Series) (Sample, bool) {
 			}
 			sum += smpl.Value
 		}
-		alertSmpl = Sample{Point: Point{V: sum}, Metric: lbls}
-		if r.compareOp() == ValueIsAbove {
+		alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: sum}, Metric: lbls}
+		if r.compareOp() == ruletypes.ValueIsAbove {
 			if sum > r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsBelow {
+		} else if r.compareOp() == ruletypes.ValueIsBelow {
 			if sum < r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsEq {
+		} else if r.compareOp() == ruletypes.ValueIsEq {
 			if sum == r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsNotEq {
+		} else if r.compareOp() == ruletypes.ValueIsNotEq {
 			if sum != r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueOutsideBounds {
+		} else if r.compareOp() == ruletypes.ValueOutsideBounds {
 			if math.Abs(sum) >= r.targetVal() {
 				shouldAlert = true
 			}
 		}
-	case Last:
+	case ruletypes.Last:
 		// If the last sample matches the condition, the rule is firing.
 		shouldAlert = false
-		alertSmpl = Sample{Point: Point{V: series.Points[len(series.Points)-1].Value}, Metric: lbls}
-		if r.compareOp() == ValueIsAbove {
+		alertSmpl = ruletypes.Sample{Point: ruletypes.Point{V: series.Points[len(series.Points)-1].Value}, Metric: lbls}
+		if r.compareOp() == ruletypes.ValueIsAbove {
 			if series.Points[len(series.Points)-1].Value > r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsBelow {
+		} else if r.compareOp() == ruletypes.ValueIsBelow {
 			if series.Points[len(series.Points)-1].Value < r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsEq {
+		} else if r.compareOp() == ruletypes.ValueIsEq {
 			if series.Points[len(series.Points)-1].Value == r.targetVal() {
 				shouldAlert = true
 			}
-		} else if r.compareOp() == ValueIsNotEq {
+		} else if r.compareOp() == ruletypes.ValueIsNotEq {
 			if series.Points[len(series.Points)-1].Value != r.targetVal() {
 				shouldAlert = true
 			}
@@ -655,7 +683,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 	return nil
 }
 
-func (r *BaseRule) PopulateTemporality(ctx context.Context, qp *v3.QueryRangeParamsV3) error {
+func (r *BaseRule) PopulateTemporality(ctx context.Context, orgID valuer.UUID, qp *v3.QueryRangeParamsV3) error {
 
 	missingTemporality := make([]string, 0)
 	metricNameToTemporality := make(map[string]map[v3.Temporality]bool)
@@ -687,7 +715,7 @@ func (r *BaseRule) PopulateTemporality(ctx context.Context, qp *v3.QueryRangePar
 	var err error
 
 	if len(missingTemporality) > 0 {
-		nameToTemporality, err = r.reader.FetchTemporality(ctx, missingTemporality)
+		nameToTemporality, err = r.reader.FetchTemporality(ctx, orgID, missingTemporality)
 		if err != nil {
 			return err
 		}

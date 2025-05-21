@@ -3,8 +3,8 @@ package v4
 import (
 	"testing"
 
-	"go.signoz.io/signoz/pkg/query-service/constants"
-	v3 "go.signoz.io/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
+	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 )
 
 func Test_getClickHouseTracesColumnType(t *testing.T) {
@@ -265,9 +265,11 @@ func Test_buildTracesFilterQuery(t *testing.T) {
 					{Key: v3.AttributeKey{Key: "isDone", DataType: v3.AttributeKeyDataTypeBool, Type: v3.AttributeKeyTypeTag}, Operator: v3.FilterOperatorNotExists},
 					{Key: v3.AttributeKey{Key: "host1", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag}, Operator: v3.FilterOperatorNotExists},
 					{Key: v3.AttributeKey{Key: "path", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}, Operator: v3.FilterOperatorNotExists},
+					{Key: v3.AttributeKey{Key: "http_url", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}, Operator: v3.FilterOperatorNotExists},
+					{Key: v3.AttributeKey{Key: "http.route", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}, Operator: v3.FilterOperatorNotExists},
 				}},
 			},
-			want: "mapContains(attributes_string, 'host') AND mapContains(attributes_number, 'duration') AND NOT mapContains(attributes_bool, 'isDone') AND NOT mapContains(attributes_string, 'host1') AND path = ''",
+			want: "mapContains(attributes_string, 'host') AND mapContains(attributes_number, 'duration') AND NOT mapContains(attributes_bool, 'isDone') AND NOT mapContains(attributes_string, 'host1') AND `attribute_string_path` = '' AND http_url = '' AND `attribute_string_http$$route` = ''",
 		},
 	}
 	for _, tt := range tests {
@@ -452,6 +454,62 @@ func Test_buildTracesQuery(t *testing.T) {
 				"group by `http.method` order by `http.method` ASC",
 		},
 		{
+			name: "Test buildTracesQuery - count with attr",
+			args: args{
+				panelType: v3.PanelTypeTable,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				step:      1000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator:  v3.AggregateOperatorCount,
+					AggregateAttribute: v3.AttributeKey{Key: "name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag},
+					Filters: &v3.FilterSet{
+						Items: []v3.FilterItem{
+							{
+								Key:      v3.AttributeKey{Key: "http.method", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag},
+								Value:    100,
+								Operator: v3.FilterOperatorEqual,
+							},
+						},
+					},
+					GroupBy: []v3.AttributeKey{{Key: "http.method", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag}},
+					OrderBy: []v3.OrderBy{
+						{ColumnName: "http.method", Order: "ASC"}},
+				},
+			},
+			want: "SELECT  attributes_string['http.method'] as `http.method`, toFloat64(count()) as value from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') " +
+				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND attributes_string['http.method'] = '100' AND mapContains(attributes_string, 'http.method') AND mapContains(attributes_string, 'name') " +
+				"group by `http.method` order by `http.method` ASC",
+		},
+		{
+			name: "Test buildTracesQuery - count with mat attr",
+			args: args{
+				panelType: v3.PanelTypeTable,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				step:      1000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator:  v3.AggregateOperatorCount,
+					AggregateAttribute: v3.AttributeKey{Key: "name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true},
+					Filters: &v3.FilterSet{
+						Items: []v3.FilterItem{
+							{
+								Key:      v3.AttributeKey{Key: "http.method", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag},
+								Value:    100,
+								Operator: v3.FilterOperatorEqual,
+							},
+						},
+					},
+					GroupBy: []v3.AttributeKey{{Key: "http.method", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag}},
+					OrderBy: []v3.OrderBy{
+						{ColumnName: "http.method", Order: "ASC"}},
+				},
+			},
+			want: "SELECT  attributes_string['http.method'] as `http.method`, toFloat64(count()) as value from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') " +
+				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND attributes_string['http.method'] = '100' AND mapContains(attributes_string, 'http.method') AND name != '' " +
+				"group by `http.method` order by `http.method` ASC",
+		},
+		{
 			name: "Test buildTracesQuery",
 			args: args{
 				panelType: v3.PanelTypeTable,
@@ -495,6 +553,70 @@ func Test_buildTracesQuery(t *testing.T) {
 				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  order by timestamp ASC",
 		},
 		{
+			name: "test noop list view with entry_point_spans",
+			args: args{
+				panelType: v3.PanelTypeList,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorNoOp,
+					Filters:           &v3.FilterSet{Operator: "AND", Items: []v3.FilterItem{{Key: v3.AttributeKey{Key: "isEntryPoint", Type: v3.AttributeKeyTypeSpanSearchScope, IsColumn: false}, Value: true, Operator: v3.FilterOperatorEqual}}},
+					SelectColumns:     []v3.AttributeKey{{Key: "name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}},
+					OrderBy:           []v3.OrderBy{{ColumnName: "timestamp", Order: "ASC"}},
+				},
+			},
+			want: "SELECT timestamp as timestamp_datetime, spanID, traceID, name as `name` from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') " +
+				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND ((name, `resource_string_service$$name`) GLOBAL IN ( SELECT DISTINCT name, serviceName from signoz_traces.distributed_top_level_operations )) AND parent_span_id != ''  order by timestamp ASC",
+		},
+		{
+			name: "test noop list view with root_spans",
+			args: args{
+				panelType: v3.PanelTypeList,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorNoOp,
+					Filters:           &v3.FilterSet{Operator: "AND", Items: []v3.FilterItem{{Key: v3.AttributeKey{Key: "isRoot", Type: v3.AttributeKeyTypeSpanSearchScope, IsColumn: false}, Value: true, Operator: v3.FilterOperatorEqual}}},
+					SelectColumns:     []v3.AttributeKey{{Key: "name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}},
+					OrderBy:           []v3.OrderBy{{ColumnName: "timestamp", Order: "ASC"}},
+				},
+			},
+			want: "SELECT timestamp as timestamp_datetime, spanID, traceID, name as `name` from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') " +
+				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND parent_span_id = ''  order by timestamp ASC",
+		},
+		{
+			name: "test noop list view with root_spans and entry_point_spans both existing",
+			args: args{
+				panelType: v3.PanelTypeList,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorNoOp,
+					Filters:           &v3.FilterSet{Operator: "AND", Items: []v3.FilterItem{{Key: v3.AttributeKey{Key: "isRoot", Type: v3.AttributeKeyTypeSpanSearchScope, IsColumn: false}, Value: true, Operator: v3.FilterOperatorEqual}, {Key: v3.AttributeKey{Key: "isEntryPoint", Type: v3.AttributeKeyTypeSpanSearchScope, IsColumn: false}, Value: true, Operator: v3.FilterOperatorEqual}}},
+					SelectColumns:     []v3.AttributeKey{{Key: "name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}},
+					OrderBy:           []v3.OrderBy{{ColumnName: "timestamp", Order: "ASC"}},
+				},
+			},
+			want: "SELECT timestamp as timestamp_datetime, spanID, traceID, name as `name` from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') " +
+				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND parent_span_id = ''  order by timestamp ASC",
+		},
+		{
+			name: "test noop list view with root_spans with other attributes",
+			args: args{
+				panelType: v3.PanelTypeList,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorNoOp,
+					Filters:           &v3.FilterSet{Operator: "AND", Items: []v3.FilterItem{{Key: v3.AttributeKey{Key: "isRoot", Type: v3.AttributeKeyTypeSpanSearchScope, IsColumn: false}, Value: true, Operator: v3.FilterOperatorEqual}, {Key: v3.AttributeKey{Key: "service.name", Type: v3.AttributeKeyTypeResource, IsColumn: true, DataType: v3.AttributeKeyDataTypeString}, Value: "cartservice", Operator: v3.FilterOperatorEqual}}},
+					SelectColumns:     []v3.AttributeKey{{Key: "name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag, IsColumn: true}},
+					OrderBy:           []v3.OrderBy{{ColumnName: "timestamp", Order: "ASC"}},
+				},
+			},
+			want: "SELECT timestamp as timestamp_datetime, spanID, traceID, name as `name` from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') " +
+				"AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND (resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_traces.distributed_traces_v3_resource WHERE (seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND simpleJSONExtractString(labels, 'service.name') = 'cartservice' AND labels like '%service.name%cartservice%')) AND parent_span_id = ''  order by timestamp ASC",
+		},
+		{
 			name: "test noop list view-without ts",
 			args: args{
 				panelType: v3.PanelTypeList,
@@ -527,11 +649,61 @@ func Test_buildTracesQuery(t *testing.T) {
 			},
 			want: "SELECT subQuery.serviceName, subQuery.name, count() AS span_count, subQuery.durationNano, subQuery.traceID AS traceID FROM signoz_traces.distributed_signoz_index_v3 INNER JOIN " +
 				"( SELECT * FROM (SELECT traceID, durationNano, serviceName, name FROM signoz_traces.signoz_index_v3 WHERE parentSpanID = '' AND (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND " +
-				"(ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND attributes_string['method'] = 'GET' AND (resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_traces.distributed_traces_v3_resource " +
-				"WHERE (seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND simpleJSONExtractString(labels, 'service.name') = 'myService' AND labels like '%service.name%myService%')) " +
-				"ORDER BY durationNano DESC LIMIT 1 BY traceID  LIMIT 100) AS inner_subquery ) AS subQuery ON signoz_traces.distributed_signoz_index_v3.traceID = subQuery.traceID WHERE (timestamp >= '1680066360726210000' AND " +
-				"timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) GROUP BY subQuery.traceID, subQuery.durationNano, subQuery.name, subQuery.serviceName ORDER BY " +
-				"subQuery.durationNano desc LIMIT 1 BY subQuery.traceID settings distributed_product_mode='allow', max_memory_usage=10000000000",
+				"(ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) " +
+				"ORDER BY durationNano DESC LIMIT 1 BY traceID) AS inner_subquery ) AS subQuery ON signoz_traces.distributed_signoz_index_v3.traceID = subQuery.traceID WHERE (timestamp >= '1680066360726210000' AND " +
+				"timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND attributes_string['method'] = 'GET' AND (resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_traces.distributed_traces_v3_resource WHERE " +
+				"(seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND simpleJSONExtractString(labels, 'service.name') = 'myService' AND labels like '%service.name%myService%')) GROUP BY subQuery.traceID, subQuery.durationNano, subQuery.name, subQuery.serviceName ORDER BY " +
+				"subQuery.durationNano desc LIMIT 1 BY subQuery.traceID  LIMIT 100 settings distributed_product_mode='allow', max_memory_usage=10000000000",
+		},
+		{
+			name: "test noop trace view with span_count ordering of Traces",
+			args: args{
+				panelType: v3.PanelTypeTrace,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorNoOp,
+					OrderBy:           []v3.OrderBy{{ColumnName: "span_count", Order: "DESC"}},
+					Filters: &v3.FilterSet{
+						Items: []v3.FilterItem{
+							{Key: v3.AttributeKey{Key: "method", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag}, Value: "GET", Operator: "="},
+							{Key: v3.AttributeKey{Key: "service.name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeResource}, Value: "myService", Operator: "="},
+						},
+					},
+				},
+			},
+			want: "SELECT serviceName, name, subQuery.span_count as span_count, durationNano, trace_id as traceID from signoz_traces.distributed_signoz_index_v3 GLOBAL INNER JOIN " +
+				"( SELECT * FROM (SELECT trace_id, count() as span_count FROM signoz_traces.signoz_index_v3 WHERE (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  " +
+				"AND attributes_string['method'] = 'GET' AND (resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_traces.distributed_traces_v3_resource WHERE " +
+				"(seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND simpleJSONExtractString(labels, 'service.name') = 'myService' AND labels like '%service.name%myService%')) " +
+				"GROUP BY trace_id ORDER BY span_count DESC LIMIT 1 BY trace_id LIMIT 100) AS inner_subquery ) AS subQuery ON signoz_traces.distributed_signoz_index_v3.trace_id = subQuery.trace_id " +
+				"WHERE parent_span_id = '' AND (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) " +
+				"ORDER BY subQuery.span_count DESC LIMIT 100 settings distributed_product_mode='allow', max_memory_usage=10000000000",
+		},
+		{
+			name: "test noop trace view with trace_duration ordering of Traces",
+			args: args{
+				panelType: v3.PanelTypeTrace,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorNoOp,
+					OrderBy:           []v3.OrderBy{{ColumnName: "timestamp", Order: "DESC"}},
+					Filters: &v3.FilterSet{
+						Items: []v3.FilterItem{
+							{Key: v3.AttributeKey{Key: "method", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeTag}, Value: "GET", Operator: "="},
+							{Key: v3.AttributeKey{Key: "service.name", DataType: v3.AttributeKeyDataTypeString, Type: v3.AttributeKeyTypeResource}, Value: "myService", Operator: "="},
+						},
+					},
+				},
+			},
+			want: "SELECT subQuery.serviceName, subQuery.name, count() AS span_count, subQuery.durationNano, subQuery.traceID AS traceID FROM signoz_traces.distributed_signoz_index_v3 INNER JOIN " +
+				"( SELECT * FROM (SELECT traceID, durationNano, serviceName, name FROM signoz_traces.signoz_index_v3 WHERE parentSpanID = '' AND (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND " +
+				"(ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) " +
+				"ORDER BY durationNano DESC LIMIT 1 BY traceID) AS inner_subquery ) AS subQuery ON signoz_traces.distributed_signoz_index_v3.traceID = subQuery.traceID WHERE (timestamp >= '1680066360726210000' AND " +
+				"timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458)  AND attributes_string['method'] = 'GET' AND (resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_traces.distributed_traces_v3_resource WHERE " +
+				"(seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND simpleJSONExtractString(labels, 'service.name') = 'myService' AND labels like '%service.name%myService%')) GROUP BY subQuery.traceID, subQuery.durationNano, subQuery.name, subQuery.serviceName ORDER BY " +
+				"subQuery.durationNano desc LIMIT 1 BY subQuery.traceID  LIMIT 100 settings distributed_product_mode='allow', max_memory_usage=10000000000",
 		},
 		{
 			name: "Test order by value with having",
@@ -555,6 +727,53 @@ func Test_buildTracesQuery(t *testing.T) {
 			},
 			want: "SELECT  toFloat64(count(distinct(name))) as value from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND " +
 				"(ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) having value > 10 order by value ASC",
+		},
+		{
+			name: "Test timestamp as aggregate attribute key",
+			args: args{
+				panelType: v3.PanelTypeTable,
+				start:     1680066360726210000,
+				end:       1680066458000000000,
+				mq: &v3.BuilderQuery{
+					AggregateOperator:  v3.AggregateOperatorMax,
+					Filters:            &v3.FilterSet{},
+					AggregateAttribute: v3.AttributeKey{Key: "timestamp", IsColumn: false, Type: v3.AttributeKeyTypeTag},
+				},
+			},
+			want: "SELECT  max(toUnixTimestamp64Nano(timestamp)) as value from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND " +
+				"(ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) order by value DESC",
+		},
+		{
+			name: "test rate for graph panel",
+			args: args{
+				panelType: v3.PanelTypeGraph,
+				start:     1745315470000000000,
+				end:       1745319070000000000,
+				step:      60,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorRate,
+					StepInterval:      60,
+					Filters:           &v3.FilterSet{},
+				},
+			},
+			want: "SELECT toStartOfInterval(timestamp, INTERVAL 60 SECOND) AS ts, count()/60.000000 as value from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1745315470000000000' AND " +
+				"timestamp <= '1745319070000000000') AND (ts_bucket_start >= 1745313670 AND ts_bucket_start <= 1745319070) group by ts order by value DESC",
+		},
+		{
+			name: "test rate for table panel",
+			args: args{
+				panelType: v3.PanelTypeTable,
+				start:     1745315470000000000,
+				end:       1745319070000000000,
+				step:      60,
+				mq: &v3.BuilderQuery{
+					AggregateOperator: v3.AggregateOperatorRate,
+					StepInterval:      60,
+					Filters:           &v3.FilterSet{},
+				},
+			},
+			want: "SELECT  count()/3600.000000 as value from signoz_traces.distributed_signoz_index_v3 where (timestamp >= '1745315470000000000' AND " +
+				"timestamp <= '1745319070000000000') AND (ts_bucket_start >= 1745313670 AND ts_bucket_start <= 1745319070) order by value DESC",
 		},
 	}
 	for _, tt := range tests {
@@ -627,7 +846,7 @@ func TestPrepareTracesQuery(t *testing.T) {
 				},
 			},
 			want: "SELECT  attributes_string['function'] as `function`, toFloat64(count(distinct(name))) as value from signoz_traces.distributed_signoz_index_v3 where " +
-				"(timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND mapContains(attributes_string, 'function') AND (`function`) GLOBAL IN (%s) group by `function` order by value DESC",
+				"(timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND mapContains(attributes_string, 'function') AND (`function`) GLOBAL IN (#LIMIT_PLACEHOLDER) group by `function` order by value DESC",
 		},
 		{
 			name: "test with limit with resources- first",
@@ -710,7 +929,7 @@ func TestPrepareTracesQuery(t *testing.T) {
 			want: "SELECT  `attribute_string_function` as `function`, serviceName as `serviceName`, toFloat64(count(distinct(name))) as value from signoz_traces.distributed_signoz_index_v3 " +
 				"where (timestamp >= '1680066360726210000' AND timestamp <= '1680066458000000000') AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND attributes_number['line'] = 100 " +
 				"AND (resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_traces.distributed_traces_v3_resource WHERE (seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) " +
-				"AND simpleJSONExtractString(labels, 'hostname') = 'server1' AND labels like '%hostname%server1%')) AND (`function`,`serviceName`) GLOBAL IN (%s) group by `function`,`serviceName` order by value DESC",
+				"AND simpleJSONExtractString(labels, 'hostname') = 'server1' AND labels like '%hostname%server1%')) AND (`function`,`serviceName`) GLOBAL IN (#LIMIT_PLACEHOLDER) group by `function`,`serviceName` order by value DESC",
 		},
 	}
 

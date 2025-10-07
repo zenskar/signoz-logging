@@ -7,15 +7,23 @@ import { Layout } from 'react-grid-layout';
 import { Query } from 'types/api/queryBuilder/queryBuilderData';
 
 import { IField } from '../logs/fields';
-import { BaseAutocompleteData } from '../queryBuilder/queryAutocompleteResponse';
+import { TelemetryFieldKey } from '../v5/queryRange';
 
-export type PayloadProps = Dashboard[];
-
-export const VariableQueryTypeArr = ['QUERY', 'TEXTBOX', 'CUSTOM'] as const;
+export const VariableQueryTypeArr = [
+	'QUERY',
+	'TEXTBOX',
+	'CUSTOM',
+	'DYNAMIC',
+] as const;
 export type TVariableQueryType = typeof VariableQueryTypeArr[number];
 
 export const VariableSortTypeArr = ['DISABLED', 'ASC', 'DESC'] as const;
 export type TSortVariableValuesType = typeof VariableSortTypeArr[number];
+
+export enum LegendPosition {
+	BOTTOM = 'bottom',
+	RIGHT = 'right',
+}
 
 export interface IDashboardVariable {
 	id: string;
@@ -43,16 +51,24 @@ export interface IDashboardVariable {
 	modificationUUID?: string;
 	allSelected?: boolean;
 	change?: boolean;
+	defaultValue?: string;
+	dynamicVariablesAttribute?: string;
+	dynamicVariablesSource?: string;
+	haveCustomValuesSelected?: boolean;
 }
 export interface Dashboard {
-	id: number;
-	uuid: string;
+	id: string;
 	createdAt: string;
 	updatedAt: string;
 	createdBy: string;
 	updatedBy: string;
 	data: DashboardData;
-	isLocked?: boolean;
+	locked?: boolean;
+}
+
+export interface PayloadProps {
+	data: Dashboard[];
+	status: string;
 }
 
 export interface DashboardTemplate {
@@ -64,7 +80,7 @@ export interface DashboardTemplate {
 }
 
 export interface DashboardData {
-	uuid?: string;
+	// uuid?: string;
 	description?: string;
 	tags?: string[];
 	name?: string;
@@ -88,7 +104,6 @@ export interface ColumnUnit {
 	[key: string]: string;
 }
 export interface IBaseWidget {
-	isStacked: boolean;
 	id: string;
 	panelTypes: PANEL_TYPES;
 	title: ReactNode;
@@ -108,9 +123,12 @@ export interface IBaseWidget {
 	fillSpans?: boolean;
 	columnUnits?: ColumnUnit;
 	selectedLogFields: IField[] | null;
-	selectedTracesFields: BaseAutocompleteData[] | null;
+	selectedTracesFields: TelemetryFieldKey[] | null;
 	isLogScale?: boolean;
 	columnWidths?: Record<string, number>;
+	legendPosition?: LegendPosition;
+	customLegendColors?: Record<string, string>;
+	contextLinks?: ContextLinksData;
 }
 export interface Widgets extends IBaseWidget {
 	query: Query;
@@ -127,4 +145,15 @@ export interface IQueryBuilderTagFilterItems {
 	key: string;
 	op: string;
 	value: string[];
+}
+
+export interface ContextLinkProps {
+	id: string;
+	url: string;
+	label: string;
+	// openInNewTab: boolean;
+}
+
+export interface ContextLinksData {
+	linksData: ContextLinkProps[];
 }

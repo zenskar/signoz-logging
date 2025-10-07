@@ -233,8 +233,9 @@ func ClickHouseFormattedValue(v interface{}) string {
 
 func ClickHouseFormattedMetricNames(v interface{}) string {
 	if name, ok := v.(string); ok {
-		if newName, ok := metrics.MetricsUnderTransition[name]; ok {
-			return ClickHouseFormattedValue([]interface{}{name, newName})
+		transitionedMetrics := metrics.GetTransitionedMetric(name, !constants.IsDotMetricsEnabled)
+		if transitionedMetrics != name {
+			return ClickHouseFormattedValue([]interface{}{transitionedMetrics})
 		} else {
 			return ClickHouseFormattedValue([]interface{}{name})
 		}
@@ -244,8 +245,8 @@ func ClickHouseFormattedMetricNames(v interface{}) string {
 }
 
 func AddBackTickToFormatTag(str string) string {
-	if strings.Contains(str, ".") {
-		return "`" + str + "`"
+	if strings.Contains(str, ".") || strings.Contains(str, "-") {
+		if strings.HasPrefix(str, "`") && strings.HasSuffix(str, "`") { return str } else { return "`" + str + "`" }
 	} else {
 		return str
 	}

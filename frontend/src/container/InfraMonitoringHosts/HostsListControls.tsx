@@ -10,8 +10,12 @@ import { DataSource } from 'types/common/queryBuilder';
 
 function HostsListControls({
 	handleFiltersChange,
+	filters,
+	showAutoRefresh,
 }: {
 	handleFiltersChange: (value: IBuilderQuery['filters']) => void;
+	filters: IBuilderQuery['filters'];
+	showAutoRefresh: boolean;
 }): JSX.Element {
 	const currentQuery = initialQueriesMap[DataSource.METRICS];
 	const updatedCurrentQuery = useMemo(
@@ -26,11 +30,12 @@ function HostsListControls({
 						aggregateAttribute: {
 							...currentQuery.builder.queryData[0].aggregateAttribute,
 						},
+						filters,
 					},
 				],
 			},
 		}),
-		[currentQuery],
+		[currentQuery, filters],
 	);
 	const query = updatedCurrentQuery?.builder?.queryData[0] || null;
 
@@ -45,7 +50,7 @@ function HostsListControls({
 		<div className="hosts-list-controls">
 			<div className="hosts-list-controls-left">
 				<QueryBuilderSearch
-					query={query}
+					query={query as IBuilderQuery}
 					onChange={handleChangeTagFilters}
 					isInfraMonitoring
 					disableNavigationShortcuts
@@ -55,7 +60,7 @@ function HostsListControls({
 
 			<div className="time-selector">
 				<DateTimeSelectionV2
-					showAutoRefresh={false}
+					showAutoRefresh={showAutoRefresh}
 					showRefreshText={false}
 					hideShareModal
 				/>

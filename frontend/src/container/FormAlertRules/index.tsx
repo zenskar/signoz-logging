@@ -5,6 +5,7 @@ import { Button, FormInstance, Modal, SelectProps, Typography } from 'antd';
 import saveAlertApi from 'api/alerts/save';
 import testAlertApi from 'api/alerts/testAlert';
 import logEvent from 'api/common/logEvent';
+import { getInvolvedQueriesInTraceOperator } from 'components/QueryBuilderV2/QueryV2/TraceOperator/utils/utils';
 import { ALERTS_DATA_SOURCE_MAP } from 'constants/alerts';
 import { FeatureKeys } from 'constants/features';
 import { QueryParams } from 'constants/query';
@@ -37,14 +38,12 @@ import {
 	defaultEvalWindow,
 	defaultMatchType,
 } from 'types/api/alerts/def';
-import {
-	IBuilderQuery,
-	Query,
-	QueryFunctionProps,
-} from 'types/api/queryBuilder/queryBuilderData';
+import { IBuilderQuery, Query } from 'types/api/queryBuilder/queryBuilderData';
+import { QueryFunction } from 'types/api/v5/queryRange';
 import { EQueryType } from 'types/common/dashboard';
 import { DataSource } from 'types/common/queryBuilder';
 import { GlobalReducer } from 'types/reducer/globalTime';
+import { compositeQueryToQueryEnvelope } from 'utils/compositeQueryToQueryEnvelope';
 
 import BasicInfo from './BasicInfo';
 import ChartPreview from './ChartPreview';
@@ -57,6 +56,7 @@ import {
 	StepContainer,
 	StepHeading,
 } from './styles';
+import { usePrefillAlertConditions } from './usePrefillAlertConditions';
 import { getSelectedQueryOptions } from './utils';
 
 export enum AlertDetectionTypes {
@@ -113,6 +113,9 @@ function FormAlertRules({
 		handleSetConfig,
 		redirectWithQueryBuilderData,
 	} = useQueryBuilder();
+	const { matchType, op, target, targetUnit } = usePrefillAlertConditions(
+		stagedQuery,
+	);
 
 	useEffect(() => {
 		handleSetConfig(panelType || PANEL_TYPES.TIME_SERIES, dataSource);
@@ -147,10 +150,17 @@ function FormAlertRules({
 	]);
 
 	const queryOptions = useMemo(() => {
+		const involvedQueriesInTraceOperator = getInvolvedQueriesInTraceOperator(
+			currentQuery.builder.queryTraceOperator,
+		);
 		const queryConfig: Record<EQueryType, () => SelectProps['options']> = {
 			[EQueryType.QUERY_BUILDER]: () => [
-				...(getSelectedQueryOptions(currentQuery.builder.queryData) || []),
+				...(getSelectedQueryOptions(currentQuery.builder.queryData)?.filter(
+					(option) =>
+						!involvedQueriesInTraceOperator.includes(option.value as string),
+				) || []),
 				...(getSelectedQueryOptions(currentQuery.builder.queryFormulas) || []),
+				...(getSelectedQueryOptions(currentQuery.builder.queryTraceOperator) || []),
 			],
 			[EQueryType.PROM]: () => getSelectedQueryOptions(currentQuery.promql),
 			[EQueryType.CLICKHOUSE]: () =>
@@ -162,7 +172,7 @@ function FormAlertRules({
 
 	const sq = useMemo(() => mapQueryDataFromApi(initQuery), [initQuery]);
 
-	useShareBuilderUrl(sq);
+	useShareBuilderUrl({ defaultValue: sq });
 
 	const handleDetectionMethodChange = (value: string): void => {
 		setAlertDef((def) => ({
@@ -177,12 +187,17 @@ function FormAlertRules({
 		setDetectionMethod(value);
 	};
 
-	const updateFunctions = (data: IBuilderQuery): QueryFunctionProps[] => {
-		const anomalyFunction = {
-			name: 'anomaly',
-			args: [],
-			namedArgs: { z_score_threshold: alertDef.condition.target || 3 },
+	const updateFunctions = (data: IBuilderQuery): QueryFunction[] => {
+		const anomalyFunction: QueryFunction = {
+			name: 'anomaly' as any,
+			args: [
+				{
+					name: 'z_score_threshold',
+					value: alertDef.condition.target || 3,
+				},
+			],
 		};
+
 		const functions = data.functions || [];
 
 		if (alertDef.ruleType === AlertDetectionTypes.ANOMALY_DETECTION_ALERT) {
@@ -233,8 +248,18 @@ function FormAlertRules({
 			const queryData = currentQuery.builder.queryData[index];
 
 			const updatedFunctions = updateFunctions(queryData);
-			queryData.functions = updatedFunctions;
-			handleSetQueryData(index, queryData);
+
+			// Only update if functions actually changed to avoid resetting aggregateAttribute
+			const currentFunctions = queryData.functions || [];
+			const functionsChanged = !isEqual(currentFunctions, updatedFunctions);
+
+			if (functionsChanged) {
+				const updatedQueryData = {
+					...queryData,
+					functions: updatedFunctions,
+				};
+				handleSetQueryData(index, updatedQueryData);
+			}
 		}
 	};
 
@@ -266,6 +291,16 @@ function FormAlertRules({
 			...initialValue,
 			broadcastToAll: !broadcastToSpecificChannels,
 			ruleType,
+			condition: {
+				...initialValue.condition,
+				compositeQuery: compositeQueryToQueryEnvelope(
+					initialValue.condition.compositeQuery,
+				),
+				matchType: initialValue.condition.matchType ?? matchType ?? '',
+				op: initialValue.condition.op ?? op ?? '',
+				target: initialValue.condition.target ?? target ?? 0,
+				targetUnit: initialValue.condition.targetUnit ?? targetUnit ?? '',
+			},
 		});
 
 		setDetectionMethod(ruleType);
@@ -436,7 +471,7 @@ function FormAlertRules({
 					: alertDef.ruleType,
 			condition: {
 				...alertDef.condition,
-				compositeQuery: {
+				compositeQuery: compositeQueryToQueryEnvelope({
 					builderQueries: {
 						...mapQueryDataToApi(currentQuery.builder.queryData, 'queryName').data,
 						...mapQueryDataToApi(currentQuery.builder.queryFormulas, 'queryName')
@@ -447,7 +482,7 @@ function FormAlertRules({
 					queryType: currentQuery.queryType,
 					panelType: panelType || initQuery.panelType,
 					unit: currentQuery.unit,
-				},
+				}),
 			},
 		};
 
@@ -755,7 +790,12 @@ function FormAlertRules({
 		<>
 			{Element}
 
-			<div id="top">
+			<div
+				id="top"
+				className={`form-alert-rules-container ${
+					isRuleCreated ? 'create-mode' : 'edit-mode'
+				}`}
+			>
 				<div className="overview-header">
 					<div className="alert-type-container">
 						{isNewRule && (
@@ -832,7 +872,7 @@ function FormAlertRules({
 							queryCategory={currentQuery.queryType}
 							setQueryCategory={onQueryCategoryChange}
 							alertType={alertType || AlertTypes.METRICS_BASED_ALERT}
-							runQuery={(): void => handleRunQuery(true)}
+							runQuery={(): void => handleRunQuery()}
 							alertDef={alertDef}
 							panelType={panelType || PANEL_TYPES.TIME_SERIES}
 							key={currentQuery.queryType}

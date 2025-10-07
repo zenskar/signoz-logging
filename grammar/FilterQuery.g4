@@ -57,7 +57,7 @@ comparison
     | key GE value
 
     | key (LIKE | ILIKE) value
-    | key (NOT_LIKE | NOT_ILIKE) value
+    | key NOT (LIKE | ILIKE) value
 
     | key BETWEEN value AND value
     | key NOT BETWEEN value AND value
@@ -79,11 +79,13 @@ comparison
 inClause
     : IN LPAREN valueList RPAREN
     | IN LBRACK valueList RBRACK
+    | IN value
     ;
 
 notInClause
     : NOT IN LPAREN valueList RPAREN
     | NOT IN LBRACK valueList RBRACK
+    | NOT IN value
     ;
 
 // List of values for in(...) or in[...]
@@ -105,7 +107,7 @@ fullText
  *    ...
  */
 functionCall
-    : (HAS | HASANY | HASALL) LPAREN functionParamList RPAREN
+    : (HASTOKEN | HAS | HASANY | HASALL) LPAREN functionParamList RPAREN
     ;
 
 // Function parameters can be keys, single scalar values, or arrays
@@ -165,9 +167,7 @@ GE          : '>='  ;
 
 // Operators that are made of multiple keywords
 LIKE        : [Ll][Ii][Kk][Ee] ;
-NOT_LIKE    : [Nn][Oo][Tt] [ \t]+ [Ll][Ii][Kk][Ee] ;
 ILIKE       : [Ii][Ll][Ii][Kk][Ee] ;
-NOT_ILIKE   : [Nn][Oo][Tt] [ \t]+ [Ii][Ll][Ii][Kk][Ee] ;
 BETWEEN     : [Bb][Ee][Tt][Ww][Ee][Ee][Nn] ;
 EXISTS      : [Ee][Xx][Ii][Ss][Tt][Ss]? ;
 REGEXP      : [Rr][Ee][Gg][Ee][Xx][Pp] ;
@@ -180,6 +180,7 @@ AND         : [Aa][Nn][Dd] ;
 OR          : [Oo][Rr] ;
 
 // For easy referencing in function calls
+HASTOKEN    : [Hh][Aa][Ss][Tt][Oo][Kk][Ee][Nn];
 HAS         : [Hh][Aa][Ss] ;
 HASANY      : [Hh][Aa][Ss][Aa][Nn][Yy] ;
 HASALL      : [Hh][Aa][Ss][Aa][Ll][Ll] ;
@@ -206,12 +207,12 @@ QUOTED_TEXT
         )
     ;
 
-fragment SEGMENT      : [a-zA-Z] [a-zA-Z0-9_:\-]* ;
+fragment SEGMENT      : [a-zA-Z$_@{#] [a-zA-Z0-9$_@#{}:\-/]* ;
 fragment EMPTY_BRACKS : '[' ']' ;
 fragment OLD_JSON_BRACKS: '[' '*' ']';
 
 KEY
-    : SEGMENT ( '.' SEGMENT | EMPTY_BRACKS | OLD_JSON_BRACKS)*
+    : SEGMENT ( '.' SEGMENT | EMPTY_BRACKS | OLD_JSON_BRACKS | '.' DIGIT+)*
     ;
 
 // Ignore whitespace

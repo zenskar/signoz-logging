@@ -4,8 +4,8 @@ import { getAttributesValues } from 'api/queryBuilder/getAttributesValues';
 import { DATA_TYPE_VS_ATTRIBUTE_VALUES_KEY } from 'constants/queryBuilder';
 import { DEBOUNCE_DELAY } from 'constants/queryBuilderFilterConfig';
 import {
+	GetK8sEntityToAggregateAttribute,
 	K8sCategory,
-	K8sEntityToAggregateAttributeMapping,
 } from 'container/InfraMonitoringK8s/constants';
 import {
 	getRemovePrefixFromKey,
@@ -50,6 +50,7 @@ type IuseFetchKeysAndValues = {
 export const useFetchKeysAndValues = (
 	searchValue: string,
 	query: IBuilderQuery,
+	dotMetricsEnabled: boolean,
 	searchKey: string,
 	shouldUseSuggestions?: boolean,
 	isInfraMonitoring?: boolean,
@@ -67,13 +68,13 @@ export const useFetchKeysAndValues = (
 			searchKey,
 			query.dataSource,
 			query.aggregateOperator,
-			query.aggregateAttribute.key,
+			query.aggregateAttribute?.key,
 		],
 		[
 			searchKey,
 			query.dataSource,
 			query.aggregateOperator,
-			query.aggregateAttribute.key,
+			query.aggregateAttribute?.key,
 		],
 	);
 
@@ -106,12 +107,12 @@ export const useFetchKeysAndValues = (
 			query.dataSource === DataSource.METRICS &&
 			!isInfraMonitoring &&
 			!isMetricsExplorer
-				? !!query.dataSource && !!query.aggregateAttribute.dataType
+				? !!query.dataSource && !!query.aggregateAttribute?.dataType
 				: true,
 		[
 			isInfraMonitoring,
 			isMetricsExplorer,
-			query.aggregateAttribute.dataType,
+			query.aggregateAttribute?.dataType,
 			query.dataSource,
 		],
 	);
@@ -120,12 +121,12 @@ export const useFetchKeysAndValues = (
 		{
 			searchText: searchKey,
 			dataSource: query.dataSource,
-			aggregateOperator: query.aggregateOperator,
+			aggregateOperator: query.aggregateOperator || '',
 			aggregateAttribute:
 				isInfraMonitoring && entity
-					? K8sEntityToAggregateAttributeMapping[entity]
-					: query.aggregateAttribute.key,
-			tagType: query.aggregateAttribute.type ?? null,
+					? GetK8sEntityToAggregateAttribute(entity, dotMetricsEnabled)
+					: query.aggregateAttribute?.key || '',
+			tagType: query.aggregateAttribute?.type ?? null,
 		},
 		{
 			queryKey: [searchParams],
@@ -143,7 +144,7 @@ export const useFetchKeysAndValues = (
 		{
 			searchText: searchKey,
 			dataSource: query.dataSource,
-			filters: query.filters,
+			filters: query.filters || { items: [], op: 'AND' },
 		},
 		{
 			queryKey: [suggestionsParams],
@@ -219,8 +220,9 @@ export const useFetchKeysAndValues = (
 					aggregateOperator: 'noop',
 					dataSource: query.dataSource,
 					aggregateAttribute:
-						K8sEntityToAggregateAttributeMapping[entity] ||
-						query.aggregateAttribute.key,
+						GetK8sEntityToAggregateAttribute(entity, dotMetricsEnabled) ||
+						query.aggregateAttribute?.key ||
+						'',
 					attributeKey: filterAttributeKey?.key ?? tagKey,
 					filterAttributeKeyDataType:
 						filterAttributeKey?.dataType ?? DataTypes.EMPTY,
@@ -241,9 +243,9 @@ export const useFetchKeysAndValues = (
 				payload = response.payload?.data;
 			} else {
 				const response = await getAttributesValues({
-					aggregateOperator: query.aggregateOperator,
+					aggregateOperator: query.aggregateOperator || '',
 					dataSource: query.dataSource,
-					aggregateAttribute: query.aggregateAttribute.key,
+					aggregateAttribute: query.aggregateAttribute?.key || '',
 					attributeKey: filterAttributeKey?.key ?? tagKey,
 					filterAttributeKeyDataType:
 						filterAttributeKey?.dataType ?? DataTypes.EMPTY,

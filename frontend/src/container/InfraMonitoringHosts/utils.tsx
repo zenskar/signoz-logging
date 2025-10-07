@@ -1,7 +1,8 @@
 import './InfraMonitoring.styles.scss';
 
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { Color } from '@signozhq/design-tokens';
-import { Progress, TabsProps, Tag } from 'antd';
+import { Progress, TabsProps, Tag, Tooltip } from 'antd';
 import { ColumnType } from 'antd/es/table';
 import {
 	HostData,
@@ -41,16 +42,13 @@ export interface HostsListTableProps {
 		| undefined;
 	hostMetricsData: HostData[];
 	filters: TagFilter;
-	setSelectedHostName: Dispatch<SetStateAction<string | null>>;
+	onHostClick: (hostName: string) => void;
 	currentPage: number;
 	setCurrentPage: Dispatch<SetStateAction<number>>;
 	pageSize: number;
-	setOrderBy: Dispatch<
-		SetStateAction<{
-			columnName: string;
-			order: 'asc' | 'desc';
-		} | null>
-	>;
+	setOrderBy: (
+		orderBy: { columnName: string; order: 'asc' | 'desc' } | null,
+	) => void;
 	setPageSize: (pageSize: number) => void;
 }
 
@@ -96,7 +94,14 @@ export const getHostsListColumns = (): ColumnType<HostRowData>[] => [
 		align: 'right',
 	},
 	{
-		title: <div className="column-header-right">Memory Usage</div>,
+		title: (
+			<div className="column-header-right memory-usage-header">
+				Memory Usage
+				<Tooltip title="Excluding cache memory">
+					<InfoCircleOutlined />
+				</Tooltip>
+			</div>
+		),
 		dataIndex: 'memory',
 		key: 'memory',
 		width: 100,
@@ -177,8 +182,6 @@ export const HostsQuickFiltersConfig: IQuickFiltersConfig[] = [
 			key: 'host_name',
 			dataType: DataTypes.String,
 			type: 'resource',
-			isColumn: false,
-			isJSON: false,
 		},
 		aggregateOperator: 'noop',
 		aggregateAttribute: 'system_cpu_load_average_15m',
@@ -192,8 +195,6 @@ export const HostsQuickFiltersConfig: IQuickFiltersConfig[] = [
 			key: 'os_type',
 			dataType: DataTypes.String,
 			type: 'resource',
-			isColumn: false,
-			isJSON: false,
 		},
 		aggregateOperator: 'noop',
 		aggregateAttribute: 'system_cpu_load_average_15m',
@@ -201,3 +202,58 @@ export const HostsQuickFiltersConfig: IQuickFiltersConfig[] = [
 		defaultOpen: true,
 	},
 ];
+
+export function GetHostsQuickFiltersConfig(
+	dotMetricsEnabled: boolean,
+): IQuickFiltersConfig[] {
+	// These keys don’t change with dotMetricsEnabled
+	const hostNameKey = dotMetricsEnabled ? 'host.name' : 'host_name';
+	const osTypeKey = dotMetricsEnabled ? 'os.type' : 'os_type';
+	// This metric stays the same regardless of notation
+	const metricName = dotMetricsEnabled
+		? 'system.cpu.load_average.15m'
+		: 'system_cpu_load_average_15m';
+
+	const environmentKey = dotMetricsEnabled
+		? 'deployment.environment'
+		: 'deployment_environment';
+
+	return [
+		{
+			type: FiltersType.CHECKBOX,
+			title: 'Host Name',
+			attributeKey: {
+				key: hostNameKey,
+				dataType: DataTypes.String,
+				type: 'resource',
+			},
+			aggregateOperator: 'noop',
+			aggregateAttribute: metricName,
+			dataSource: DataSource.METRICS,
+			defaultOpen: true,
+		},
+		{
+			type: FiltersType.CHECKBOX,
+			title: 'OS Type',
+			attributeKey: {
+				key: osTypeKey,
+				dataType: DataTypes.String,
+				type: 'resource',
+			},
+			aggregateOperator: 'noop',
+			aggregateAttribute: metricName,
+			dataSource: DataSource.METRICS,
+			defaultOpen: true,
+		},
+		{
+			type: FiltersType.CHECKBOX,
+			title: 'Environment',
+			attributeKey: {
+				key: environmentKey,
+				dataType: DataTypes.String,
+				type: 'resource',
+			},
+			defaultOpen: true,
+		},
+	];
+}

@@ -74,6 +74,7 @@ const formatMap = {
 	'MM/dd HH:mm': DATE_TIME_FORMATS.SLASH_SHORT,
 	'MM/DD': DATE_TIME_FORMATS.DATE_SHORT,
 	'YY-MM': DATE_TIME_FORMATS.YEAR_MONTH,
+	'MMM d, yyyy, h:mm:ss aaaa': DATE_TIME_FORMATS.DASH_DATETIME,
 	YY: DATE_TIME_FORMATS.YEAR_SHORT,
 };
 
@@ -93,6 +94,8 @@ const Graph = forwardRef<ToggleGraphProps | undefined, GraphProps>(
 			containerHeight,
 			onDragSelect,
 			dragSelectColor,
+			minTime,
+			maxTime,
 		},
 		ref,
 		// eslint-disable-next-line sonarjs/cognitive-complexity
@@ -104,7 +107,7 @@ const Graph = forwardRef<ToggleGraphProps | undefined, GraphProps>(
 		const { timezone } = useTimezone();
 
 		const currentTheme = isDarkMode ? 'dark' : 'light';
-		const xAxisTimeUnit = useXAxisTimeUnit(data); // Computes the relevant time unit for x axis by analyzing the time stamp data
+		const xAxisTimeUnit = useXAxisTimeUnit(data, minTime, maxTime); // Computes the relevant time unit for x axis based on data or provided time range
 
 		const lineChartRef = useRef<Chart>();
 
@@ -166,6 +169,8 @@ const Graph = forwardRef<ToggleGraphProps | undefined, GraphProps>(
 					onClickHandler,
 					data,
 					timezone,
+					minTime,
+					maxTime,
 				);
 
 				const chartHasData = hasData(data);
@@ -201,6 +206,8 @@ const Graph = forwardRef<ToggleGraphProps | undefined, GraphProps>(
 			onClickHandler,
 			data,
 			timezone,
+			minTime,
+			maxTime,
 			name,
 			type,
 		]);
@@ -235,6 +242,8 @@ Graph.defaultProps = {
 	containerHeight: '90%',
 	onDragSelect: undefined,
 	dragSelectColor: undefined,
+	minTime: undefined,
+	maxTime: undefined,
 };
 
 Graph.displayName = 'Graph';

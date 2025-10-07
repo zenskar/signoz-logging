@@ -3,8 +3,15 @@ package valuer
 import (
 	"database/sql"
 	"database/sql/driver"
+	"encoding"
 	"encoding/json"
 	"fmt"
+
+	"github.com/SigNoz/signoz/pkg/errors"
+)
+
+var (
+	ErrCodeUnknownValuerScan = errors.MustNewCode("unknown_valuer_scan")
 )
 
 type Valuer interface {
@@ -28,4 +35,7 @@ type Valuer interface {
 
 	// Implement fmt.Stringer to allow the value to be printed as a string
 	fmt.Stringer
+
+	// Implement encoding.TextUnmarshaler to allow the value to be unmarshalled from a string
+	encoding.TextUnmarshaler
 }

@@ -14,6 +14,9 @@ var (
 	CodeAlreadyExists         = Code{"already_exists"}
 	CodeUnauthenticated       = Code{"unauthenticated"}
 	CodeForbidden             = Code{"forbidden"}
+	CodeCanceled              = Code{"canceled"}
+	CodeTimeout               = Code{"timeout"}
+	CodeUnknown               = Code{"unknown"}
 )
 
 var (

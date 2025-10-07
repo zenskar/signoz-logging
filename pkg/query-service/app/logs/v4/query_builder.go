@@ -28,6 +28,8 @@ var logOperators = map[v3.FilterOperator]string{
 	v3.FilterOperatorNotIn:           "NOT IN",
 	v3.FilterOperatorExists:          "mapContains(%s_%s, '%s')",
 	v3.FilterOperatorNotExists:       "not mapContains(%s_%s, '%s')",
+	v3.FilterOperatorILike:           "ILIKE",
+	v3.FilterOperatorNotILike:        "NOT ILIKE",
 }
 
 var skipExistsFilter = map[v3.FilterOperator]struct{}{
@@ -175,6 +177,9 @@ func buildAttributeFilter(item v3.FilterItem) (string, error) {
 			} else {
 				return fmt.Sprintf("%s %s '%s'", keyName, logsOp, val), nil
 			}
+		case v3.FilterOperatorILike, v3.FilterOperatorNotILike:
+			val := utils.QuoteEscapedString(fmt.Sprintf("%s", item.Value))
+			return fmt.Sprintf("%s %s '%s'", keyName, logsOp, val), nil
 		default:
 			return fmt.Sprintf("%s %s %s", keyName, logsOp, fmtVal), nil
 		}
@@ -284,7 +289,7 @@ func orderByAttributeKeyTags(panelType v3.PanelType, items []v3.OrderBy, tags []
 
 	if len(orderByArray) == 0 {
 		if panelType == v3.PanelTypeList {
-			orderByArray = append(orderByArray, constants.TIMESTAMP+" DESC")
+			orderByArray = append(orderByArray, constants.TIMESTAMP+" DESC", "id DESC")
 		} else {
 			orderByArray = append(orderByArray, "value DESC")
 		}
@@ -541,6 +546,7 @@ func PrepareLogsQuery(start, end int64, queryType v3.QueryType, panelType v3.Pan
 			return "", fmt.Errorf("max limit exceeded")
 		}
 
+		// when pageSize is provided, we need to fetch the logs in chunks
 		if mq.PageSize > 0 {
 			if mq.Limit > 0 && mq.Offset+mq.PageSize > mq.Limit {
 				query = logsV3.AddLimitToQuery(query, mq.Limit-mq.Offset)
@@ -548,12 +554,9 @@ func PrepareLogsQuery(start, end int64, queryType v3.QueryType, panelType v3.Pan
 				query = logsV3.AddLimitToQuery(query, mq.PageSize)
 			}
 
-			// add offset to the query only if it is not orderd by timestamp.
-			if !logsV3.IsOrderByTs(mq.OrderBy) {
-				query = logsV3.AddOffsetToQuery(query, mq.Offset)
-			}
-
+			query = logsV3.AddOffsetToQuery(query, mq.Offset)
 		} else {
+			// when pageSize is not provided, we fetch all the logs in the limit
 			query = logsV3.AddLimitToQuery(query, mq.Limit)
 		}
 	} else if panelType == v3.PanelTypeTable {

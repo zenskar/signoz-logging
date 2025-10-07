@@ -1,6 +1,7 @@
 import './entityTraces.styles.scss';
 
 import logEvent from 'api/common/logEvent';
+import { VIEWS } from 'components/HostMetricsDetail/constants';
 import { getListColumns } from 'components/HostMetricsDetail/HostMetricTraces/utils';
 import { ResizeTable } from 'components/ResizeTable';
 import { DEFAULT_ENTITY_VERSION } from 'constants/app';
@@ -43,7 +44,10 @@ interface Props {
 		interval: Time | CustomTimeType,
 		dateTimeRange?: [number, number],
 	) => void;
-	handleChangeTracesFilters: (value: IBuilderQuery['filters']) => void;
+	handleChangeTracesFilters: (
+		value: IBuilderQuery['filters'],
+		view: VIEWS,
+	) => void;
 	tracesFilters: IBuilderQuery['filters'];
 	selectedInterval: Time;
 	queryKey: string;
@@ -80,14 +84,17 @@ function EntityTraces({
 							...currentQuery.builder.queryData[0].aggregateAttribute,
 						},
 						filters: {
-							items: filterOutPrimaryFilters(tracesFilters.items, queryKeyFilters),
+							items: filterOutPrimaryFilters(
+								tracesFilters?.items || [],
+								queryKeyFilters,
+							),
 							op: 'AND',
 						},
 					},
 				],
 			},
 		}),
-		[currentQuery, queryKeyFilters, tracesFilters.items],
+		[currentQuery, queryKeyFilters, tracesFilters?.items],
 	);
 
 	const query = updatedCurrentQuery?.builder?.queryData[0] || null;
@@ -144,7 +151,8 @@ function EntityTraces({
 
 	const isDataEmpty =
 		!isLoading && !isFetching && !isError && traces.length === 0;
-	const hasAdditionalFilters = tracesFilters.items.length > 1;
+	const hasAdditionalFilters =
+		tracesFilters?.items && tracesFilters?.items?.length > 1;
 
 	const totalCount =
 		data?.payload?.data?.newResult?.data?.result?.[0]?.list?.length || 0;
@@ -163,15 +171,17 @@ function EntityTraces({
 				<div className="filter-section">
 					{query && (
 						<QueryBuilderSearch
-							query={query}
-							onChange={handleChangeTracesFilters}
+							query={query as IBuilderQuery}
+							onChange={(value): void =>
+								handleChangeTracesFilters(value, VIEWS.TRACES)
+							}
 							disableNavigationShortcuts
 						/>
 					)}
 				</div>
 				<div className="datetime-section">
 					<DateTimeSelectionV2
-						showAutoRefresh={false}
+						showAutoRefresh
 						showRefreshText={false}
 						hideShareModal
 						isModalTimeSelection={isModalTimeSelection}
@@ -197,7 +207,7 @@ function EntityTraces({
 			{!isError && traces.length > 0 && (
 				<div className="entity-traces-table">
 					<TraceExplorerControls
-						isLoading={isFetching}
+						isLoading={isFetching && traces.length === 0}
 						totalCount={totalCount}
 						perPageOptions={PER_PAGE_OPTIONS}
 						showSizeChanger={false}
@@ -206,7 +216,7 @@ function EntityTraces({
 						tableLayout="fixed"
 						pagination={false}
 						scroll={{ x: true }}
-						loading={isFetching}
+						loading={isFetching && traces.length === 0}
 						dataSource={traces}
 						columns={traceListColumns}
 						onRow={(): Record<string, unknown> => ({

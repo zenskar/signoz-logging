@@ -7,6 +7,12 @@ import (
 	jsoniter "github.com/json-iterator/go"
 )
 
+const (
+	// Non-standard status code (originally introduced by nginx) for the case when a client closes
+	// the connection while the server is still processing the request.
+	statusClientClosedConnection = 499
+)
+
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type response struct {
@@ -37,6 +43,8 @@ func Success(rw http.ResponseWriter, httpCode int, data interface{}) {
 		httpCode = http.StatusOK
 	}
 
+	rw.Header().Set("Content-Type", "application/json")
+
 	rw.WriteHeader(httpCode)
 	_, _ = rw.Write(body)
 }
@@ -60,6 +68,10 @@ func Error(rw http.ResponseWriter, cause error) {
 		httpCode = http.StatusNotImplemented
 	case errors.TypeForbidden:
 		httpCode = http.StatusForbidden
+	case errors.TypeCanceled:
+		httpCode = statusClientClosedConnection
+	case errors.TypeTimeout:
+		httpCode = http.StatusGatewayTimeout
 	}
 
 	rea := make([]responseerroradditional, len(a))

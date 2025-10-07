@@ -1,3 +1,5 @@
+import './CreateAlertChannels.styles.scss';
+
 import { Form } from 'antd';
 import createEmail from 'api/channels/createEmail';
 import createMsTeamsApi from 'api/channels/createMsTeams';
@@ -16,6 +18,7 @@ import ROUTES from 'constants/routes';
 import FormAlertChannels from 'container/FormAlertChannels';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
+import { useErrorModal } from 'providers/ErrorModalProvider';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import APIError from 'types/api/error';
@@ -42,6 +45,7 @@ function CreateAlertChannels({
 }: CreateAlertChannelsProps): JSX.Element {
 	// init namespace for translations
 	const { t } = useTranslation('channels');
+	const { showErrorModal } = useErrorModal();
 
 	const [formInstance] = Form.useForm();
 
@@ -134,6 +138,14 @@ function CreateAlertChannels({
 	);
 
 	const onSlackHandler = useCallback(async () => {
+		if (!selectedConfig.api_url) {
+			notifications.error({
+				message: 'Error',
+				description: t('webhook_url_required'),
+			});
+			return;
+		}
+
 		setSavingState(true);
 
 		try {
@@ -145,15 +157,12 @@ function CreateAlertChannels({
 			history.replace(ROUTES.ALL_CHANNELS);
 			return { status: 'success', statusMessage: t('channel_creation_done') };
 		} catch (error) {
-			notifications.error({
-				message: (error as APIError).error.error.code,
-				description: (error as APIError).error.error.message,
-			});
+			showErrorModal(error as APIError);
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} finally {
 			setSavingState(false);
 		}
-	}, [prepareSlackRequest, t, notifications]);
+	}, [selectedConfig, notifications, t, prepareSlackRequest, showErrorModal]);
 
 	const prepareWebhookRequest = useCallback(() => {
 		// initial api request without auth params
@@ -191,6 +200,14 @@ function CreateAlertChannels({
 	}, [notifications, t, selectedConfig]);
 
 	const onWebhookHandler = useCallback(async () => {
+		if (!selectedConfig.api_url) {
+			notifications.error({
+				message: 'Error',
+				description: t('webhook_url_required'),
+			});
+			return;
+		}
+
 		setSavingState(true);
 		try {
 			const request = prepareWebhookRequest();
@@ -202,15 +219,18 @@ function CreateAlertChannels({
 			history.replace(ROUTES.ALL_CHANNELS);
 			return { status: 'success', statusMessage: t('channel_creation_done') };
 		} catch (error) {
-			notifications.error({
-				message: (error as APIError).getErrorCode(),
-				description: (error as APIError).getErrorMessage(),
-			});
+			showErrorModal(error as APIError);
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} finally {
 			setSavingState(false);
 		}
-	}, [prepareWebhookRequest, t, notifications]);
+	}, [
+		selectedConfig.api_url,
+		notifications,
+		t,
+		prepareWebhookRequest,
+		showErrorModal,
+	]);
 
 	const preparePagerRequest = useCallback(() => {
 		const validationError = ValidatePagerChannel(selectedConfig as PagerChannel);
@@ -254,15 +274,12 @@ function CreateAlertChannels({
 			}
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} catch (error) {
-			notifications.error({
-				message: (error as APIError).getErrorCode(),
-				description: (error as APIError).getErrorMessage(),
-			});
+			showErrorModal(error as APIError);
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} finally {
 			setSavingState(false);
 		}
-	}, [t, notifications, preparePagerRequest]);
+	}, [preparePagerRequest, t, notifications, showErrorModal]);
 
 	const prepareOpsgenieRequest = useCallback(
 		() => ({
@@ -277,6 +294,14 @@ function CreateAlertChannels({
 	);
 
 	const onOpsgenieHandler = useCallback(async () => {
+		if (!selectedConfig.api_key) {
+			notifications.error({
+				message: 'Error',
+				description: t('api_key_required'),
+			});
+			return;
+		}
+
 		setSavingState(true);
 		try {
 			await createOpsgenie(prepareOpsgenieRequest());
@@ -287,15 +312,18 @@ function CreateAlertChannels({
 			history.replace(ROUTES.ALL_CHANNELS);
 			return { status: 'success', statusMessage: t('channel_creation_done') };
 		} catch (error) {
-			notifications.error({
-				message: (error as APIError).getErrorCode(),
-				description: (error as APIError).getErrorMessage(),
-			});
+			showErrorModal(error as APIError);
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} finally {
 			setSavingState(false);
 		}
-	}, [prepareOpsgenieRequest, t, notifications]);
+	}, [
+		selectedConfig.api_key,
+		notifications,
+		t,
+		prepareOpsgenieRequest,
+		showErrorModal,
+	]);
 
 	const prepareEmailRequest = useCallback(
 		() => ({
@@ -309,6 +337,14 @@ function CreateAlertChannels({
 	);
 
 	const onEmailHandler = useCallback(async () => {
+		if (!selectedConfig.to) {
+			notifications.error({
+				message: 'Error',
+				description: t('to_required'),
+			});
+			return;
+		}
+
 		setSavingState(true);
 		try {
 			const request = prepareEmailRequest();
@@ -320,15 +356,12 @@ function CreateAlertChannels({
 			history.replace(ROUTES.ALL_CHANNELS);
 			return { status: 'success', statusMessage: t('channel_creation_done') };
 		} catch (error) {
-			notifications.error({
-				message: (error as APIError).getErrorCode(),
-				description: (error as APIError).getErrorMessage(),
-			});
+			showErrorModal(error as APIError);
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} finally {
 			setSavingState(false);
 		}
-	}, [prepareEmailRequest, t, notifications]);
+	}, [prepareEmailRequest, notifications, t, showErrorModal, selectedConfig.to]);
 
 	const prepareMsTeamsRequest = useCallback(
 		() => ({
@@ -342,6 +375,14 @@ function CreateAlertChannels({
 	);
 
 	const onMsTeamsHandler = useCallback(async () => {
+		if (!selectedConfig.webhook_url) {
+			notifications.error({
+				message: 'Error',
+				description: t('webhook_url_required'),
+			});
+			return;
+		}
+
 		setSavingState(true);
 
 		try {
@@ -353,18 +394,29 @@ function CreateAlertChannels({
 			history.replace(ROUTES.ALL_CHANNELS);
 			return { status: 'success', statusMessage: t('channel_creation_done') };
 		} catch (error) {
-			notifications.error({
-				message: (error as APIError).getErrorCode(),
-				description: (error as APIError).getErrorMessage(),
-			});
+			showErrorModal(error as APIError);
 			return { status: 'failed', statusMessage: t('channel_creation_failed') };
 		} finally {
 			setSavingState(false);
 		}
-	}, [prepareMsTeamsRequest, t, notifications]);
+	}, [
+		selectedConfig.webhook_url,
+		notifications,
+		t,
+		prepareMsTeamsRequest,
+		showErrorModal,
+	]);
 
 	const onSaveHandler = useCallback(
 		async (value: ChannelType) => {
+			if (!selectedConfig.name) {
+				notifications.error({
+					message: 'Error',
+					description: t('channel_name_required'),
+				});
+				return;
+			}
+
 			const functionMapper = {
 				[ChannelType.Slack]: onSlackHandler,
 				[ChannelType.Webhook]: onWebhookHandler,
@@ -459,10 +511,8 @@ function CreateAlertChannels({
 					status: 'Test success',
 				});
 			} catch (error) {
-				notifications.error({
-					message: (error as APIError).error.error.code,
-					description: (error as APIError).error.error.message,
-				});
+				showErrorModal(error as APIError);
+
 				logEvent('Alert Channel: Test notification', {
 					type: channelType,
 					sendResolvedAlert: selectedConfig?.send_resolved,
@@ -495,26 +545,28 @@ function CreateAlertChannels({
 	);
 
 	return (
-		<FormAlertChannels
-			{...{
-				formInstance,
-				onTypeChangeHandler,
-				setSelectedConfig,
-				type,
-				onTestHandler,
-				onSaveHandler,
-				savingState,
-				testingState,
-				title: t('page_title_create'),
-				initialValue: {
+		<div className="create-alert-channels-container">
+			<FormAlertChannels
+				{...{
+					formInstance,
+					onTypeChangeHandler,
+					setSelectedConfig,
 					type,
-					...selectedConfig,
-					...PagerInitialConfig,
-					...OpsgenieInitialConfig,
-					...EmailInitialConfig,
-				},
-			}}
-		/>
+					onTestHandler,
+					onSaveHandler,
+					savingState,
+					testingState,
+					title: t('page_title_create'),
+					initialValue: {
+						type,
+						...selectedConfig,
+						...PagerInitialConfig,
+						...OpsgenieInitialConfig,
+						...EmailInitialConfig,
+					},
+				}}
+			/>
+		</div>
 	);
 }
 

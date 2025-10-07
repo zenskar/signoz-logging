@@ -5,14 +5,15 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/SigNoz/signoz/pkg/factory"
 	"github.com/SigNoz/signoz/pkg/http/render"
 	"github.com/SigNoz/signoz/pkg/telemetrylogs"
 	"github.com/SigNoz/signoz/pkg/telemetrymetadata"
+	"github.com/SigNoz/signoz/pkg/telemetrymeter"
 	"github.com/SigNoz/signoz/pkg/telemetrymetrics"
 	"github.com/SigNoz/signoz/pkg/telemetrystore"
 	"github.com/SigNoz/signoz/pkg/telemetrytraces"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
-	"go.uber.org/zap"
 )
 
 type API struct {
@@ -20,18 +21,27 @@ type API struct {
 	telemetryMetadataStore telemetrytypes.MetadataStore
 }
 
-func NewAPI(telemetryStore telemetrystore.TelemetryStore) *API {
-
+// TODO: move this to module and remove metastore init
+func NewAPI(
+	settings factory.ProviderSettings,
+	telemetryStore telemetrystore.TelemetryStore,
+) *API {
 	telemetryMetadataStore := telemetrymetadata.NewTelemetryMetaStore(
+		settings,
 		telemetryStore,
 		telemetrytraces.DBName,
 		telemetrytraces.TagAttributesV2TableName,
+		telemetrytraces.SpanAttributesKeysTblName,
 		telemetrytraces.SpanIndexV3TableName,
 		telemetrymetrics.DBName,
 		telemetrymetrics.AttributesMetadataTableName,
+		telemetrymeter.DBName,
+		telemetrymeter.SamplesAgg1dTableName,
 		telemetrylogs.DBName,
 		telemetrylogs.LogsV2TableName,
 		telemetrylogs.TagAttributesV2TableName,
+		telemetrylogs.LogAttributeKeysTblName,
+		telemetrylogs.LogResourceKeysTblName,
 		telemetrymetadata.DBName,
 		telemetrymetadata.AttributesMetadataLocalTableName,
 	)
@@ -59,7 +69,7 @@ func (api *API) GetFieldsKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keys, err := api.telemetryMetadataStore.GetKeys(ctx, fieldKeySelector)
+	keys, complete, err := api.telemetryMetadataStore.GetKeys(ctx, fieldKeySelector)
 	if err != nil {
 		render.Error(w, err)
 		return
@@ -67,7 +77,7 @@ func (api *API) GetFieldsKeys(w http.ResponseWriter, r *http.Request) {
 
 	response := fieldKeysResponse{
 		Keys:     keys,
-		Complete: len(keys) < fieldKeySelector.Limit,
+		Complete: complete,
 	}
 
 	render.Success(w, http.StatusOK, response)
@@ -90,16 +100,15 @@ func (api *API) GetFieldsValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allValues, err := api.telemetryMetadataStore.GetAllValues(ctx, fieldValueSelector)
+	allValues, allComplete, err := api.telemetryMetadataStore.GetAllValues(ctx, fieldValueSelector)
 	if err != nil {
 		render.Error(w, err)
 		return
 	}
 
-	relatedValues, err := api.telemetryMetadataStore.GetRelatedValues(ctx, fieldValueSelector)
+	relatedValues, relatedComplete, err := api.telemetryMetadataStore.GetRelatedValues(ctx, fieldValueSelector)
 	if err != nil {
 		// we don't want to return error if we fail to get related values for some reason
-		zap.L().Error("failed to get related values", zap.Error(err))
 		relatedValues = []string{}
 	}
 
@@ -110,11 +119,8 @@ func (api *API) GetFieldsValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := fieldValuesResponse{
-		Values: values,
-		Complete: len(values.StringValues) < fieldValueSelector.Limit &&
-			len(values.BoolValues) < fieldValueSelector.Limit &&
-			len(values.NumberValues) < fieldValueSelector.Limit &&
-			len(values.RelatedValues) < fieldValueSelector.Limit,
+		Values:   values,
+		Complete: allComplete && relatedComplete,
 	}
 
 	render.Success(w, http.StatusOK, response)

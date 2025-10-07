@@ -14,8 +14,14 @@ import {
 	initialQueryState,
 } from 'constants/queryBuilder';
 import ROUTES from 'constants/routes';
-import { filterDuplicateFilters } from 'container/InfraMonitoringK8s/commonUtils';
-import { K8sCategory } from 'container/InfraMonitoringK8s/constants';
+import {
+	filterDuplicateFilters,
+	getFiltersFromParams,
+} from 'container/InfraMonitoringK8s/commonUtils';
+import {
+	INFRA_MONITORING_K8S_PARAMS_KEYS,
+	K8sCategory,
+} from 'container/InfraMonitoringK8s/constants';
 import { QUERY_KEYS } from 'container/InfraMonitoringK8s/EntityDetailsUtils/utils';
 import {
 	CustomTimeType,
@@ -32,8 +38,9 @@ import {
 	ScrollText,
 	X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { AppState } from 'store/reducers';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import {
@@ -81,15 +88,35 @@ function DeploymentDetails({
 		endTime: endMs,
 	}));
 
+	const lastSelectedInterval = useRef<Time | null>(null);
+
 	const [selectedInterval, setSelectedInterval] = useState<Time>(
-		selectedTime as Time,
+		lastSelectedInterval.current
+			? lastSelectedInterval.current
+			: (selectedTime as Time),
 	);
 
-	const [selectedView, setSelectedView] = useState<VIEWS>(VIEWS.METRICS);
+	const [searchParams, setSearchParams] = useSearchParams();
+	const [selectedView, setSelectedView] = useState<VIEWS>(() => {
+		const view = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW);
+		if (view) {
+			return view as VIEWS;
+		}
+		return VIEWS.METRICS;
+	});
 	const isDarkMode = useIsDarkMode();
 
-	const initialFilters = useMemo(
-		() => ({
+	const initialFilters = useMemo(() => {
+		const urlView = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW);
+		const queryKey =
+			urlView === VIEW_TYPES.LOGS
+				? INFRA_MONITORING_K8S_PARAMS_KEYS.LOG_FILTERS
+				: INFRA_MONITORING_K8S_PARAMS_KEYS.TRACES_FILTERS;
+		const filters = getFiltersFromParams(searchParams, queryKey);
+		if (filters) {
+			return filters;
+		}
+		return {
 			op: 'AND',
 			items: [
 				{
@@ -98,8 +125,6 @@ function DeploymentDetails({
 						key: QUERY_KEYS.K8S_DEPLOYMENT_NAME,
 						dataType: DataTypes.String,
 						type: 'resource',
-						isColumn: false,
-						isJSON: false,
 						id: 'k8s_deployment_name--string--resource--false',
 					},
 					op: '=',
@@ -111,20 +136,28 @@ function DeploymentDetails({
 						key: QUERY_KEYS.K8S_NAMESPACE_NAME,
 						dataType: DataTypes.String,
 						type: 'resource',
-						isColumn: false,
-						isJSON: false,
 						id: 'k8s_deployment_name--string--resource--false',
 					},
 					op: '=',
 					value: deployment?.meta.k8s_namespace_name || '',
 				},
 			],
-		}),
-		[deployment?.meta.k8s_deployment_name, deployment?.meta.k8s_namespace_name],
-	);
+		};
+	}, [
+		deployment?.meta.k8s_deployment_name,
+		deployment?.meta.k8s_namespace_name,
+		searchParams,
+	]);
 
-	const initialEventsFilters = useMemo(
-		() => ({
+	const initialEventsFilters = useMemo(() => {
+		const filters = getFiltersFromParams(
+			searchParams,
+			INFRA_MONITORING_K8S_PARAMS_KEYS.EVENTS_FILTERS,
+		);
+		if (filters) {
+			return filters;
+		}
+		return {
 			op: 'AND',
 			items: [
 				{
@@ -133,8 +166,6 @@ function DeploymentDetails({
 						key: QUERY_KEYS.K8S_OBJECT_KIND,
 						dataType: DataTypes.String,
 						type: 'resource',
-						isColumn: false,
-						isJSON: false,
 						id: 'k8s.object.kind--string--resource--false',
 					},
 					op: '=',
@@ -146,17 +177,14 @@ function DeploymentDetails({
 						key: QUERY_KEYS.K8S_OBJECT_NAME,
 						dataType: DataTypes.String,
 						type: 'resource',
-						isColumn: false,
-						isJSON: false,
 						id: 'k8s.object.name--string--resource--false',
 					},
 					op: '=',
 					value: deployment?.meta.k8s_deployment_name || '',
 				},
 			],
-		}),
-		[deployment?.meta.k8s_deployment_name],
-	);
+		};
+	}, [deployment?.meta.k8s_deployment_name, searchParams]);
 
 	const [logAndTracesFilters, setLogAndTracesFilters] = useState<
 		IBuilderQuery['filters']
@@ -183,10 +211,11 @@ function DeploymentDetails({
 	}, [initialFilters, initialEventsFilters]);
 
 	useEffect(() => {
-		setSelectedInterval(selectedTime as Time);
+		const currentSelectedInterval = lastSelectedInterval.current || selectedTime;
+		setSelectedInterval(currentSelectedInterval as Time);
 
-		if (selectedTime !== 'custom') {
-			const { maxTime, minTime } = GetMinMax(selectedTime);
+		if (currentSelectedInterval !== 'custom') {
+			const { maxTime, minTime } = GetMinMax(currentSelectedInterval);
 
 			setModalTimeRange({
 				startTime: Math.floor(minTime / 1000000000),
@@ -197,6 +226,13 @@ function DeploymentDetails({
 
 	const handleTabChange = (e: RadioChangeEvent): void => {
 		setSelectedView(e.target.value);
+		setSearchParams({
+			...Object.fromEntries(searchParams.entries()),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW]: e.target.value,
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.LOG_FILTERS]: JSON.stringify(null),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.TRACES_FILTERS]: JSON.stringify(null),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.EVENTS_FILTERS]: JSON.stringify(null),
+		});
 		logEvent(InfraMonitoringEvents.TabChanged, {
 			entity: InfraMonitoringEvents.K8sEntity,
 			page: InfraMonitoringEvents.DetailedPage,
@@ -207,6 +243,7 @@ function DeploymentDetails({
 
 	const handleTimeChange = useCallback(
 		(interval: Time | CustomTimeType, dateTimeRange?: [number, number]): void => {
+			lastSelectedInterval.current = interval as Time;
 			setSelectedInterval(interval as Time);
 
 			if (interval === 'custom' && dateTimeRange) {
@@ -236,21 +273,23 @@ function DeploymentDetails({
 	);
 
 	const handleChangeLogFilters = useCallback(
-		(value: IBuilderQuery['filters']) => {
+		(value: IBuilderQuery['filters'], view: VIEWS) => {
 			setLogAndTracesFilters((prevFilters) => {
-				const primaryFilters = prevFilters.items.filter((item) =>
+				const primaryFilters = prevFilters?.items?.filter((item) =>
 					[QUERY_KEYS.K8S_DEPLOYMENT_NAME, QUERY_KEYS.K8S_NAMESPACE_NAME].includes(
 						item.key?.key ?? '',
 					),
 				);
-				const paginationFilter = value.items.find((item) => item.key?.key === 'id');
-				const newFilters = value.items.filter(
+				const paginationFilter = value?.items?.find(
+					(item) => item.key?.key === 'id',
+				);
+				const newFilters = value?.items?.filter(
 					(item) =>
 						item.key?.key !== 'id' &&
 						item.key?.key !== QUERY_KEYS.K8S_DEPLOYMENT_NAME,
 				);
 
-				if (value.items.length > 0) {
+				if (value?.items && value?.items?.length > 0) {
 					logEvent(InfraMonitoringEvents.FilterApplied, {
 						entity: InfraMonitoringEvents.K8sEntity,
 						page: InfraMonitoringEvents.DetailedPage,
@@ -259,16 +298,26 @@ function DeploymentDetails({
 					});
 				}
 
-				return {
+				const updatedFilters = {
 					op: 'AND',
 					items: filterDuplicateFilters(
 						[
-							...primaryFilters,
-							...newFilters,
+							...(primaryFilters || []),
+							...(newFilters || []),
 							...(paginationFilter ? [paginationFilter] : []),
 						].filter((item): item is TagFilterItem => item !== undefined),
 					),
 				};
+
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.LOG_FILTERS]: JSON.stringify(
+						updatedFilters,
+					),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW]: view,
+				});
+
+				return updatedFilters;
 			});
 		},
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -276,15 +325,15 @@ function DeploymentDetails({
 	);
 
 	const handleChangeTracesFilters = useCallback(
-		(value: IBuilderQuery['filters']) => {
+		(value: IBuilderQuery['filters'], view: VIEWS) => {
 			setLogAndTracesFilters((prevFilters) => {
-				const primaryFilters = prevFilters.items.filter((item) =>
+				const primaryFilters = prevFilters?.items?.filter((item) =>
 					[QUERY_KEYS.K8S_DEPLOYMENT_NAME, QUERY_KEYS.K8S_NAMESPACE_NAME].includes(
 						item.key?.key ?? '',
 					),
 				);
 
-				if (value.items.length > 0) {
+				if (value?.items && value?.items?.length > 0) {
 					logEvent(InfraMonitoringEvents.FilterApplied, {
 						entity: InfraMonitoringEvents.K8sEntity,
 						page: InfraMonitoringEvents.DetailedPage,
@@ -293,17 +342,27 @@ function DeploymentDetails({
 					});
 				}
 
-				return {
+				const updatedFilters = {
 					op: 'AND',
 					items: filterDuplicateFilters(
 						[
-							...primaryFilters,
-							...value.items.filter(
+							...(primaryFilters || []),
+							...(value?.items?.filter(
 								(item) => item.key?.key !== QUERY_KEYS.K8S_DEPLOYMENT_NAME,
-							),
+							) || []),
 						].filter((item): item is TagFilterItem => item !== undefined),
 					),
 				};
+
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.TRACES_FILTERS]: JSON.stringify(
+						updatedFilters,
+					),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW]: view,
+				});
+
+				return updatedFilters;
 			});
 		},
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,16 +370,16 @@ function DeploymentDetails({
 	);
 
 	const handleChangeEventsFilters = useCallback(
-		(value: IBuilderQuery['filters']) => {
+		(value: IBuilderQuery['filters'], view: VIEWS) => {
 			setEventsFilters((prevFilters) => {
-				const deploymentKindFilter = prevFilters.items.find(
+				const deploymentKindFilter = prevFilters?.items?.find(
 					(item) => item.key?.key === QUERY_KEYS.K8S_OBJECT_KIND,
 				);
-				const deploymentNameFilter = prevFilters.items.find(
+				const deploymentNameFilter = prevFilters?.items?.find(
 					(item) => item.key?.key === QUERY_KEYS.K8S_OBJECT_NAME,
 				);
 
-				if (value.items.length > 0) {
+				if (value?.items && value?.items?.length > 0) {
 					logEvent(InfraMonitoringEvents.FilterApplied, {
 						entity: InfraMonitoringEvents.K8sEntity,
 						page: InfraMonitoringEvents.DetailedPage,
@@ -329,20 +388,30 @@ function DeploymentDetails({
 					});
 				}
 
-				return {
+				const updatedFilters = {
 					op: 'AND',
 					items: filterDuplicateFilters(
 						[
 							deploymentKindFilter,
 							deploymentNameFilter,
-							...value.items.filter(
+							...(value?.items?.filter(
 								(item) =>
 									item.key?.key !== QUERY_KEYS.K8S_OBJECT_KIND &&
 									item.key?.key !== QUERY_KEYS.K8S_OBJECT_NAME,
-							),
+							) || []),
 						].filter((item): item is TagFilterItem => item !== undefined),
 					),
 				};
+
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.EVENTS_FILTERS]: JSON.stringify(
+						updatedFilters,
+					),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW]: view,
+				});
+
+				return updatedFilters;
 			});
 		},
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -368,7 +437,7 @@ function DeploymentDetails({
 		if (selectedView === VIEW_TYPES.LOGS) {
 			const filtersWithoutPagination = {
 				...logAndTracesFilters,
-				items: logAndTracesFilters.items.filter((item) => item.key?.key !== 'id'),
+				items: logAndTracesFilters?.items?.filter((item) => item.key?.key !== 'id'),
 			};
 
 			const compositeQuery = {
@@ -418,6 +487,7 @@ function DeploymentDetails({
 	};
 
 	const handleClose = (): void => {
+		lastSelectedInterval.current = null;
 		setSelectedInterval(selectedTime as Time);
 
 		if (selectedTime !== 'custom') {

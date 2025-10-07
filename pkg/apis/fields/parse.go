@@ -12,6 +12,7 @@ import (
 func parseFieldKeyRequest(r *http.Request) (*telemetrytypes.FieldKeySelector, error) {
 	var req telemetrytypes.FieldKeySelector
 	var signal telemetrytypes.Signal
+	var source telemetrytypes.Source
 	var err error
 
 	signalStr := r.URL.Query().Get("signal")
@@ -19,6 +20,13 @@ func parseFieldKeyRequest(r *http.Request) (*telemetrytypes.FieldKeySelector, er
 		signal = telemetrytypes.Signal{String: valuer.NewString(signalStr)}
 	} else {
 		signal = telemetrytypes.SignalUnspecified
+	}
+
+	sourceStr := r.URL.Query().Get("source")
+	if sourceStr != "" {
+		source = telemetrytypes.Source{String: valuer.NewString(sourceStr)}
+	} else {
+		source = telemetrytypes.SourceUnspecified
 	}
 
 	if r.URL.Query().Get("limit") != "" {
@@ -34,7 +42,7 @@ func parseFieldKeyRequest(r *http.Request) (*telemetrytypes.FieldKeySelector, er
 	var startUnixMilli, endUnixMilli int64
 
 	if r.URL.Query().Get("startUnixMilli") != "" {
-		startUnixMilli, err := strconv.ParseInt(r.URL.Query().Get("startUnixMilli"), 10, 64)
+		startUnixMilli, err = strconv.ParseInt(r.URL.Query().Get("startUnixMilli"), 10, 64)
 		if err != nil {
 			return nil, errors.Wrapf(err, errors.TypeInvalidInput, errors.CodeInvalidInput, "failed to parse startUnixMilli")
 		}
@@ -70,12 +78,13 @@ func parseFieldKeyRequest(r *http.Request) (*telemetrytypes.FieldKeySelector, er
 		}
 	}
 
-	name := r.URL.Query().Get("name")
+	name := r.URL.Query().Get("searchText")
 
 	req = telemetrytypes.FieldKeySelector{
 		StartUnixMilli:    startUnixMilli,
 		EndUnixMilli:      endUnixMilli,
 		Signal:            signal,
+		Source:            source,
 		Name:              name,
 		FieldContext:      fieldContext,
 		FieldDataType:     fieldDataType,
@@ -92,8 +101,10 @@ func parseFieldValueRequest(r *http.Request) (*telemetrytypes.FieldValueSelector
 		return nil, errors.Wrapf(err, errors.TypeInvalidInput, errors.CodeInvalidInput, "failed to parse field key request")
 	}
 
+	name := r.URL.Query().Get("name")
+	keySelector.Name = name
 	existingQuery := r.URL.Query().Get("existingQuery")
-	value := r.URL.Query().Get("value")
+	value := r.URL.Query().Get("searchText")
 
 	// Parse limit for fieldValue request, fallback to default 50 if parsing fails.
 	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))

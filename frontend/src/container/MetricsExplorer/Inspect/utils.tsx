@@ -1,5 +1,6 @@
 /* eslint-disable no-nested-ternary */
 import { Card, Input, Select, Typography } from 'antd';
+import logEvent from 'api/common/logEvent';
 import { InspectMetricsSeries } from 'api/metricsExplorer/getInspectMetricsDetails';
 import { MetricType } from 'api/metricsExplorer/getMetricsList';
 import classNames from 'classnames';
@@ -16,6 +17,7 @@ import {
 import { TagFilter } from 'types/api/queryBuilder/queryBuilderData';
 import { DataSource } from 'types/common/queryBuilder';
 
+import { MetricsExplorerEventKeys, MetricsExplorerEvents } from '../events';
 import {
 	SPACE_AGGREGATION_OPTIONS,
 	TIME_AGGREGATION_OPTIONS,
@@ -115,8 +117,6 @@ export function MetricFilters({
 			key: metricName ?? '',
 			dataType: DataTypes.String,
 			type: metricType,
-			isColumn: true,
-			isJSON: false,
 			id: `${metricName}--${DataTypes.String}--${metricType}--true`,
 		}),
 		[metricName, metricType],
@@ -135,6 +135,9 @@ export function MetricFilters({
 				}}
 				onChange={(value): void => {
 					handleChangeQueryData('filters', value);
+					logEvent(MetricsExplorerEvents.FilterApplied, {
+						[MetricsExplorerEventKeys.Modal]: 'inspect',
+					});
 					dispatchMetricInspectionOptions({
 						type: 'SET_FILTERS',
 						payload: value,

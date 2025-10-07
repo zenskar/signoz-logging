@@ -30,7 +30,15 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { ColumnUnit, Widgets } from 'types/api/dashboard/getAll';
+import { UseQueryResult } from 'react-query';
+import { SuccessResponse } from 'types/api';
+import {
+	ColumnUnit,
+	ContextLinksData,
+	LegendPosition,
+	Widgets,
+} from 'types/api/dashboard/getAll';
+import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
 import { DataSource } from 'types/common/queryBuilder';
 import { popupContainer } from 'utils/selectPopupContainer';
 
@@ -38,8 +46,11 @@ import { ColumnUnitSelector } from './ColumnUnitSelector/ColumnUnitSelector';
 import {
 	panelTypeVsBucketConfig,
 	panelTypeVsColumnUnitPreferences,
+	panelTypeVsContextLinks,
 	panelTypeVsCreateAlert,
 	panelTypeVsFillSpan,
+	panelTypeVsLegendColors,
+	panelTypeVsLegendPosition,
 	panelTypeVsLogScale,
 	panelTypeVsPanelTimePreferences,
 	panelTypeVsSoftMinMax,
@@ -47,6 +58,8 @@ import {
 	panelTypeVsThreshold,
 	panelTypeVsYAxisUnit,
 } from './constants';
+import ContextLinks from './ContextLinks';
+import LegendColors from './LegendColors/LegendColors';
 import ThresholdSelector from './Threshold/ThresholdSelector';
 import { ThresholdProps } from './Threshold/types';
 import { timePreferance } from './timeItems';
@@ -98,6 +111,14 @@ function RightContainer({
 	setColumnUnits,
 	isLogScale,
 	setIsLogScale,
+	legendPosition,
+	setLegendPosition,
+	customLegendColors,
+	setCustomLegendColors,
+	queryResponse,
+	contextLinks,
+	setContextLinks,
+	enableDrillDown = false,
 }: RightContainerProps): JSX.Element {
 	const { selectedDashboard } = useDashboard();
 	const [inputValue, setInputValue] = useState(title);
@@ -115,7 +136,11 @@ function RightContainer({
 	const selectedGraphType =
 		GraphTypes.find((e) => e.name === selectedGraph)?.display || '';
 
-	const onCreateAlertsHandler = useCreateAlerts(selectedWidget, 'panelView');
+	const onCreateAlertsHandler = useCreateAlerts(
+		selectedWidget,
+		'panelView',
+		thresholds,
+	);
 
 	const allowThreshold = panelTypeVsThreshold[selectedGraph];
 	const allowSoftMinMax = panelTypeVsSoftMinMax[selectedGraph];
@@ -128,9 +153,13 @@ function RightContainer({
 		panelTypeVsStackingChartPreferences[selectedGraph];
 	const allowPanelTimePreference =
 		panelTypeVsPanelTimePreferences[selectedGraph];
+	const allowLegendPosition = panelTypeVsLegendPosition[selectedGraph];
+	const allowLegendColors = panelTypeVsLegendColors[selectedGraph];
 
 	const allowPanelColumnPreference =
 		panelTypeVsColumnUnitPreferences[selectedGraph];
+	const allowContextLinks =
+		panelTypeVsContextLinks[selectedGraph] && enableDrillDown;
 
 	const { currentQuery } = useQueryBuilder();
 
@@ -271,6 +300,7 @@ function RightContainer({
 					style={{ width: '100%' }}
 					className="panel-type-select"
 					data-testid="panel-change-select"
+					data-stacking-state={stackedBarChart ? 'true' : 'false'}
 				>
 					{graphTypes.map((item) => (
 						<Option key={item.name} value={item.name}>
@@ -316,8 +346,8 @@ function RightContainer({
 
 				{allowYAxisUnit && (
 					<YAxisUnitSelector
-						defaultValue={yAxisUnit}
 						onSelect={setYAxisUnit}
+						value={yAxisUnit || ''}
 						fieldLabel={
 							selectedGraphType === PanelDisplay.VALUE ||
 							selectedGraphType === PanelDisplay.PIE
@@ -430,6 +460,40 @@ function RightContainer({
 						</Select>
 					</section>
 				)}
+
+				{allowLegendPosition && (
+					<section className="legend-position">
+						<Typography.Text className="typography">Legend Position</Typography.Text>
+						<Select
+							onChange={(value: LegendPosition): void => setLegendPosition(value)}
+							value={legendPosition}
+							style={{ width: '100%' }}
+							className="panel-type-select"
+							defaultValue={LegendPosition.BOTTOM}
+						>
+							<Option value={LegendPosition.BOTTOM}>
+								<div className="select-option">
+									<Typography.Text className="display">Bottom</Typography.Text>
+								</div>
+							</Option>
+							<Option value={LegendPosition.RIGHT}>
+								<div className="select-option">
+									<Typography.Text className="display">Right</Typography.Text>
+								</div>
+							</Option>
+						</Select>
+					</section>
+				)}
+
+				{allowLegendColors && (
+					<section className="legend-colors">
+						<LegendColors
+							customLegendColors={customLegendColors}
+							setCustomLegendColors={setCustomLegendColors}
+							queryResponse={queryResponse}
+						/>
+					</section>
+				)}
 			</section>
 
 			{allowCreateAlerts && (
@@ -439,6 +503,16 @@ function RightContainer({
 						<Typography.Text className="alerts-text">Alerts</Typography.Text>
 					</div>
 					<Plus size={14} className="plus-icon" />
+				</section>
+			)}
+
+			{allowContextLinks && (
+				<section className="context-links">
+					<ContextLinks
+						contextLinks={contextLinks}
+						setContextLinks={setContextLinks}
+						selectedWidget={selectedWidget}
+					/>
 				</section>
 			)}
 
@@ -462,8 +536,6 @@ interface RightContainerProps {
 	setTitle: Dispatch<SetStateAction<string>>;
 	description: string;
 	setDescription: Dispatch<SetStateAction<string>>;
-	stacked: boolean;
-	setStacked: Dispatch<SetStateAction<boolean>>;
 	opacity: string;
 	setOpacity: Dispatch<SetStateAction<string>>;
 	selectedNullZeroValue: string;
@@ -495,10 +567,23 @@ interface RightContainerProps {
 	setSoftMax: Dispatch<SetStateAction<number | null>>;
 	isLogScale: boolean;
 	setIsLogScale: Dispatch<SetStateAction<boolean>>;
+	legendPosition: LegendPosition;
+	setLegendPosition: Dispatch<SetStateAction<LegendPosition>>;
+	customLegendColors: Record<string, string>;
+	setCustomLegendColors: Dispatch<SetStateAction<Record<string, string>>>;
+	queryResponse?: UseQueryResult<
+		SuccessResponse<MetricRangePayloadProps, unknown>,
+		Error
+	>;
+	contextLinks: ContextLinksData;
+	setContextLinks: Dispatch<SetStateAction<ContextLinksData>>;
+	enableDrillDown?: boolean;
 }
 
 RightContainer.defaultProps = {
 	selectedWidget: undefined,
+	queryResponse: null,
+	enableDrillDown: false,
 };
 
 export default RightContainer;

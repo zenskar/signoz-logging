@@ -17,6 +17,14 @@ import {
 } from 'components/ExplorerCard/utils';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import { getRandomColor } from 'container/ExplorerOptions/utils';
+import {
+	MeterExplorerEventKeys,
+	MeterExplorerEvents,
+} from 'container/MeterExplorer/events';
+import {
+	MetricsExplorerEventKeys,
+	MetricsExplorerEvents,
+} from 'container/MetricsExplorer/events';
 import { useDeleteView } from 'hooks/saveViews/useDeleteView';
 import { useGetAllViews } from 'hooks/saveViews/useGetAllViews';
 import { useUpdateView } from 'hooks/saveViews/useUpdateView';
@@ -155,6 +163,14 @@ function SaveView(): JSX.Element {
 				logEvent('Logs Views: Views visited', {
 					number: viewsData?.data?.data?.length,
 				});
+			} else if (sourcepage === DataSource.METRICS) {
+				logEvent(MetricsExplorerEvents.TabChanged, {
+					[MetricsExplorerEventKeys.Tab]: 'views',
+				});
+			} else if (sourcepage === 'meter') {
+				logEvent(MeterExplorerEvents.TabChanged, {
+					[MeterExplorerEventKeys.Tab]: 'views',
+				});
 			}
 			logEventCalledRef.current = true;
 		}
@@ -176,6 +192,9 @@ function SaveView(): JSX.Element {
 					});
 					hideEditViewModal();
 					refetchAllView();
+					logEvent(MetricsExplorerEvents.ViewEdited, {
+						[MetricsExplorerEventKeys.Tab]: 'views',
+					});
 				},
 				onError: (err) => {
 					showErrorNotification(notifications, err);
@@ -204,6 +223,10 @@ function SaveView(): JSX.Element {
 				},
 				SOURCEPAGE_VS_ROUTES[sourcepage],
 			);
+			logEvent(MetricsExplorerEvents.OpenInExplorerClicked, {
+				[MetricsExplorerEventKeys.Tab]: 'views',
+				[MetricsExplorerEventKeys.ViewName]: name,
+			});
 		}
 	};
 

@@ -2,7 +2,6 @@ package sqlmigration
 
 import (
 	"context"
-	"errors"
 
 	"github.com/SigNoz/signoz/pkg/factory"
 	"github.com/uptrace/bun"
@@ -14,22 +13,21 @@ type SQLMigration interface {
 	// Register registers the migration with the given migrations. Each migration needs to be registered
 	//in a dedicated `*.go` file so that the correct migration semantics can be detected.
 	Register(*migrate.Migrations) error
+
 	// Up runs the migration.
 	Up(context.Context, *bun.DB) error
+
 	// Down rolls back the migration.
 	Down(context.Context, *bun.DB) error
 }
 
 var (
-	ErrNoExecute = errors.New("no execute")
-)
-
-var (
-	OrgReference              = "org"
-	UserReference             = "user"
-	UserReferenceNoCascade    = "user_no_cascade"
-	FactorPasswordReference   = "factor_password"
-	CloudIntegrationReference = "cloud_integration"
+	OrgReference                = "org"
+	UserReference               = "user"
+	UserReferenceNoCascade      = "user_no_cascade"
+	FactorPasswordReference     = "factor_password"
+	CloudIntegrationReference   = "cloud_integration"
+	AgentConfigVersionReference = "agent_config_version"
 )
 
 func New(
@@ -65,5 +63,6 @@ func MustNew(
 	if err != nil {
 		panic(err)
 	}
+
 	return migrations
 }

@@ -1,22 +1,22 @@
 /* eslint-disable sonarjs/no-duplicate-string */
+import { screen } from '@testing-library/react';
+import { PreferenceContextProvider } from 'providers/preferences/context/PreferenceContextProvider';
 import { findByText, fireEvent, render, waitFor } from 'tests/test-utils';
 
 import { pipelineApiResponseMockData } from '../mocks/pipeline';
 import PipelineListsView from '../PipelineListsView';
 
-jest.mock('uplot', () => {
-	const paths = {
-		spline: jest.fn(),
-		bars: jest.fn(),
-	};
-	const uplotMock = jest.fn(() => ({
-		paths,
-	}));
-	return {
-		paths,
-		default: uplotMock,
-	};
-});
+// Mock useUrlQuery hook
+const mockUrlQuery = {
+	get: jest.fn(),
+	set: jest.fn(),
+	toString: jest.fn(() => ''),
+};
+
+jest.mock('hooks/useUrlQuery', () => ({
+	__esModule: true,
+	default: jest.fn(() => mockUrlQuery),
+}));
 
 const samplePipelinePreviewResponse = {
 	isLoading: false,
@@ -56,17 +56,38 @@ jest.mock(
 	}),
 );
 
+// Mock usePreferenceSync
+jest.mock('providers/preferences/sync/usePreferenceSync', () => ({
+	usePreferenceSync: (): any => ({
+		preferences: {
+			columns: [],
+			formatting: {
+				maxLines: 2,
+				format: 'table',
+				fontSize: 'small',
+				version: 1,
+			},
+		},
+		loading: false,
+		error: null,
+		updateColumns: jest.fn(),
+		updateFormatting: jest.fn(),
+	}),
+}));
+
 describe('PipelinePage container test', () => {
 	it('should render PipelineListsView section', () => {
 		const { getByText, container } = render(
-			<PipelineListsView
-				setActionType={jest.fn()}
-				isActionMode="viewing-mode"
-				setActionMode={jest.fn()}
-				pipelineData={pipelineApiResponseMockData}
-				isActionType=""
-				refetchPipelineLists={jest.fn()}
-			/>,
+			<PreferenceContextProvider>
+				<PipelineListsView
+					setActionType={jest.fn()}
+					isActionMode="viewing-mode"
+					setActionMode={jest.fn()}
+					pipelineData={pipelineApiResponseMockData}
+					isActionType=""
+					refetchPipelineLists={jest.fn()}
+				/>
+			</PreferenceContextProvider>,
 		);
 
 		// table headers assertions
@@ -90,14 +111,16 @@ describe('PipelinePage container test', () => {
 
 	it('should render expanded content and edit mode correctly', async () => {
 		const { getByText } = render(
-			<PipelineListsView
-				setActionType={jest.fn()}
-				isActionMode="editing-mode"
-				setActionMode={jest.fn()}
-				pipelineData={pipelineApiResponseMockData}
-				isActionType=""
-				refetchPipelineLists={jest.fn()}
-			/>,
+			<PreferenceContextProvider>
+				<PipelineListsView
+					setActionType={jest.fn()}
+					isActionMode="editing-mode"
+					setActionMode={jest.fn()}
+					pipelineData={pipelineApiResponseMockData}
+					isActionType=""
+					refetchPipelineLists={jest.fn()}
+				/>
+			</PreferenceContextProvider>,
 		);
 
 		// content assertion
@@ -121,14 +144,16 @@ describe('PipelinePage container test', () => {
 
 	it('should be able to perform actions and edit on expanded view content', async () => {
 		render(
-			<PipelineListsView
-				setActionType={jest.fn()}
-				isActionMode="editing-mode"
-				setActionMode={jest.fn()}
-				pipelineData={pipelineApiResponseMockData}
-				isActionType=""
-				refetchPipelineLists={jest.fn()}
-			/>,
+			<PreferenceContextProvider>
+				<PipelineListsView
+					setActionType={jest.fn()}
+					isActionMode="editing-mode"
+					setActionMode={jest.fn()}
+					pipelineData={pipelineApiResponseMockData}
+					isActionType=""
+					refetchPipelineLists={jest.fn()}
+				/>
+			</PreferenceContextProvider>,
 		);
 
 		// content assertion
@@ -153,7 +178,7 @@ describe('PipelinePage container test', () => {
 			'.ant-table-expanded-row [data-icon="delete"]',
 		);
 
-		expect(deleteBtns.length).toBe(2);
+		expect(deleteBtns.length).toBe(3);
 
 		// delete pipeline
 		await fireEvent.click(deleteBtns[0] as HTMLElement);
@@ -174,19 +199,21 @@ describe('PipelinePage container test', () => {
 		expect(
 			document.querySelectorAll('.ant-table-expanded-row [data-icon="delete"]')
 				.length,
-		).toBe(1);
+		).toBe(2);
 	});
 
 	it('should be able to toggle and delete pipeline', async () => {
 		const { getByText } = render(
-			<PipelineListsView
-				setActionType={jest.fn()}
-				isActionMode="editing-mode"
-				setActionMode={jest.fn()}
-				pipelineData={pipelineApiResponseMockData}
-				isActionType=""
-				refetchPipelineLists={jest.fn()}
-			/>,
+			<PreferenceContextProvider>
+				<PipelineListsView
+					setActionType={jest.fn()}
+					isActionMode="editing-mode"
+					setActionMode={jest.fn()}
+					pipelineData={pipelineApiResponseMockData}
+					isActionType=""
+					refetchPipelineLists={jest.fn()}
+				/>
+			</PreferenceContextProvider>,
 		);
 
 		const addNewPipelineBtn = getByText('add_new_pipeline');
@@ -242,5 +269,37 @@ describe('PipelinePage container test', () => {
 		const saveBtn = getByText('save_configuration');
 		expect(saveBtn).toBeInTheDocument();
 		await fireEvent.click(saveBtn);
+	});
+
+	it('should have populated form fields when edit pipeline is clicked', async () => {
+		render(
+			<PreferenceContextProvider>
+				<PipelineListsView
+					setActionType={jest.fn()}
+					isActionMode="editing-mode"
+					setActionMode={jest.fn()}
+					pipelineData={pipelineApiResponseMockData}
+					isActionType="edit-pipeline"
+					refetchPipelineLists={jest.fn()}
+				/>
+			</PreferenceContextProvider>,
+		);
+
+		// content assertion
+		expect(document.querySelectorAll('[data-icon="edit"]').length).toBe(2);
+
+		// expand action
+		const expandIcon = document.querySelectorAll(
+			'.ant-table-row-expand-icon-cell > span[class*="anticon-right"]',
+		);
+		expect(expandIcon.length).toBe(2);
+		await fireEvent.click(expandIcon[0]);
+
+		const editBtn = document.querySelectorAll('[data-icon="edit"]');
+		// click on edit btn
+		await fireEvent.click(editBtn[0] as HTMLElement);
+
+		// to have length 2
+		expect(screen.queryAllByText('source = nginx').length).toBe(2);
 	});
 });

@@ -9,6 +9,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/errors"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/huandu/go-sqlbuilder"
 
 	"golang.org/x/exp/maps"
 )
@@ -43,6 +44,7 @@ var (
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 			ValueType: schema.ColumnTypeString,
 		}},
+		"resource":      {Name: "resource", Type: schema.JSONColumnType{}},
 		"scope_name":    {Name: "scope_name", Type: schema.ColumnTypeString},
 		"scope_version": {Name: "scope_version", Type: schema.ColumnTypeString},
 		"scope_string": {Name: "scope_string", Type: schema.MapColumnType{
@@ -52,17 +54,17 @@ var (
 	}
 )
 
-type fieldMapper struct{}
+type fieldMapper struct {
+}
 
 func NewFieldMapper() qbtypes.FieldMapper {
 	return &fieldMapper{}
 }
 
 func (m *fieldMapper) getColumn(_ context.Context, key *telemetrytypes.TelemetryFieldKey) (*schema.Column, error) {
-
 	switch key.FieldContext {
 	case telemetrytypes.FieldContextResource:
-		return logsV2Columns["resources_string"], nil
+		return logsV2Columns["resource"], nil
 	case telemetrytypes.FieldContextScope:
 		switch key.Name {
 		case "name", "scope.name", "scope_name":
@@ -102,6 +104,24 @@ func (m *fieldMapper) FieldFor(ctx context.Context, key *telemetrytypes.Telemetr
 	}
 
 	switch column.Type {
+	case schema.JSONColumnType{}:
+		// json is only supported for resource context as of now
+		if key.FieldContext != telemetrytypes.FieldContextResource {
+			return "", errors.Newf(errors.TypeInvalidInput, errors.CodeInvalidInput, "only resource context fields are supported for json columns, got %s", key.FieldContext.String)
+		}
+		oldColumn := logsV2Columns["resources_string"]
+		oldKeyName := fmt.Sprintf("%s['%s']", oldColumn.Name, key.Name)
+
+		// have to add ::string as clickHouse throws an error :- data types Variant/Dynamic are not allowed in GROUP BY
+		// once clickHouse dependency is updated, we need to check if we can remove it.
+		if key.Materialized {
+			oldKeyName = telemetrytypes.FieldKeyToMaterializedColumnName(key)
+			oldKeyNameExists := telemetrytypes.FieldKeyToMaterializedColumnNameForExists(key)
+			return fmt.Sprintf("multiIf(%s.`%s` IS NOT NULL, %s.`%s`::String, %s==true, %s, NULL)", column.Name, key.Name, column.Name, key.Name, oldKeyNameExists, oldKeyName), nil
+		} else {
+			return fmt.Sprintf("multiIf(%s.`%s` IS NOT NULL, %s.`%s`::String, mapContains(%s, '%s'), %s, NULL)", column.Name, key.Name, column.Name, key.Name, oldColumn.Name, key.Name, oldKeyName), nil
+		}
+
 	case schema.ColumnTypeString,
 		schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 		schema.ColumnTypeUInt64,
@@ -159,7 +179,7 @@ func (m *fieldMapper) ColumnExpressionFor(
 			// is it a static field?
 			if _, ok := logsV2Columns[field.Name]; ok {
 				// if it is, attach the column name directly
-				field.FieldContext = telemetrytypes.FieldContextSpan
+				field.FieldContext = telemetrytypes.FieldContextLog
 				colName, _ = m.FieldFor(ctx, field)
 			} else {
 				// - the context is not provided
@@ -170,10 +190,10 @@ func (m *fieldMapper) ColumnExpressionFor(
 				correction, found := telemetrytypes.SuggestCorrection(field.Name, maps.Keys(keys))
 				if found {
 					// we found a close match, in the error message send the suggestion
-					return "", errors.Wrapf(err, errors.TypeInvalidInput, errors.CodeInvalidInput, correction)
+					return "", errors.Wrap(err, errors.TypeInvalidInput, errors.CodeInvalidInput, correction)
 				} else {
 					// not even a close match, return an error
-					return "", err
+					return "", errors.Wrapf(err, errors.TypeInvalidInput, errors.CodeInvalidInput, "field `%s` not found", field.Name)
 				}
 			}
 		} else if len(keysForField) == 1 {
@@ -186,9 +206,9 @@ func (m *fieldMapper) ColumnExpressionFor(
 				colName, _ = m.FieldFor(ctx, key)
 				args = append(args, fmt.Sprintf("toString(%s) != '', toString(%s)", colName, colName))
 			}
-			colName = fmt.Sprintf("multiIf(%s)", strings.Join(args, ", "))
+			colName = fmt.Sprintf("multiIf(%s, NULL)", strings.Join(args, ", "))
 		}
 	}
 
-	return fmt.Sprintf("%s AS `%s`", colName, field.Name), nil
+	return fmt.Sprintf("%s AS `%s`", sqlbuilder.Escape(colName), field.Name), nil
 }

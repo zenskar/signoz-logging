@@ -51,6 +51,8 @@ import { getUserOperatingSystem, UserOperatingSystem } from 'utils/getUserOS';
 import { popupContainer } from 'utils/selectPopupContainer';
 import { v4 as uuid } from 'uuid';
 
+import { FeatureKeys } from '../../../../constants/features';
+import { useAppContext } from '../../../../providers/App/App';
 import { selectStyle } from './config';
 import { PLACEHOLDER } from './constant';
 import ExampleQueriesRendererForLogs from './ExampleQueriesRendererForLogs';
@@ -85,6 +87,11 @@ function QueryBuilderSearch({
 
 	const [isEditingTag, setIsEditingTag] = useState(false);
 
+	const { featureFlags } = useAppContext();
+	const dotMetricsEnabled =
+		featureFlags?.find((flag) => flag.name === FeatureKeys.DOT_METRICS_ENABLED)
+			?.active || false;
+
 	const {
 		updateTag,
 		handleClearTag,
@@ -104,6 +111,7 @@ function QueryBuilderSearch({
 		exampleQueries,
 	} = useAutoComplete(
 		query,
+		dotMetricsEnabled,
 		whereClauseConfig,
 		isLogsExplorerPage,
 		isInfraMonitoring,
@@ -121,6 +129,7 @@ function QueryBuilderSearch({
 	const { sourceKeys, handleRemoveSourceKey } = useFetchKeysAndValues(
 		searchValue,
 		query,
+		dotMetricsEnabled,
 		searchKey,
 		isLogsExplorerPage,
 		isInfraMonitoring,
@@ -253,24 +262,23 @@ function QueryBuilderSearch({
 	};
 
 	const queryTags = useMemo(() => {
-		if (!query.aggregateAttribute.key && isMetricsDataSource) return [];
+		if (!query.aggregateAttribute?.key && isMetricsDataSource) return [];
 		return tags;
-	}, [isMetricsDataSource, query.aggregateAttribute.key, tags]);
+	}, [isMetricsDataSource, query.aggregateAttribute?.key, tags]);
 
 	useEffect(() => {
 		const initialTagFilters: TagFilter = { items: [], op: 'AND' };
-		const initialSourceKeys = query.filters.items?.map(
+		const initialSourceKeys = query.filters?.items?.map(
 			(item) => item.key as BaseAutocompleteData,
 		);
 
-		initialTagFilters.items = tags.map((tag, index) => {
-			const isJsonTrue = query.filters?.items[index]?.key?.isJSON;
-
+		initialTagFilters.items = tags.map((tag) => {
 			const { tagKey, tagOperator, tagValue } = getTagToken(tag);
 
-			const filterAttribute = [...initialSourceKeys, ...sourceKeys].find(
-				(key) => key?.key === getRemovePrefixFromKey(tagKey),
-			);
+			const filterAttribute = [
+				...(initialSourceKeys || []),
+				...(sourceKeys || []),
+			].find((key) => key?.key === getRemovePrefixFromKey(tagKey));
 
 			const computedTagValue =
 				tagValue && Array.isArray(tagValue) && tagValue[tagValue.length - 1] === ''
@@ -283,8 +291,6 @@ function QueryBuilderSearch({
 					key: tagKey,
 					dataType: fetchValueDataType(computedTagValue, tagOperator),
 					type: '',
-					isColumn: false,
-					isJSON: isJsonTrue,
 				},
 				op: getOperatorValue(tagOperator),
 				value: computedTagValue,
@@ -376,7 +382,7 @@ function QueryBuilderSearch({
 					!showAllFilters && options.length > 3 && !key ? 'hide-scroll' : '',
 				)}
 				rootClassName="query-builder-search"
-				disabled={isMetricsDataSource && !query.aggregateAttribute.key}
+				disabled={isMetricsDataSource && !query.aggregateAttribute?.key}
 				style={selectStyle}
 				onSearch={handleSearch}
 				onChange={onChangeHandler}

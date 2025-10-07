@@ -1,6 +1,6 @@
 import ROUTES from 'constants/routes';
+import * as usePrefillAlertConditions from 'container/FormAlertRules/usePrefillAlertConditions';
 import CreateAlertPage from 'pages/CreateAlert';
-import { MemoryRouter, Route } from 'react-router-dom';
 import { act, fireEvent, render } from 'tests/test-utils';
 import { AlertTypes } from 'types/api/alerts/alertTypes';
 
@@ -13,25 +13,20 @@ jest.mock('react-router-dom', () => ({
 	}),
 }));
 
-jest.mock('uplot', () => {
-	const paths = {
-		spline: jest.fn(),
-		bars: jest.fn(),
-	};
-	const uplotMock = jest.fn(() => ({
-		paths,
-	}));
-	return {
-		paths,
-		default: uplotMock,
-	};
-});
-
 jest.mock('hooks/useSafeNavigate', () => ({
 	useSafeNavigate: (): any => ({
 		safeNavigate: jest.fn(),
 	}),
 }));
+
+jest
+	.spyOn(usePrefillAlertConditions, 'usePrefillAlertConditions')
+	.mockReturnValue({
+		matchType: '3',
+		op: '1',
+		target: 100,
+		targetUnit: 'rpm',
+	});
 
 let mockWindowOpen: jest.Mock;
 
@@ -74,11 +69,11 @@ describe('Alert rule documentation redirection', () => {
 	beforeEach(() => {
 		act(() => {
 			renderResult = render(
-				<MemoryRouter initialEntries={['/alerts/new']}>
-					<Route path={ROUTES.ALERTS_NEW}>
-						<CreateAlertPage />
-					</Route>
-				</MemoryRouter>,
+				<CreateAlertPage />,
+				{},
+				{
+					initialRoute: ROUTES.ALERTS_NEW,
+				},
 			);
 		});
 	});

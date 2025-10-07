@@ -146,6 +146,22 @@ func GetChannelByName(channels Channels, name string) (int, *Channel, error) {
 	return 0, nil, errors.Newf(errors.TypeNotFound, ErrCodeAlertmanagerChannelNotFound, "cannot find channel with name %s", name)
 }
 
+func NewStatsFromChannels(channels Channels) map[string]any {
+	stats := make(map[string]any)
+	for _, channel := range channels {
+		key := "alertmanager.channel.type." + channel.Type
+
+		if _, ok := stats[key]; !ok {
+			stats[key] = int64(1)
+		} else {
+			stats[key] = stats[key].(int64) + 1
+		}
+	}
+
+	stats["alertmanager.channel.count"] = int64(len(channels))
+	return stats
+}
+
 func (c *Channel) Update(receiver Receiver) error {
 	channel := NewChannelFromReceiver(receiver, c.OrgID)
 	if channel == nil {
@@ -158,29 +174,6 @@ func (c *Channel) Update(receiver Receiver) error {
 
 	c.Data = channel.Data
 	c.UpdatedAt = time.Now()
-
-	return nil
-}
-
-// This is needed by the legacy alertmanager to convert the MSTeamsV2Configs to MSTeamsConfigs
-func (c *Channel) MSTeamsV2ToMSTeams() error {
-	if c.Type != "msteamsv2" {
-		return nil
-	}
-
-	receiver, err := NewReceiver(c.Data)
-	if err != nil {
-		return err
-	}
-
-	receiver = MSTeamsV2ReceiverToMSTeamsReceiver(receiver)
-	data, err := json.Marshal(receiver)
-	if err != nil {
-		return err
-	}
-
-	c.Type = "msteams"
-	c.Data = string(data)
 
 	return nil
 }

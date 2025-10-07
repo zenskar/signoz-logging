@@ -1,10 +1,10 @@
-import sqlite3
 from collections import namedtuple
 from typing import Any, Generator
 
 import pytest
+from sqlalchemy import create_engine, sql
 
-from fixtures import types
+from fixtures import dev, types
 
 ConnectionTuple = namedtuple("ConnectionTuple", "connection config")
 
@@ -19,51 +19,61 @@ def sqlite(
     Package-scoped fixture for SQLite.
     """
 
-    dev = request.config.getoption("--dev")
-    if dev:
-        container = pytestconfig.cache.get("sqlite.container", None)
-        env = pytestconfig.cache.get("sqlite.env", None)
+    def create() -> types.TestContainerSQL:
+        tmpdir = tmpfs("sqlite")
+        path = tmpdir / "signoz.db"
 
-        if container and env:
-            assert isinstance(container, dict)
-            assert isinstance(env, dict)
+        engine = create_engine(f"sqlite:///{path}")
+        with engine.connect() as conn:
+            result = conn.execute(sql.text("SELECT 1"))
+            assert result.fetchone()[0] == 1
 
-            return types.TestContainerSQL(
-                container=types.TestContainerDocker(
-                    host_config=None,
-                    container_config=None,
-                ),
-                conn=sqlite3.connect(
-                    env["SIGNOZ_SQLSTORE_SQLITE_PATH"], check_same_thread=False
-                ),
-                env=env,
-            )
+        return types.TestContainerSQL(
+            container=types.TestContainerDocker(
+                id="",
+                host_configs={},
+                container_configs={},
+            ),
+            conn=engine,
+            env={
+                "SIGNOZ_SQLSTORE_PROVIDER": "sqlite",
+                "SIGNOZ_SQLSTORE_SQLITE_PATH": str(path),
+            },
+        )
 
-    tmpdir = tmpfs("sqlite")
-    path = tmpdir / "signoz.db"
-    connection = sqlite3.connect(path, check_same_thread=False)
+    def delete(_: types.TestContainerSQL):
+        pass
 
-    def stop():
-        if dev:
-            return
+    def restore(cache: dict) -> types.TestContainerSQL:
+        path = cache["env"].get("SIGNOZ_SQLSTORE_SQLITE_PATH")
 
-        connection.close()
+        engine = create_engine(f"sqlite:///{path}")
+        with engine.connect() as conn:
+            result = conn.execute(sql.text("SELECT 1"))
+            assert result.fetchone()[0] == 1
 
-    request.addfinalizer(stop)
+        return types.TestContainerSQL(
+            container=types.TestContainerDocker(
+                id="",
+                host_configs={},
+                container_configs={},
+            ),
+            conn=conn,
+            env=cache["env"],
+        )
 
-    cached_sqlite = types.TestContainerSQL(
-        container=types.TestContainerDocker(
-            host_config=None,
-            container_config=None,
+    return dev.wrap(
+        request,
+        pytestconfig,
+        "sqlite",
+        lambda: types.TestContainerSQL(
+            container=types.TestContainerDocker(
+                id="", host_configs={}, container_configs={}
+            ),
+            conn=None,
+            env={},
         ),
-        conn=connection,
-        env={
-            "SIGNOZ_SQLSTORE_PROVIDER": "sqlite",
-            "SIGNOZ_SQLSTORE_SQLITE_PATH": str(path),
-        },
+        create,
+        delete,
+        restore,
     )
-
-    if dev:
-        pytestconfig.cache.set("sqlite.env", cached_sqlite.env)
-
-    return cached_sqlite

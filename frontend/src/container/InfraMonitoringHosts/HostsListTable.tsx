@@ -27,7 +27,7 @@ export default function HostsListTable({
 	tableData: data,
 	hostMetricsData,
 	filters,
-	setSelectedHostName,
+	onHostClick,
 	currentPage,
 	setCurrentPage,
 	pageSize,
@@ -77,7 +77,7 @@ export default function HostsListTable({
 	);
 
 	const handleRowClick = (record: HostRowData): void => {
-		setSelectedHostName(record.hostName);
+		onHostClick(record.hostName);
 		logEvent(InfraMonitoringEvents.ItemClicked, {
 			entity: InfraMonitoringEvents.HostEntity,
 			page: InfraMonitoringEvents.ListPage,
@@ -93,8 +93,12 @@ export default function HostsListTable({
 	const showHostsEmptyState =
 		!isFetching &&
 		!isLoading &&
+		formattedHostMetricsData.length === 0 &&
 		(!sentAnyHostMetricsData || isSendingIncorrectK8SAgentMetrics) &&
 		!filters.items.length;
+
+	const showTableLoadingState =
+		(isLoading || isFetching) && formattedHostMetricsData.length === 0;
 
 	if (isError) {
 		return <Typography>{data?.error || 'Something went wrong'}</Typography>;
@@ -127,7 +131,7 @@ export default function HostsListTable({
 		);
 	}
 
-	if (isLoading || isFetching) {
+	if (showTableLoadingState) {
 		return (
 			<div className="hosts-list-loading-state">
 				<Skeleton.Input
@@ -155,7 +159,7 @@ export default function HostsListTable({
 	return (
 		<Table
 			className="hosts-list-table"
-			dataSource={isLoading || isFetching ? [] : formattedHostMetricsData}
+			dataSource={showTableLoadingState ? [] : formattedHostMetricsData}
 			columns={columns}
 			pagination={{
 				current: currentPage,
@@ -170,7 +174,7 @@ export default function HostsListTable({
 			}}
 			scroll={{ x: true }}
 			loading={{
-				spinning: isFetching || isLoading,
+				spinning: showTableLoadingState,
 				indicator: <Spin indicator={<LoadingOutlined size={14} spin />} />,
 			}}
 			tableLayout="fixed"

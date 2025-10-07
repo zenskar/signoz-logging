@@ -36,7 +36,7 @@ jobs:
           - ubuntu-latest
           - macos-latest
     env:
-      CONFIG_PATH: pkg/query-service/.goreleaser.yaml
+      CONFIG_PATH: cmd/community/.goreleaser.yaml
     runs-on: ${{ matrix.os }}
     steps:
       - name: checkout
@@ -58,7 +58,7 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.24"
       - name: cross-compilation-tools
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -100,7 +100,7 @@ jobs:
     needs: build
     env:
       DOCKER_CLI_EXPERIMENTAL: "enabled"
-      WORKDIR: pkg/query-service
+      WORKDIR: cmd/community
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -122,7 +122,7 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.24"
 
       # copy the caches from build
       - name: get-sha

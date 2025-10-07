@@ -37,7 +37,7 @@ export const defaultAddedColumns: IEntityColumn[] = [
 		canRemove: false,
 	},
 	{
-		label: 'Memory Usage (bytes)',
+		label: 'Memory Usage (WSS)',
 		value: 'memory',
 		id: 'memory',
 		canRemove: false,
@@ -121,7 +121,7 @@ const columnsConfig = [
 		align: 'left',
 	},
 	{
-		title: <div className="column-header-left">Memory Usage (bytes)</div>,
+		title: <div className="column-header-left">Memory Usage (WSS)</div>,
 		dataIndex: 'memory',
 		key: 'memory',
 		width: 80,
@@ -129,7 +129,7 @@ const columnsConfig = [
 		align: 'left',
 	},
 	{
-		title: <div className="column-header-left">Memory Alloc (bytes)</div>,
+		title: <div className="column-header-left">Memory Allocatable</div>,
 		dataIndex: 'memory_allocatable',
 		key: 'memory_allocatable',
 		width: 80,
@@ -152,6 +152,12 @@ export const getK8sNodesListColumns = (
 	return columnsConfig as ColumnType<K8sNodesRowData>[];
 };
 
+const dotToUnder: Record<string, keyof K8sNodesData['meta']> = {
+	'k8s.node.name': 'k8s_node_name',
+	'k8s.cluster.name': 'k8s_cluster_name',
+	'k8s.node.uid': 'k8s_node_uid',
+};
+
 const getGroupByEle = (
 	node: K8sNodesData,
 	groupBy: IBuilderQuery['groupBy'],
@@ -159,7 +165,14 @@ const getGroupByEle = (
 	const groupByValues: string[] = [];
 
 	groupBy.forEach((group) => {
-		groupByValues.push(node.meta[group.key as keyof typeof node.meta]);
+		const rawKey = group.key as string;
+
+		// Choose mapped key if present, otherwise use rawKey
+		const metaKey = (dotToUnder[rawKey] ?? rawKey) as keyof typeof node.meta;
+
+		const value = node.meta[metaKey];
+
+		groupByValues.push(value);
 	});
 
 	return (

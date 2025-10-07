@@ -2,6 +2,7 @@
 	overflow: auto;
 	margin: 8px -8px;
 	margin-right: 0;
+	margin-bottom: 64px;
 
 	.react-grid-layout {
 		border: none !important;
@@ -40,9 +41,11 @@
 			}
 		}
 
-		.widget-graph-container {
-			&.graph {
-				height: 100%;
+		.widget-graph-component-container {
+			.widget-graph-container {
+				&.graph-panel-container {
+					height: 100%;
+				}
 			}
 		}
 	}
@@ -88,11 +91,13 @@
 	}
 }
 
-.widget-graph-container {
-	height: 100%;
+.widget-graph-component-container {
+	.widget-graph-container {
+		height: 100%;
 
-	&.graph {
-		height: calc(100% - 30px);
+		&.graph-panel-container {
+			height: calc(100% - 30px);
+		}
 	}
 }
 

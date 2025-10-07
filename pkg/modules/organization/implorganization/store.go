@@ -20,7 +20,7 @@ func NewStore(sqlstore sqlstore.SQLStore) types.OrganizationStore {
 func (store *store) Create(ctx context.Context, organization *types.Organization) error {
 	_, err := store.
 		sqlstore.
-		BunDB().
+		BunDBCtx(ctx).
 		NewInsert().
 		Model(organization).
 		Exec(ctx)
@@ -91,4 +91,21 @@ func (store *store) Delete(ctx context.Context, id valuer.UUID) error {
 	}
 
 	return nil
+}
+
+func (store *store) ListByKeyRange(ctx context.Context, start, end uint32) ([]*types.Organization, error) {
+	organizations := make([]*types.Organization, 0)
+	err := store.
+		sqlstore.
+		BunDB().
+		NewSelect().
+		Model(&organizations).
+		Where("key >= ?", start).
+		Where("key <= ?", end).
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return organizations, nil
 }

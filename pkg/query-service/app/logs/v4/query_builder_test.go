@@ -297,6 +297,36 @@ func Test_buildAttributeFilter(t *testing.T) {
 			},
 			want: "lower(body) LIKE lower('test')",
 		},
+		{
+			name: "build attribute filter like-body",
+			args: args{
+				item: v3.FilterItem{
+					Key: v3.AttributeKey{
+						Key:      "body",
+						DataType: v3.AttributeKeyDataTypeString,
+						IsColumn: true,
+					},
+					Operator: v3.FilterOperatorILike,
+					Value:    "test",
+				},
+			},
+			want: "body ILIKE 'test'",
+		},
+		{
+			name: "build attribute filter not ilike-body",
+			args: args{
+				item: v3.FilterItem{
+					Key: v3.AttributeKey{
+						Key:      "body",
+						DataType: v3.AttributeKeyDataTypeString,
+						IsColumn: true,
+					},
+					Operator: v3.FilterOperatorNotILike,
+					Value:    "test",
+				},
+			},
+			want: "body NOT ILIKE 'test'",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -862,7 +892,7 @@ func Test_buildLogsQuery(t *testing.T) {
 				"from signoz_logs.distributed_logs_v2 where (timestamp >= 1680066360726210000 AND timestamp <= 1680066458000000000) AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) " +
 				"AND attributes_number['duration'] > 1000.000000 AND mapContains(attributes_number, 'duration') AND mapContains(attributes_number, 'duration') AND " +
 				"(resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_logs.distributed_logs_v2_resource WHERE (seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) " +
-				"AND simpleJSONExtractString(labels, 'service.name') = 'test' AND labels like '%service.name%test%' AND ( (simpleJSONHas(labels, 'host') AND labels like '%host%') ))) " +
+				"AND simpleJSONExtractString(labels, 'service.name') = 'test' AND labels like '%service.name\":\"test%' AND ( (simpleJSONHas(labels, 'host') AND labels like '%host%') ))) " +
 				"group by `host`,ts order by `host` desc",
 		},
 	}
@@ -962,7 +992,7 @@ func TestPrepareLogsQuery(t *testing.T) {
 				"where (timestamp >= 1680066360726000000 AND timestamp <= 1680066458000000000) AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND attributes_string['method'] = 'GET' " +
 				"AND mapContains(attributes_string, 'method') AND mapContains(attributes_string, 'user') AND mapContains(attributes_string, 'name') AND (resource_fingerprint GLOBAL IN " +
 				"(SELECT fingerprint FROM signoz_logs.distributed_logs_v2_resource WHERE (seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND simpleJSONExtractString(labels, 'service.name') = 'app' " +
-				"AND labels like '%service.name%app%')) group by `user` order by value DESC) LIMIT 10",
+				"AND labels like '%service.name\":\"app%')) group by `user` order by value DESC) LIMIT 10",
 		},
 		{
 			name: "Test TS with limit- second",
@@ -991,7 +1021,7 @@ func TestPrepareLogsQuery(t *testing.T) {
 				"from signoz_logs.distributed_logs_v2 where (timestamp >= 1680066360726000000 AND timestamp <= 1680066458000000000) AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) AND " +
 				"attributes_string['method'] = 'GET' AND mapContains(attributes_string, 'method') AND mapContains(attributes_string, 'user') AND mapContains(attributes_string, 'name') AND " +
 				"(resource_fingerprint GLOBAL IN (SELECT fingerprint FROM signoz_logs.distributed_logs_v2_resource WHERE (seen_at_ts_bucket_start >= 1680064560) AND (seen_at_ts_bucket_start <= 1680066458) AND " +
-				"simpleJSONExtractString(labels, 'service.name') = 'app' AND labels like '%service.name%app%')) AND (`user`) GLOBAL IN (#LIMIT_PLACEHOLDER) group by `user`,ts order by value DESC",
+				"simpleJSONExtractString(labels, 'service.name') = 'app' AND labels like '%service.name\":\"app%')) AND (`user`) GLOBAL IN (#LIMIT_PLACEHOLDER) group by `user`,ts order by value DESC",
 		},
 		{
 			name: "Live Tail Query",
@@ -1097,7 +1127,7 @@ func TestPrepareLogsQuery(t *testing.T) {
 			},
 			want: "SELECT timestamp, id, trace_id, span_id, trace_flags, severity_text, severity_number, scope_name, scope_version, body, attributes_string, attributes_number, attributes_bool, resources_string, scope_string from " +
 				"signoz_logs.distributed_logs_v2 where (timestamp >= 1680066360726000000 AND timestamp <= 1680066458000000000) AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) " +
-				"order by timestamp desc LIMIT 1",
+				"order by timestamp desc LIMIT 1 OFFSET 0",
 		},
 		{
 			name: "Test limit greater than pageSize - order by ts",
@@ -1122,7 +1152,7 @@ func TestPrepareLogsQuery(t *testing.T) {
 			},
 			want: "SELECT timestamp, id, trace_id, span_id, trace_flags, severity_text, severity_number, scope_name, scope_version, body, attributes_string, attributes_number, attributes_bool, resources_string, scope_string from " +
 				"signoz_logs.distributed_logs_v2 where (timestamp >= 1680066360726000000 AND timestamp <= 1680066458000000000) AND (ts_bucket_start >= 1680064560 AND ts_bucket_start <= 1680066458) " +
-				"AND id < '2TNh4vp2TpiWyLt3SzuadLJF2s4' order by timestamp desc LIMIT 10",
+				"AND id < '2TNh4vp2TpiWyLt3SzuadLJF2s4' order by timestamp desc LIMIT 10 OFFSET 10",
 		},
 		{
 			name: "Test limit less than pageSize  - order by custom",

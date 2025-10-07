@@ -1,8 +1,13 @@
 import { Select } from 'antd';
+import { removeKeysFromExpression } from 'components/QueryBuilderV2/utils';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { cloneDeep } from 'lodash-es';
 import { useEffect, useState } from 'react';
-import { TagFilterItem } from 'types/api/queryBuilder/queryBuilderData';
+import {
+	IBuilderQuery,
+	TagFilter,
+	TagFilterItem,
+} from 'types/api/queryBuilder/queryBuilderData';
 import { v4 as uuid } from 'uuid';
 
 enum SpanScope {
@@ -17,7 +22,9 @@ interface SpanFilterConfig {
 }
 
 interface SpanScopeSelectorProps {
-	queryName: string;
+	onChange?: (value: TagFilter) => void;
+	query?: IBuilderQuery;
+	skipQueryBuilderRedirect?: boolean;
 }
 
 const SPAN_FILTER_CONFIG: Record<SpanScope, SpanFilterConfig | null> = {
@@ -37,7 +44,6 @@ const createFilterItem = (config: SpanFilterConfig): TagFilterItem => ({
 	key: {
 		key: config.key,
 		dataType: undefined,
-		isColumn: false,
 		type: config?.type,
 	},
 	op: '=',
@@ -50,7 +56,11 @@ const SELECT_OPTIONS = [
 	{ value: SpanScope.ENTRYPOINT_SPANS, label: 'Entrypoint Spans' },
 ];
 
-function SpanScopeSelector({ queryName }: SpanScopeSelectorProps): JSX.Element {
+function SpanScopeSelector({
+	onChange,
+	query,
+	skipQueryBuilderRedirect,
+}: SpanScopeSelectorProps): JSX.Element {
 	const { currentQuery, redirectWithQueryBuilderData } = useQueryBuilder();
 	const [selectedScope, setSelectedScope] = useState<SpanScope>(
 		SpanScope.ALL_SPANS,
@@ -60,7 +70,7 @@ function SpanScopeSelector({ queryName }: SpanScopeSelectorProps): JSX.Element {
 		filters: TagFilterItem[] = [],
 	): SpanScope => {
 		const hasFilter = (key: string): boolean =>
-			filters.some(
+			filters?.some(
 				(filter) =>
 					filter.key?.type === 'spanSearchScope' &&
 					filter.key.key === key &&
@@ -73,13 +83,18 @@ function SpanScopeSelector({ queryName }: SpanScopeSelectorProps): JSX.Element {
 	};
 
 	useEffect(() => {
-		const queryData = currentQuery.builder.queryData.find(
-			(item) => item.queryName === queryName,
+		let queryData = (currentQuery?.builder?.queryData || [])?.find(
+			(item) => item.queryName === query?.queryName,
 		);
+
+		if (onChange && query) {
+			queryData = query;
+		}
+
 		const filters = queryData?.filters?.items;
 		const currentScope = getCurrentScopeFromFilters(filters);
 		setSelectedScope(currentScope);
-	}, [currentQuery, queryName]);
+	}, [currentQuery, onChange, query]);
 
 	const handleScopeChange = (newScope: SpanScope): void => {
 		const newQuery = cloneDeep(currentQuery);
@@ -104,18 +119,40 @@ function SpanScopeSelector({ queryName }: SpanScopeSelectorProps): JSX.Element {
 			return [...nonScopeFilters, ...newScopeFilter];
 		};
 
+		const keysToRemove = Object.values(SPAN_FILTER_CONFIG)
+			.map((config) => config?.key)
+			.filter((key): key is string => typeof key === 'string');
+
 		newQuery.builder.queryData = newQuery.builder.queryData.map((item) => ({
 			...item,
+			filter: {
+				expression: removeKeysFromExpression(
+					item.filter?.expression ?? '',
+					keysToRemove,
+				),
+			},
 			filters: {
 				...item.filters,
-				items: getUpdatedFilters(item.filters?.items, item.queryName === queryName),
+				items: getUpdatedFilters(
+					item.filters?.items,
+					item.queryName === query?.queryName,
+				),
+				op: item.filters?.op || 'AND',
 			},
 		}));
 
-		redirectWithQueryBuilderData(newQuery);
+		if (skipQueryBuilderRedirect && onChange && query) {
+			onChange({
+				...(query.filters || { items: [], op: 'AND' }),
+				items: getUpdatedFilters([...(query.filters?.items || [])], true) || [],
+			});
+
+			setSelectedScope(newScope);
+		} else {
+			redirectWithQueryBuilderData(newQuery);
+		}
 	};
 
-	//
 	return (
 		<Select
 			value={selectedScope}
@@ -126,5 +163,11 @@ function SpanScopeSelector({ queryName }: SpanScopeSelectorProps): JSX.Element {
 		/>
 	);
 }
+
+SpanScopeSelector.defaultProps = {
+	onChange: undefined,
+	query: undefined,
+	skipQueryBuilderRedirect: false,
+};
 
 export default SpanScopeSelector;

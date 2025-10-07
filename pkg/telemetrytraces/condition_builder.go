@@ -4,11 +4,17 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
+	"github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/querybuilder"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/huandu/go-sqlbuilder"
+	"golang.org/x/exp/maps"
 )
 
 type conditionBuilder struct {
@@ -28,6 +34,17 @@ func (c *conditionBuilder) conditionFor(
 	value any,
 	sb *sqlbuilder.SelectBuilder,
 ) (string, error) {
+
+	switch operator {
+	case qbtypes.FilterOperatorContains,
+		qbtypes.FilterOperatorNotContains,
+		qbtypes.FilterOperatorILike,
+		qbtypes.FilterOperatorNotILike,
+		qbtypes.FilterOperatorLike,
+		qbtypes.FilterOperatorNotLike:
+		value = querybuilder.FormatValueForContains(value)
+	}
+
 	// first, locate the raw column type (so we can choose the right EXISTS logic)
 	column, err := c.fm.ColumnFor(ctx, key)
 	if err != nil {
@@ -40,7 +57,24 @@ func (c *conditionBuilder) conditionFor(
 		return "", err
 	}
 
-	tblFieldName, value = telemetrytypes.DataTypeCollisionHandledFieldName(key, value, tblFieldName)
+	// TODO(srikanthccv): maybe extend this to every possible attribute
+	if key.Name == "duration_nano" || key.Name == "durationNano" { // QoL improvement
+		if strDuration, ok := value.(string); ok {
+			duration, err := time.ParseDuration(strDuration)
+			if err == nil {
+				value = duration.Nanoseconds()
+			} else {
+				duration, err := strconv.ParseFloat(strDuration, 64)
+				if err == nil {
+					value = duration
+				} else {
+					return "", errors.WrapInvalidInputf(err, errors.CodeInvalidInput, "invalid duration value: %s", strDuration)
+				}
+			}
+		}
+	} else {
+		tblFieldName, value = telemetrytypes.DataTypeCollisionHandledFieldName(key, value, tblFieldName)
+	}
 
 	// regular operators
 	switch operator {
@@ -126,8 +160,15 @@ func (c *conditionBuilder) conditionFor(
 	// in the query builder, `exists` and `not exists` are used for
 	// key membership checks, so depending on the column type, the condition changes
 	case qbtypes.FilterOperatorExists, qbtypes.FilterOperatorNotExists:
+
 		var value any
 		switch column.Type {
+		case schema.JSONColumnType{}:
+			if operator == qbtypes.FilterOperatorExists {
+				return sb.IsNotNull(tblFieldName), nil
+			} else {
+				return sb.IsNull(tblFieldName), nil
+			}
 		case schema.ColumnTypeString,
 			schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 			schema.FixedStringColumnType{Length: 32},
@@ -183,6 +224,10 @@ func (c *conditionBuilder) ConditionFor(
 	value any,
 	sb *sqlbuilder.SelectBuilder,
 ) (string, error) {
+	if c.isSpanScopeField(key.Name) {
+		return c.buildSpanScopeCondition(key, operator, value)
+	}
+
 	condition, err := c.conditionFor(ctx, key, operator, value, sb)
 	if err != nil {
 		return "", err
@@ -191,7 +236,10 @@ func (c *conditionBuilder) ConditionFor(
 	if operator.AddDefaultExistsFilter() {
 		// skip adding exists filter for intrinsic fields
 		field, _ := c.fm.FieldFor(ctx, key)
-		if slices.Contains(IntrinsicFields, field) || slices.Contains(CalculatedFields, field) {
+		if slices.Contains(maps.Keys(IntrinsicFields), field) ||
+			slices.Contains(maps.Keys(IntrinsicFieldsDeprecated), field) ||
+			slices.Contains(maps.Keys(CalculatedFields), field) ||
+			slices.Contains(maps.Keys(CalculatedFieldsDeprecated), field) {
 			return condition, nil
 		}
 
@@ -202,4 +250,40 @@ func (c *conditionBuilder) ConditionFor(
 		return sb.And(condition, existsCondition), nil
 	}
 	return condition, nil
+}
+
+func (c *conditionBuilder) isSpanScopeField(name string) bool {
+	keyName := strings.ToLower(name)
+	return keyName == SpanSearchScopeRoot || keyName == SpanSearchScopeEntryPoint
+}
+
+func (c *conditionBuilder) buildSpanScopeCondition(key *telemetrytypes.TelemetryFieldKey, operator qbtypes.FilterOperator, value any) (string, error) {
+	if operator != qbtypes.FilterOperatorEqual {
+		return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "span scope field %s only supports '=' operator", key.Name)
+	}
+
+	isTrue := false
+	switch v := value.(type) {
+	case bool:
+		isTrue = v
+	case string:
+		isTrue = strings.ToLower(v) == "true"
+	default:
+		return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "span scope field %s expects boolean value, got %T", key.Name, value)
+	}
+
+	if !isTrue {
+		return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "span scope field %s can only be filtered with value 'true'", key.Name)
+	}
+
+	keyName := strings.ToLower(key.Name)
+	switch keyName {
+	case SpanSearchScopeRoot:
+		return "parent_span_id = ''", nil
+	case SpanSearchScopeEntryPoint:
+		return fmt.Sprintf("((name, resource_string_service$$$name) GLOBAL IN (SELECT DISTINCT name, serviceName from %s.%s)) AND parent_span_id != ''",
+			DBName, TopLevelOperationsTableName), nil
+	default:
+		return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "invalid span search scope: %s", key.Name)
+	}
 }

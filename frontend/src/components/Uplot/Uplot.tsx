@@ -18,12 +18,29 @@ import UPlot from 'uplot';
 
 import { dataMatch, optionsUpdateState } from './utils';
 
+// Extended uPlot interface with custom properties
+interface ExtendedUPlot extends uPlot {
+	_legendScrollCleanup?: () => void;
+}
+
 export interface UplotProps {
 	options: uPlot.Options;
 	data: uPlot.AlignedData;
 	onDelete?: (chart: uPlot) => void;
 	onCreate?: (chart: uPlot) => void;
 	resetScales?: boolean;
+}
+
+function isAlignedData(data: unknown): data is uPlot.AlignedData {
+	return Array.isArray(data) && data.length > 0;
+}
+
+function isUplotOptions(options: unknown): options is uPlot.Options {
+	return options !== null && typeof options === 'object';
+}
+
+function isHTMLElement(el: unknown): el is HTMLElement {
+	return el instanceof HTMLElement;
 }
 
 const Uplot = forwardRef<ToggleGraphProps | undefined, UplotProps>(
@@ -50,21 +67,40 @@ const Uplot = forwardRef<ToggleGraphProps | undefined, UplotProps>(
 		useEffect(() => {
 			onCreateRef.current = onCreate;
 			onDeleteRef.current = onDelete;
-		});
+		}, [onCreate, onDelete]);
 
 		const destroy = useCallback((chart: uPlot | null) => {
 			if (chart) {
+				// Clean up legend scroll event listener
+				const extendedChart = chart as ExtendedUPlot;
+				if (extendedChart._legendScrollCleanup) {
+					extendedChart._legendScrollCleanup();
+				}
+
 				onDeleteRef.current?.(chart);
 				chart.destroy();
 				chartRef.current = null;
 			}
 
-			// remove chart tooltip on cleanup
+			// Clean up tooltip overlay that might be detached
 			const overlay = document.getElementById('overlay');
-
 			if (overlay) {
+				// Remove all child elements from overlay
+				while (overlay.firstChild) {
+					overlay.removeChild(overlay.firstChild);
+				}
 				overlay.style.display = 'none';
 			}
+
+			// Clean up any remaining tooltips that might be detached
+			const tooltips = document.querySelectorAll(
+				'.uplot-tooltip, .tooltip-container',
+			);
+			tooltips.forEach((tooltip) => {
+				if (tooltip && tooltip.parentNode) {
+					tooltip.parentNode.removeChild(tooltip);
+				}
+			});
 		}, []);
 
 		const create = useCallback(() => {
@@ -76,6 +112,19 @@ const Uplot = forwardRef<ToggleGraphProps | undefined, UplotProps>(
 					...propOptionsRef.current,
 					cursor: { show: false },
 				};
+			}
+
+			if (
+				!isUplotOptions(propOptionsRef.current) ||
+				!isAlignedData(propDataRef.current) ||
+				!isHTMLElement(targetRef.current)
+			) {
+				console.error('Uplot: Invalid options, data, or target element', {
+					options: propOptionsRef.current,
+					data: propDataRef.current,
+					target: targetRef.current,
+				});
+				return;
 			}
 
 			const newChart = new UPlot(

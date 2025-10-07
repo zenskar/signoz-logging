@@ -22,13 +22,15 @@ export interface NavigateToTraceProps {
 	selectedTraceTags: string;
 	apmToTraceQuery: Query;
 	safeNavigate: (path: string) => void;
+	openInNewTab: boolean;
 }
 
 export interface DatabaseCallsRPSProps extends DatabaseCallProps {
-	legend: '{{db_system}}';
+	legend: string;
 }
 
 export interface DatabaseCallProps {
 	servicename: IServiceName['servicename'];
 	tagFilterItems: TagFilterItem[];
+	dotMetricsEnabled: boolean;
 }

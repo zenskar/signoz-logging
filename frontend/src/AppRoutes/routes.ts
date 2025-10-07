@@ -1,5 +1,6 @@
 import ROUTES from 'constants/routes';
 import MessagingQueues from 'pages/MessagingQueues';
+import MeterExplorer from 'pages/MeterExplorer';
 import { RouteProps } from 'react-router-dom';
 
 import {
@@ -7,20 +8,15 @@ import {
 	AlertOverview,
 	AllAlertChannels,
 	AllErrors,
-	APIKeys,
 	ApiMonitoring,
-	BillingPage,
 	CreateAlertChannelAlerts,
 	CreateNewAlerts,
-	CustomDomainSettings,
 	DashboardPage,
 	DashboardWidget,
-	EditAlertChannelsAlerts,
 	EditRulesPage,
 	ErrorDetails,
 	Home,
 	InfrastructureMonitoring,
-	IngestionSettings,
 	InstalledIntegrations,
 	LicensePage,
 	ListAllALertsPage,
@@ -31,12 +27,10 @@ import {
 	LogsIndexToFields,
 	LogsSaveViews,
 	MetricsExplorer,
-	MySettings,
 	NewDashboardPage,
 	OldLogsExplorer,
 	Onboarding,
 	OnboardingV2,
-	OrganizationSettings,
 	OrgOnboarding,
 	PasswordReset,
 	PipelinePage,
@@ -45,7 +39,6 @@ import {
 	ServicesTablePage,
 	ServiceTopLevelOperationsPage,
 	SettingsPage,
-	ShortcutsPage,
 	SignupPage,
 	SomethingWentWrong,
 	StatusPage,
@@ -150,7 +143,7 @@ const routes: AppRoutes[] = [
 	},
 	{
 		path: ROUTES.SETTINGS,
-		exact: true,
+		exact: false,
 		component: SettingsPage,
 		isPrivate: true,
 		key: 'SETTINGS',
@@ -261,13 +254,6 @@ const routes: AppRoutes[] = [
 		key: 'CHANNELS_NEW',
 	},
 	{
-		path: ROUTES.CHANNELS_EDIT,
-		exact: true,
-		component: EditAlertChannelsAlerts,
-		isPrivate: true,
-		key: 'CHANNELS_EDIT',
-	},
-	{
 		path: ROUTES.ALL_CHANNELS,
 		exact: true,
 		component: AllAlertChannels,
@@ -294,41 +280,6 @@ const routes: AppRoutes[] = [
 		component: StatusPage,
 		isPrivate: true,
 		key: 'VERSION',
-	},
-	{
-		path: ROUTES.ORG_SETTINGS,
-		exact: true,
-		component: OrganizationSettings,
-		isPrivate: true,
-		key: 'ORG_SETTINGS',
-	},
-	{
-		path: ROUTES.INGESTION_SETTINGS,
-		exact: true,
-		component: IngestionSettings,
-		isPrivate: true,
-		key: 'INGESTION_SETTINGS',
-	},
-	{
-		path: ROUTES.API_KEYS,
-		exact: true,
-		component: APIKeys,
-		isPrivate: true,
-		key: 'API_KEYS',
-	},
-	{
-		path: ROUTES.MY_SETTINGS,
-		exact: true,
-		component: MySettings,
-		isPrivate: true,
-		key: 'MY_SETTINGS',
-	},
-	{
-		path: ROUTES.CUSTOM_DOMAIN_SETTINGS,
-		exact: true,
-		component: CustomDomainSettings,
-		isPrivate: true,
-		key: 'CUSTOM_DOMAIN_SETTINGS',
 	},
 	{
 		path: ROUTES.LOGS,
@@ -394,13 +345,6 @@ const routes: AppRoutes[] = [
 		isPrivate: false,
 	},
 	{
-		path: ROUTES.BILLING,
-		exact: true,
-		component: BillingPage,
-		key: 'BILLING',
-		isPrivate: true,
-	},
-	{
 		path: ROUTES.WORKSPACE_LOCKED,
 		exact: true,
 		component: WorkspaceBlocked,
@@ -420,13 +364,6 @@ const routes: AppRoutes[] = [
 		component: WorkspaceAccessRestricted,
 		isPrivate: true,
 		key: 'WORKSPACE_ACCESS_RESTRICTED',
-	},
-	{
-		path: ROUTES.SHORTCUTS,
-		exact: true,
-		component: ShortcutsPage,
-		isPrivate: true,
-		key: 'SHORTCUTS',
 	},
 	{
 		path: ROUTES.INTEGRATIONS,
@@ -496,6 +433,28 @@ const routes: AppRoutes[] = [
 		exact: true,
 		component: MetricsExplorer,
 		key: 'METRICS_EXPLORER_VIEWS',
+		isPrivate: true,
+	},
+
+	{
+		path: ROUTES.METER,
+		exact: true,
+		component: MeterExplorer,
+		key: 'METER',
+		isPrivate: true,
+	},
+	{
+		path: ROUTES.METER_EXPLORER,
+		exact: true,
+		component: MeterExplorer,
+		key: 'METER_EXPLORER',
+		isPrivate: true,
+	},
+	{
+		path: ROUTES.METER_EXPLORER_VIEWS,
+		exact: true,
+		component: MeterExplorer,
+		key: 'METER_EXPLORER_VIEWS',
 		isPrivate: true,
 	},
 	{

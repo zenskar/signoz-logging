@@ -24,13 +24,18 @@ import { useQueryOperations } from 'hooks/queryBuilder/useQueryBuilderOperations
 import { ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { AppState } from 'store/reducers';
 import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
 import { GlobalReducer } from 'types/reducer/globalTime';
 
+import { FeatureKeys } from '../../../constants/features';
+import { useAppContext } from '../../../providers/App/App';
+import { getOrderByFromParams } from '../commonUtils';
 import {
+	GetK8sEntityToAggregateAttribute,
+	INFRA_MONITORING_K8S_PARAMS_KEYS,
 	K8sCategory,
-	K8sEntityToAggregateAttributeMapping,
 } from '../constants';
 import K8sHeader from '../K8sHeader';
 import LoadingContainer from '../LoadingContainer';
@@ -59,8 +64,24 @@ function K8sPodsList({
 	const { maxTime, minTime } = useSelector<AppState, GlobalReducer>(
 		(state) => state.globalTime,
 	);
+	const [searchParams, setSearchParams] = useSearchParams();
 
-	const [currentPage, setCurrentPage] = useState(1);
+	const [currentPage, setCurrentPage] = useState(() => {
+		const page = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.CURRENT_PAGE);
+		if (page) {
+			return parseInt(page, 10);
+		}
+		return 1;
+	});
+	const [filtersInitialised, setFiltersInitialised] = useState(false);
+
+	useEffect(() => {
+		setSearchParams({
+			...Object.fromEntries(searchParams.entries()),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.CURRENT_PAGE]: currentPage.toString(),
+		});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [currentPage]);
 
 	const [addedColumns, setAddedColumns] = useState<IEntityColumn[]>([]);
 
@@ -68,7 +89,15 @@ function K8sPodsList({
 		defaultAvailableColumns,
 	);
 
-	const [groupBy, setGroupBy] = useState<IBuilderQuery['groupBy']>([]);
+	const [groupBy, setGroupBy] = useState<IBuilderQuery['groupBy']>(() => {
+		const groupBy = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.GROUP_BY);
+		if (groupBy) {
+			const decoded = decodeURIComponent(groupBy);
+			const parsed = JSON.parse(decoded);
+			return parsed as IBuilderQuery['groupBy'];
+		}
+		return [];
+	});
 
 	const [selectedRowData, setSelectedRowData] = useState<K8sPodsRowData | null>(
 		null,
@@ -91,13 +120,21 @@ function K8sPodsList({
 		[currentQuery?.builder?.queryData],
 	);
 
+	const { featureFlags } = useAppContext();
+	const dotMetricsEnabled =
+		featureFlags?.find((flag) => flag.name === FeatureKeys.DOT_METRICS_ENABLED)
+			?.active || false;
+
 	const {
 		data: groupByFiltersData,
 		isLoading: isLoadingGroupByFilters,
 	} = useGetAggregateKeys(
 		{
 			dataSource: currentQuery.builder.queryData[0].dataSource,
-			aggregateAttribute: K8sEntityToAggregateAttributeMapping[K8sCategory.PODS],
+			aggregateAttribute: GetK8sEntityToAggregateAttribute(
+				K8sCategory.PODS,
+				dotMetricsEnabled,
+			),
 			aggregateOperator: 'noop',
 			searchText: '',
 			tagType: '',
@@ -111,7 +148,9 @@ function K8sPodsList({
 
 	// Reset pagination every time quick filters are changed
 	useEffect(() => {
-		setCurrentPage(1);
+		if (quickFiltersLastUpdated !== -1) {
+			setCurrentPage(1);
+		}
 	}, [quickFiltersLastUpdated]);
 
 	useEffect(() => {
@@ -134,9 +173,15 @@ function K8sPodsList({
 	const [orderBy, setOrderBy] = useState<{
 		columnName: string;
 		order: 'asc' | 'desc';
-	} | null>({ columnName: 'cpu', order: 'desc' });
+	} | null>(() => getOrderByFromParams(searchParams, false));
 
-	const [selectedPodUID, setSelectedPodUID] = useState<string | null>(null);
+	const [selectedPodUID, setSelectedPodUID] = useState<string | null>(() => {
+		const podUID = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.POD_UID);
+		if (podUID) {
+			return podUID;
+		}
+		return null;
+	});
 
 	const { pageSize, setPageSize } = usePageSize(K8sCategory.PODS);
 
@@ -160,12 +205,47 @@ function K8sPodsList({
 		return queryPayload;
 	}, [pageSize, currentPage, queryFilters, minTime, maxTime, orderBy, groupBy]);
 
+	const queryKey = useMemo(() => {
+		if (selectedPodUID) {
+			return [
+				'podList',
+				String(pageSize),
+				String(currentPage),
+				JSON.stringify(queryFilters),
+				JSON.stringify(orderBy),
+				JSON.stringify(groupBy),
+			];
+		}
+		return [
+			'podList',
+			String(pageSize),
+			String(currentPage),
+			JSON.stringify(queryFilters),
+			JSON.stringify(orderBy),
+			JSON.stringify(groupBy),
+			String(minTime),
+			String(maxTime),
+		];
+	}, [
+		selectedPodUID,
+		pageSize,
+		currentPage,
+		queryFilters,
+		orderBy,
+		groupBy,
+		minTime,
+		maxTime,
+	]);
+
 	const { data, isFetching, isLoading, isError } = useGetK8sPodsList(
 		query as K8sPodsListPayload,
 		{
-			queryKey: ['hostList', query],
+			queryKey,
 			enabled: !!query,
+			keepPreviousData: true,
 		},
+		undefined,
+		dotMetricsEnabled,
 	);
 
 	const createFiltersForSelectedRowData = (
@@ -214,16 +294,40 @@ function K8sPodsList({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [minTime, maxTime, orderBy, selectedRowData]);
 
+	const groupedByRowDataQueryKey = useMemo(() => {
+		if (selectedPodUID) {
+			return [
+				'podList',
+				JSON.stringify(queryFilters),
+				JSON.stringify(orderBy),
+				JSON.stringify(selectedRowData),
+			];
+		}
+		return [
+			'podList',
+			JSON.stringify(queryFilters),
+			JSON.stringify(orderBy),
+			JSON.stringify(selectedRowData),
+			String(minTime),
+			String(maxTime),
+		];
+	}, [queryFilters, orderBy, selectedPodUID, minTime, maxTime, selectedRowData]);
+
 	const {
 		data: groupedByRowData,
 		isFetching: isFetchingGroupedByRowData,
 		isLoading: isLoadingGroupedByRowData,
 		isError: isErrorGroupedByRowData,
 		refetch: fetchGroupedByRowData,
-	} = useGetK8sPodsList(fetchGroupedByRowDataQuery as K8sPodsListPayload, {
-		queryKey: ['hostList', fetchGroupedByRowDataQuery],
-		enabled: !!fetchGroupedByRowDataQuery && !!selectedRowData,
-	});
+	} = useGetK8sPodsList(
+		fetchGroupedByRowDataQuery as K8sPodsListPayload,
+		{
+			queryKey: groupedByRowDataQueryKey,
+			enabled: !!fetchGroupedByRowDataQuery && !!selectedRowData,
+		},
+		undefined,
+		dotMetricsEnabled,
+	);
 
 	const podsData = useMemo(() => data?.payload?.data?.records || [], [data]);
 	const totalCount = data?.payload?.data?.total || 0;
@@ -265,15 +369,26 @@ function K8sPodsList({
 			}
 
 			if ('field' in sorter && sorter.order) {
-				setOrderBy({
+				const currentOrderBy = {
 					columnName: sorter.field as string,
-					order: sorter.order === 'ascend' ? 'asc' : 'desc',
+					order: (sorter.order === 'ascend' ? 'asc' : 'desc') as 'asc' | 'desc',
+				};
+				setOrderBy(currentOrderBy);
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.ORDER_BY]: JSON.stringify(
+						currentOrderBy,
+					),
 				});
 			} else {
 				setOrderBy(null);
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.ORDER_BY]: JSON.stringify(null),
+				});
 			}
 		},
-		[],
+		[searchParams, setSearchParams],
 	);
 
 	const { handleChangeQueryData } = useQueryOperations({
@@ -285,9 +400,13 @@ function K8sPodsList({
 	const handleFiltersChange = useCallback(
 		(value: IBuilderQuery['filters']): void => {
 			handleChangeQueryData('filters', value);
-			setCurrentPage(1);
+			if (filtersInitialised) {
+				setCurrentPage(1);
+			} else {
+				setFiltersInitialised(true);
+			}
 
-			if (value.items.length > 0) {
+			if (value?.items && value?.items?.length > 0) {
 				logEvent(InfraMonitoringEvents.FilterApplied, {
 					entity: InfraMonitoringEvents.K8sEntity,
 					page: InfraMonitoringEvents.ListPage,
@@ -295,7 +414,8 @@ function K8sPodsList({
 				});
 			}
 		},
-		[handleChangeQueryData],
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[],
 	);
 
 	const handleGroupByChange = useCallback(
@@ -318,6 +438,10 @@ function K8sPodsList({
 			setCurrentPage(1);
 			setGroupBy(groupBy);
 			setExpandedRowKeys([]);
+			setSearchParams({
+				...Object.fromEntries(searchParams.entries()),
+				[INFRA_MONITORING_K8S_PARAMS_KEYS.GROUP_BY]: JSON.stringify(groupBy),
+			});
 
 			logEvent(InfraMonitoringEvents.GroupByChanged, {
 				entity: InfraMonitoringEvents.K8sEntity,
@@ -325,7 +449,7 @@ function K8sPodsList({
 				category: InfraMonitoringEvents.Pod,
 			});
 		},
-		[groupByFiltersData],
+		[groupByFiltersData, searchParams, setSearchParams],
 	);
 
 	useEffect(() => {
@@ -366,6 +490,10 @@ function K8sPodsList({
 	const handleRowClick = (record: K8sPodsRowData): void => {
 		if (groupBy.length === 0) {
 			setSelectedPodUID(record.podUID);
+			setSearchParams({
+				...Object.fromEntries(searchParams.entries()),
+				[INFRA_MONITORING_K8S_PARAMS_KEYS.POD_UID]: record.podUID,
+			});
 			setSelectedRowData(null);
 		} else {
 			handleGroupByRowClick(record);
@@ -380,6 +508,20 @@ function K8sPodsList({
 
 	const handleClosePodDetail = (): void => {
 		setSelectedPodUID(null);
+		setSearchParams({
+			...Object.fromEntries(
+				Array.from(searchParams.entries()).filter(
+					([key]) =>
+						![
+							INFRA_MONITORING_K8S_PARAMS_KEYS.POD_UID,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.TRACES_FILTERS,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.EVENTS_FILTERS,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.LOG_FILTERS,
+						].includes(key),
+				),
+			),
+		});
 	};
 
 	const handleAddColumn = useCallback(
@@ -435,6 +577,11 @@ function K8sPodsList({
 		setSelectedRowData(null);
 		setGroupBy([]);
 		setOrderBy(null);
+		setSearchParams({
+			...Object.fromEntries(searchParams.entries()),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.GROUP_BY]: JSON.stringify([]),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.ORDER_BY]: JSON.stringify(null),
+		});
 	};
 
 	const expandedRowRender = (): JSX.Element => (
@@ -459,7 +606,9 @@ function K8sPodsList({
 							indicator: <Spin indicator={<LoadingOutlined size={14} spin />} />,
 						}}
 						onRow={(record): { onClick: () => void; className: string } => ({
-							onClick: (): void => setSelectedPodUID(record.podUID),
+							onClick: (): void => {
+								setSelectedPodUID(record.podUID);
+							},
 							className: 'expanded-clickable-row',
 						})}
 					/>
@@ -532,6 +681,9 @@ function K8sPodsList({
 		});
 	};
 
+	const showTableLoadingState =
+		(isFetching || isLoading) && formattedPodsData.length === 0;
+
 	return (
 		<div className="k8s-list">
 			<K8sHeader
@@ -548,6 +700,7 @@ function K8sPodsList({
 				onAddColumn={handleAddColumn}
 				onRemoveColumn={handleRemoveColumn}
 				entity={K8sCategory.PODS}
+				showAutoRefresh={!selectedPodData}
 			/>
 			{isError && <Typography>{data?.error || 'Something went wrong'}</Typography>}
 
@@ -555,7 +708,7 @@ function K8sPodsList({
 				className={classNames('k8s-list-table', {
 					'expanded-k8s-list-table': isGroupedByAttribute,
 				})}
-				dataSource={isFetching || isLoading ? [] : formattedPodsData}
+				dataSource={showTableLoadingState ? [] : formattedPodsData}
 				columns={columns}
 				pagination={{
 					current: currentPage,
@@ -566,26 +719,25 @@ function K8sPodsList({
 					onChange: onPaginationChange,
 				}}
 				loading={{
-					spinning: isFetching || isLoading,
+					spinning: showTableLoadingState,
 					indicator: <Spin indicator={<LoadingOutlined size={14} spin />} />,
 				}}
 				locale={{
-					emptyText:
-						isFetching || isLoading ? null : (
-							<div className="no-filtered-hosts-message-container">
-								<div className="no-filtered-hosts-message-content">
-									<img
-										src="/Icons/emptyState.svg"
-										alt="thinking-emoji"
-										className="empty-state-svg"
-									/>
+					emptyText: showTableLoadingState ? null : (
+						<div className="no-filtered-hosts-message-container">
+							<div className="no-filtered-hosts-message-content">
+								<img
+									src="/Icons/emptyState.svg"
+									alt="thinking-emoji"
+									className="empty-state-svg"
+								/>
 
-									<Typography.Text className="no-filtered-hosts-message">
-										This query had no results. Edit your query and try again!
-									</Typography.Text>
-								</div>
+								<Typography.Text className="no-filtered-hosts-message">
+									This query had no results. Edit your query and try again!
+								</Typography.Text>
 							</div>
-						),
+						</div>
+					),
 				}}
 				scroll={{ x: true }}
 				tableLayout="fixed"

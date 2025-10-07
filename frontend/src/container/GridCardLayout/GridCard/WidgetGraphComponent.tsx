@@ -4,7 +4,6 @@ import { Skeleton, Tooltip, Typography } from 'antd';
 import cx from 'classnames';
 import { useNavigateToExplorer } from 'components/CeleryTask/useNavigateToExplorer';
 import { ToggleGraphProps } from 'components/Graph/types';
-import { SOMETHING_WENT_WRONG } from 'constants/api';
 import { QueryParams } from 'constants/query';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import { placeWidgetAtBottom } from 'container/NewWidget/utils';
@@ -31,7 +30,9 @@ import {
 	useState,
 } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Dashboard } from 'types/api/dashboard/getAll';
+import { Widgets } from 'types/api/dashboard/getAll';
+import { Props } from 'types/api/dashboard/update';
+import { EQueryType } from 'types/common/dashboard';
 import { DataSource } from 'types/common/queryBuilder';
 import { v4 } from 'uuid';
 
@@ -46,7 +47,6 @@ import { getLocalStorageGraphVisibilityState, handleGraphClick } from './utils';
 function WidgetGraphComponent({
 	widget,
 	queryResponse,
-	errorMessage,
 	version,
 	threshold,
 	headerMenuList,
@@ -63,6 +63,7 @@ function WidgetGraphComponent({
 	customErrorMessage,
 	customOnRowClick,
 	customTimeRangeWindowForCoRelation,
+	enableDrillDown,
 }: WidgetGraphComponentProps): JSX.Element {
 	const { safeNavigate } = useSafeNavigate();
 	const [deleteModal, setDeleteModal] = useState(false);
@@ -119,28 +120,22 @@ function WidgetGraphComponent({
 		const updatedLayout =
 			selectedDashboard.data.layout?.filter((e) => e.i !== widget.id) || [];
 
-		const updatedSelectedDashboard: Dashboard = {
-			...selectedDashboard,
+		const updatedSelectedDashboard: Props = {
 			data: {
 				...selectedDashboard.data,
 				widgets: updatedWidgets,
 				layout: updatedLayout,
 			},
-			uuid: selectedDashboard.uuid,
+			id: selectedDashboard.id,
 		};
 
 		updateDashboardMutation.mutateAsync(updatedSelectedDashboard, {
 			onSuccess: (updatedDashboard) => {
-				if (setLayouts) setLayouts(updatedDashboard.payload?.data?.layout || []);
-				if (setSelectedDashboard && updatedDashboard.payload) {
-					setSelectedDashboard(updatedDashboard.payload);
+				if (setLayouts) setLayouts(updatedDashboard.data?.data?.layout || []);
+				if (setSelectedDashboard && updatedDashboard.data) {
+					setSelectedDashboard(updatedDashboard.data);
 				}
 				setDeleteModal(false);
-			},
-			onError: () => {
-				notifications.error({
-					message: SOMETHING_WENT_WRONG,
-				});
 			},
 		});
 	};
@@ -166,7 +161,8 @@ function WidgetGraphComponent({
 
 		updateDashboardMutation.mutateAsync(
 			{
-				...selectedDashboard,
+				id: selectedDashboard.id,
+
 				data: {
 					...selectedDashboard.data,
 					layout,
@@ -183,16 +179,26 @@ function WidgetGraphComponent({
 			},
 			{
 				onSuccess: (updatedDashboard) => {
-					if (setLayouts) setLayouts(updatedDashboard.payload?.data?.layout || []);
-					if (setSelectedDashboard && updatedDashboard.payload) {
-						setSelectedDashboard(updatedDashboard.payload);
+					if (setLayouts) setLayouts(updatedDashboard.data?.data?.layout || []);
+					if (setSelectedDashboard && updatedDashboard.data) {
+						setSelectedDashboard(updatedDashboard.data);
 					}
 					notifications.success({
 						message: 'Panel cloned successfully, redirecting to new copy.',
 					});
+
+					const clonedWidget = updatedDashboard.data?.data?.widgets?.find(
+						(w) => w.id === uuid,
+					) as Widgets;
+
 					const queryParams = {
-						graphType: widget?.panelTypes,
-						widgetId: uuid,
+						[QueryParams.graphType]: clonedWidget?.panelTypes,
+						[QueryParams.widgetId]: uuid,
+						...(clonedWidget?.query && {
+							[QueryParams.compositeQuery]: encodeURIComponent(
+								JSON.stringify(clonedWidget.query),
+							),
+						}),
 					};
 					safeNavigate(`${pathname}/new?${createQueryParams(queryParams)}`);
 				},
@@ -232,6 +238,8 @@ function WidgetGraphComponent({
 	const onToggleModelHandler = (): void => {
 		const existingSearchParams = new URLSearchParams(search);
 		existingSearchParams.delete(QueryParams.expandedWidgetId);
+		existingSearchParams.delete(QueryParams.compositeQuery);
+		existingSearchParams.delete(QueryParams.graphType);
 		const updatedQueryParams = Object.fromEntries(existingSearchParams.entries());
 		if (queryResponse.data?.payload) {
 			const {
@@ -252,7 +260,11 @@ function WidgetGraphComponent({
 
 	const graphClick = useGraphClickToShowButton({
 		graphRef: currentGraphRef?.current ? currentGraphRef : graphRef,
-		isButtonEnabled: (widget?.query?.builder?.queryData ?? []).some(
+		isButtonEnabled: (widget?.query?.builder?.queryData &&
+		Array.isArray(widget.query.builder.queryData)
+			? widget.query.builder.queryData
+			: []
+		).some(
 			(q) =>
 				q.dataSource === DataSource.TRACES || q.dataSource === DataSource.LOGS,
 		),
@@ -317,6 +329,7 @@ function WidgetGraphComponent({
 				setHovered(false);
 			}}
 			id={widget.id}
+			className="widget-graph-component-container"
 		>
 			<Modal
 				destroyOnClose
@@ -356,6 +369,9 @@ function WidgetGraphComponent({
 					onClickHandler={onClickHandler ?? graphClickHandler}
 					customOnDragSelect={customOnDragSelect}
 					setCurrentGraphRef={setCurrentGraphRef}
+					enableDrillDown={
+						enableDrillDown && widget?.query?.queryType === EQueryType.QUERY_BUILDER
+					}
 				/>
 			</Modal>
 
@@ -368,7 +384,6 @@ function WidgetGraphComponent({
 					onDelete={handleOnDelete}
 					onClone={onCloneHandler}
 					queryResponse={queryResponse}
-					errorMessage={errorMessage}
 					threshold={threshold}
 					headerMenuList={headerMenuList}
 					isWarning={isWarning}
@@ -389,7 +404,10 @@ function WidgetGraphComponent({
 			)}
 			{(queryResponse.isSuccess || widget.panelTypes === PANEL_TYPES.LIST) && (
 				<div
-					className={cx('widget-graph-container', widget.panelTypes)}
+					className={cx(
+						'widget-graph-container',
+						`${widget.panelTypes}-panel-container`,
+					)}
 					ref={graphRef}
 				>
 					<PanelWrapper
@@ -407,6 +425,7 @@ function WidgetGraphComponent({
 						onOpenTraceBtnClick={onOpenTraceBtnClick}
 						customSeries={customSeries}
 						customOnRowClick={customOnRowClick}
+						enableDrillDown={enableDrillDown}
 					/>
 				</div>
 			)}
@@ -419,6 +438,7 @@ WidgetGraphComponent.defaultProps = {
 	setLayout: undefined,
 	onClickHandler: undefined,
 	customTimeRangeWindowForCoRelation: undefined,
+	enableDrillDown: false,
 };
 
 export default WidgetGraphComponent;

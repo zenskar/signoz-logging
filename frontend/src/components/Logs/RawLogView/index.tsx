@@ -1,13 +1,10 @@
-import './RawLogView.styles.scss';
-
-import Convert from 'ansi-to-html';
-import { DrawerProps } from 'antd';
+import { Color } from '@signozhq/design-tokens';
+import { DrawerProps, Tooltip } from 'antd';
 import LogDetail from 'components/LogDetail';
 import { VIEW_TYPES, VIEWS } from 'components/LogDetail/constants';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
-import { unescapeString } from 'container/LogDetailedView/utils';
+import { getSanitizedLogBody } from 'container/LogDetailedView/utils';
 import LogsExplorerContext from 'container/LogsExplorerContext';
-import dompurify from 'dompurify';
 import { useActiveLog } from 'hooks/logs/useActiveLog';
 import { useCopyLogLink } from 'hooks/logs/useCopyLogLink';
 // hooks
@@ -23,16 +20,13 @@ import {
 	useMemo,
 	useState,
 } from 'react';
-import { FORBID_DOM_PURIFY_TAGS } from 'utils/app';
 
 import LogLinesActionButtons from '../LogLinesActionButtons/LogLinesActionButtons';
 import LogStateIndicator from '../LogStateIndicator/LogStateIndicator';
 import { getLogIndicatorType } from '../LogStateIndicator/utils';
 // styles
-import { RawLogContent, RawLogViewContainer } from './styles';
+import { InfoIconWrapper, RawLogContent, RawLogViewContainer } from './styles';
 import { RawLogViewProps } from './types';
-
-const convert = new Convert();
 
 function RawLogView({
 	isActiveLog,
@@ -40,12 +34,17 @@ function RawLogView({
 	data,
 	linesPerRow,
 	isTextOverflowEllipsisDisabled,
+	isHighlighted,
+	helpTooltip,
 	selectedFields = [],
 	fontSize,
+	onLogClick,
 }: RawLogViewProps): JSX.Element {
-	const { isHighlighted, isLogsExplorerPage, onLogCopy } = useCopyLogLink(
-		data.id,
-	);
+	const {
+		isHighlighted: isUrlHighlighted,
+		isLogsExplorerPage,
+		onLogCopy,
+	} = useCopyLogLink(data.id);
 	const flattenLogData = useMemo(() => FlatLogData(data), [data]);
 
 	const {
@@ -131,12 +130,20 @@ function RawLogView({
 		formatTimezoneAdjustedTimestamp,
 	]);
 
-	const handleClickExpand = useCallback(() => {
-		if (activeContextLog || isReadOnly) return;
+	const handleClickExpand = useCallback(
+		(event: MouseEvent) => {
+			if (activeContextLog || isReadOnly) return;
 
-		onSetActiveLog(data);
-		setSelectedTab(VIEW_TYPES.OVERVIEW);
-	}, [activeContextLog, isReadOnly, data, onSetActiveLog]);
+			// Use custom click handler if provided, otherwise use default behavior
+			if (onLogClick) {
+				onLogClick(data, event);
+			} else {
+				onSetActiveLog(data);
+				setSelectedTab(VIEW_TYPES.OVERVIEW);
+			}
+		},
+		[activeContextLog, isReadOnly, data, onSetActiveLog, onLogClick],
+	);
 
 	const handleCloseLogDetail: DrawerProps['onClose'] = useCallback(
 		(
@@ -176,11 +183,7 @@ function RawLogView({
 
 	const html = useMemo(
 		() => ({
-			__html: convert.toHtml(
-				dompurify.sanitize(unescapeString(text), {
-					FORBID_TAGS: [...FORBID_DOM_PURIFY_TAGS],
-				}),
-			),
+			__html: getSanitizedLogBody(text, { shouldEscapeHtml: true }),
 		}),
 		[text],
 	);
@@ -192,16 +195,30 @@ function RawLogView({
 			align="middle"
 			$isDarkMode={isDarkMode}
 			$isReadOnly={isReadOnly}
-			$isHightlightedLog={isHighlighted}
+			$isHightlightedLog={isUrlHighlighted}
 			$isActiveLog={
 				activeLog?.id === data.id || activeContextLog?.id === data.id || isActiveLog
 			}
+			$isCustomHighlighted={isHighlighted}
 			$logType={logType}
 			onMouseEnter={handleMouseEnter}
 			onMouseLeave={handleMouseLeave}
 			fontSize={fontSize}
 		>
-			<LogStateIndicator type={logType} fontSize={fontSize} />
+			<LogStateIndicator
+				fontSize={fontSize}
+				severityText={data.severity_text}
+				severityNumber={data.severity_number}
+			/>
+			{helpTooltip && (
+				<Tooltip title={helpTooltip} placement="top" mouseEnterDelay={0.5}>
+					<InfoIconWrapper
+						size={14}
+						className="help-tooltip-icon"
+						color={Color.BG_VANILLA_400}
+					/>
+				</Tooltip>
+			)}
 
 			<RawLogContent
 				className="raw-log-content"
@@ -245,6 +262,7 @@ RawLogView.defaultProps = {
 	isActiveLog: false,
 	isReadOnly: false,
 	isTextOverflowEllipsisDisabled: false,
+	isHighlighted: false,
 };
 
 export default RawLogView;

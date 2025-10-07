@@ -2,16 +2,16 @@
 import '../OnboardingQuestionaire.styles.scss';
 
 import { Color } from '@signozhq/design-tokens';
-import { Button, Input, Typography } from 'antd';
+import { Button, Checkbox, Input, Typography } from 'antd';
+import TextArea from 'antd/lib/input/TextArea';
 import logEvent from 'api/common/logEvent';
 import { ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export interface SignozDetails {
-	hearAboutSignoz: string | null;
-	interestInSignoz: string | null;
+	interestInSignoz: string[] | null;
 	otherInterestInSignoz: string | null;
-	otherAboutSignoz: string | null;
+	discoverSignoz: string | null;
 }
 
 interface AboutSigNozQuestionsProps {
@@ -21,19 +21,13 @@ interface AboutSigNozQuestionsProps {
 	onBack: () => void;
 }
 
-const hearAboutSignozOptions: Record<string, string> = {
-	search: 'Google / Search',
-	hackerNews: 'Hacker News',
-	linkedin: 'LinkedIn',
-	twitter: 'Twitter',
-	reddit: 'Reddit',
-	colleaguesFriends: 'Colleagues / Friends',
-};
-
 const interestedInOptions: Record<string, string> = {
-	savingCosts: 'Saving costs',
-	otelNativeStack: 'Interested in Otel-native stack',
-	allInOne: 'All in one (Logs, Metrics & Traces)',
+	loweringCosts: 'Lowering observability costs',
+	otelNativeStack: 'Interested in OTel-native stack',
+	deploymentFlexibility: 'Deployment flexibility (Cloud/Self-Host) in future',
+	singleTool:
+		'Single Tool (logs, metrics & traces) to reduce operational overhead',
+	correlateSignals: 'Correlate signals for faster troubleshooting',
 };
 
 export function AboutSigNozQuestions({
@@ -42,49 +36,46 @@ export function AboutSigNozQuestions({
 	onNext,
 	onBack,
 }: AboutSigNozQuestionsProps): JSX.Element {
-	const [hearAboutSignoz, setHearAboutSignoz] = useState<string | null>(
-		signozDetails?.hearAboutSignoz || null,
-	);
-	const [otherAboutSignoz, setOtherAboutSignoz] = useState<string>(
-		signozDetails?.otherAboutSignoz || '',
-	);
-	const [interestInSignoz, setInterestInSignoz] = useState<string | null>(
-		signozDetails?.interestInSignoz || null,
+	const [interestInSignoz, setInterestInSignoz] = useState<string[]>(
+		signozDetails?.interestInSignoz || [],
 	);
 	const [otherInterestInSignoz, setOtherInterestInSignoz] = useState<string>(
 		signozDetails?.otherInterestInSignoz || '',
+	);
+	const [discoverSignoz, setDiscoverSignoz] = useState<string>(
+		signozDetails?.discoverSignoz || '',
 	);
 	const [isNextDisabled, setIsNextDisabled] = useState<boolean>(true);
 
 	useEffect((): void => {
 		if (
-			hearAboutSignoz !== null &&
-			(hearAboutSignoz !== 'Others' || otherAboutSignoz !== '') &&
-			interestInSignoz !== null &&
-			(interestInSignoz !== 'Others' || otherInterestInSignoz !== '')
+			discoverSignoz !== '' &&
+			interestInSignoz.length > 0 &&
+			(!interestInSignoz.includes('Others') || otherInterestInSignoz !== '')
 		) {
 			setIsNextDisabled(false);
 		} else {
 			setIsNextDisabled(true);
 		}
-	}, [
-		hearAboutSignoz,
-		otherAboutSignoz,
-		interestInSignoz,
-		otherInterestInSignoz,
-	]);
+	}, [interestInSignoz, otherInterestInSignoz, discoverSignoz]);
+
+	const handleInterestChange = (option: string, checked: boolean): void => {
+		if (checked) {
+			setInterestInSignoz((prev) => [...prev, option]);
+		} else {
+			setInterestInSignoz((prev) => prev.filter((item) => item !== option));
+		}
+	};
 
 	const handleOnNext = (): void => {
 		setSignozDetails({
-			hearAboutSignoz,
-			otherAboutSignoz,
+			discoverSignoz,
 			interestInSignoz,
 			otherInterestInSignoz,
 		});
 
 		logEvent('Org Onboarding: Answered', {
-			hearAboutSignoz,
-			otherAboutSignoz,
+			discoverSignoz,
 			interestInSignoz,
 			otherInterestInSignoz,
 		});
@@ -94,8 +85,7 @@ export function AboutSigNozQuestions({
 
 	const handleOnBack = (): void => {
 		setSignozDetails({
-			hearAboutSignoz,
-			otherAboutSignoz,
+			discoverSignoz,
 			interestInSignoz,
 			otherInterestInSignoz,
 		});
@@ -115,100 +105,59 @@ export function AboutSigNozQuestions({
 			<div className="questions-form-container">
 				<div className="questions-form">
 					<div className="form-group">
-						<div className="question">Where did you hear about SigNoz?</div>
-						<div className="two-column-grid">
-							{Object.keys(hearAboutSignozOptions).map((option: string) => (
-								<Button
-									key={option}
-									type="primary"
-									className={`onboarding-questionaire-button ${
-										hearAboutSignoz === option ? 'active' : ''
-									}`}
-									onClick={(): void => setHearAboutSignoz(option)}
-								>
-									{hearAboutSignozOptions[option]}
-									{hearAboutSignoz === option && (
-										<CheckCircle size={12} color={Color.BG_FOREST_500} />
-									)}
-								</Button>
-							))}
+						<div className="question">How did you first come across SigNoz?</div>
 
-							{hearAboutSignoz === 'Others' ? (
-								<Input
-									type="text"
-									className="onboarding-questionaire-other-input"
-									placeholder="How you got to know about us"
-									value={otherAboutSignoz}
-									autoFocus
-									addonAfter={
-										otherAboutSignoz !== '' ? (
-											<CheckCircle size={12} color={Color.BG_FOREST_500} />
-										) : (
-											''
-										)
-									}
-									onChange={(e): void => setOtherAboutSignoz(e.target.value)}
-								/>
-							) : (
-								<Button
-									type="primary"
-									className={`onboarding-questionaire-button ${
-										hearAboutSignoz === 'Others' ? 'active' : ''
-									}`}
-									onClick={(): void => setHearAboutSignoz('Others')}
-								>
-									Others
-								</Button>
-							)}
-						</div>
+						<TextArea
+							className="discover-signoz-input"
+							placeholder={`e.g., googling "datadog alternative", a post on r/devops, from a friend/colleague, a LinkedIn post, ChatGPT, etc.`}
+							value={discoverSignoz}
+							autoFocus
+							rows={4}
+							onChange={(e): void => setDiscoverSignoz(e.target.value)}
+						/>
 					</div>
 
 					<div className="form-group">
 						<div className="question">What got you interested in SigNoz?</div>
-						<div className="two-column-grid">
+						<div className="checkbox-grid">
 							{Object.keys(interestedInOptions).map((option: string) => (
-								<Button
-									key={option}
-									type="primary"
-									className={`onboarding-questionaire-button ${
-										interestInSignoz === option ? 'active' : ''
-									}`}
-									onClick={(): void => setInterestInSignoz(option)}
-								>
-									{interestedInOptions[option]}
-									{interestInSignoz === option && (
-										<CheckCircle size={12} color={Color.BG_FOREST_500} />
-									)}
-								</Button>
+								<div key={option} className="checkbox-item">
+									<Checkbox
+										checked={interestInSignoz.includes(option)}
+										onChange={(e): void => handleInterestChange(option, e.target.checked)}
+									>
+										{interestedInOptions[option]}
+									</Checkbox>
+								</div>
 							))}
 
-							{interestInSignoz === 'Others' ? (
-								<Input
-									type="text"
-									className="onboarding-questionaire-other-input"
-									placeholder="Please specify your interest"
-									value={otherInterestInSignoz}
-									autoFocus
-									addonAfter={
-										otherInterestInSignoz !== '' ? (
-											<CheckCircle size={12} color={Color.BG_FOREST_500} />
-										) : (
-											''
-										)
+							<div className="checkbox-item">
+								<Checkbox
+									checked={interestInSignoz.includes('Others')}
+									onChange={(e): void =>
+										handleInterestChange('Others', e.target.checked)
 									}
-									onChange={(e): void => setOtherInterestInSignoz(e.target.value)}
-								/>
-							) : (
-								<Button
-									type="primary"
-									className={`onboarding-questionaire-button ${
-										interestInSignoz === 'Others' ? 'active' : ''
-									}`}
-									onClick={(): void => setInterestInSignoz('Others')}
 								>
 									Others
-								</Button>
-							)}
+								</Checkbox>
+								{interestInSignoz.includes('Others') && (
+									<Input
+										type="text"
+										className="onboarding-questionaire-other-input"
+										placeholder="Please specify your interest"
+										value={otherInterestInSignoz}
+										autoFocus
+										addonAfter={
+											otherInterestInSignoz !== '' ? (
+												<CheckCircle size={12} color={Color.BG_FOREST_500} />
+											) : (
+												''
+											)
+										}
+										onChange={(e): void => setOtherInterestInSignoz(e.target.value)}
+									/>
+								)}
+							</div>
 						</div>
 					</div>
 				</div>

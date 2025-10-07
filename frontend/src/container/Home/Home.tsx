@@ -2,23 +2,21 @@
 import './Home.styles.scss';
 
 import { Color } from '@signozhq/design-tokens';
-import { Alert, Button, Popover } from 'antd';
+import { Button, Popover } from 'antd';
 import logEvent from 'api/common/logEvent';
-import { HostListPayload } from 'api/infraMonitoring/getHostLists';
-import { K8sPodsListPayload } from 'api/infraMonitoring/getK8sPodsList';
-import getAllUserPreferences from 'api/preferences/getAllUserPreference';
-import updateUserPreferenceAPI from 'api/preferences/updateUserPreference';
+import listUserPreferences from 'api/v1/user/preferences/list';
+import updateUserPreferenceAPI from 'api/v1/user/preferences/name/update';
 import Header from 'components/Header/Header';
-import { DEFAULT_ENTITY_VERSION } from 'constants/app';
+import { ENTITY_VERSION_V5 } from 'constants/app';
 import { LOCALSTORAGE } from 'constants/localStorage';
+import { ORG_PREFERENCES } from 'constants/orgPreferences';
 import { initialQueriesMap, PANEL_TYPES } from 'constants/queryBuilder';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
 import ROUTES from 'constants/routes';
-import { getHostListsQuery } from 'container/InfraMonitoringHosts/utils';
-import { useGetDeploymentsData } from 'hooks/CustomDomain/useGetDeploymentsData';
-import { useGetHostList } from 'hooks/infraMonitoring/useGetHostList';
-import { useGetK8sPodsList } from 'hooks/infraMonitoring/useGetK8sPodsList';
+import { getMetricsListQuery } from 'container/MetricsExplorer/Summary/utils';
+import { useGetMetricsList } from 'hooks/metricsExplorer/useGetMetricsList';
 import { useGetQueryRange } from 'hooks/queryBuilder/useGetQueryRange';
+import { useGetTenantLicense } from 'hooks/useGetTenantLicense';
 import history from 'lib/history';
 import cloneDeep from 'lodash-es/cloneDeep';
 import { CompassIcon, DotIcon, HomeIcon, Plus, Wrench, X } from 'lucide-react';
@@ -28,10 +26,10 @@ import Card from 'periscope/components/Card/Card';
 import { useAppContext } from 'providers/App/App';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'react-query';
-import { LicensePlatform } from 'types/api/licensesV3/getActive';
+import { UserPreference } from 'types/api/preferences/preference';
 import { DataSource } from 'types/common/queryBuilder';
-import { UserPreference } from 'types/reducer/app';
 import { USER_ROLES } from 'types/roles';
+import { isIngestionActive } from 'utils/app';
 import { popupContainer } from 'utils/selectPopupContainer';
 
 import AlertRules from './AlertRules/AlertRules';
@@ -53,6 +51,8 @@ export default function Home(): JSX.Element {
 	const [endTime, setEndTime] = useState<number | null>(null);
 	const [updatingUserPreferences, setUpdatingUserPreferences] = useState(false);
 	const [loadingUserPreferences, setLoadingUserPreferences] = useState(true);
+
+	const { isCommunityUser, isCommunityEnterpriseUser } = useGetTenantLicense();
 
 	const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>(
 		defaultChecklistItemsState,
@@ -82,14 +82,15 @@ export default function Home(): JSX.Element {
 	const { data: logsData, isLoading: isLogsLoading } = useGetQueryRange(
 		{
 			query: initialQueriesMap[DataSource.LOGS],
-			graphType: PANEL_TYPES.TABLE,
+			graphType: PANEL_TYPES.VALUE,
 			selectedTime: 'GLOBAL_TIME',
 			globalSelectedInterval: '30m',
 			params: {
 				dataSource: DataSource.LOGS,
 			},
+			formatForWeb: false,
 		},
-		DEFAULT_ENTITY_VERSION,
+		ENTITY_VERSION_V5,
 		{
 			queryKey: [
 				REACT_QUERY_KEY.GET_QUERY_RANGE,
@@ -106,14 +107,15 @@ export default function Home(): JSX.Element {
 	const { data: tracesData, isLoading: isTracesLoading } = useGetQueryRange(
 		{
 			query: initialQueriesMap[DataSource.TRACES],
-			graphType: PANEL_TYPES.TABLE,
+			graphType: PANEL_TYPES.VALUE,
 			selectedTime: 'GLOBAL_TIME',
 			globalSelectedInterval: '30m',
 			params: {
 				dataSource: DataSource.TRACES,
 			},
+			formatForWeb: false,
 		},
-		DEFAULT_ENTITY_VERSION,
+		ENTITY_VERSION_V5,
 		{
 			queryKey: [
 				REACT_QUERY_KEY.GET_QUERY_RANGE,
@@ -126,9 +128,9 @@ export default function Home(): JSX.Element {
 		},
 	);
 
-	// Detect Infra Metrics - Hosts
+	// Detect Metrics
 	const query = useMemo(() => {
-		const baseQuery = getHostListsQuery();
+		const baseQuery = getMetricsListQuery();
 
 		let queryStartTime = startTime;
 		let queryEndTime = endTime;
@@ -155,14 +157,9 @@ export default function Home(): JSX.Element {
 		};
 	}, [startTime, endTime]);
 
-	const { data: hostData } = useGetHostList(query as HostListPayload, {
-		queryKey: ['hostList', query],
+	const { data: metricsData } = useGetMetricsList(query, {
 		enabled: !!query,
-	});
-
-	const { data: k8sPodsData } = useGetK8sPodsList(query as K8sPodsListPayload, {
-		queryKey: ['K8sPodsList', query],
-		enabled: !!query,
+		queryKey: ['metricsList', query],
 	});
 
 	const [isLogsIngestionActive, setIsLogsIngestionActive] = useState(false);
@@ -172,18 +169,25 @@ export default function Home(): JSX.Element {
 	);
 
 	const processUserPreferences = (userPreferences: UserPreference[]): void => {
-		const checklistSkipped = userPreferences?.find(
-			(preference) => preference.key === 'WELCOME_CHECKLIST_DO_LATER',
-		)?.value;
+		const checklistSkipped = Boolean(
+			userPreferences?.find(
+				(preference) =>
+					preference.name === ORG_PREFERENCES.WELCOME_CHECKLIST_DO_LATER,
+			)?.value,
+		);
 
 		const updatedChecklistItems = cloneDeep(checklistItems);
 
 		const newChecklistItems = updatedChecklistItems.map((item) => {
 			const newItem = { ...item };
-			newItem.isSkipped =
+
+			const isSkipped = Boolean(
 				userPreferences?.find(
-					(preference) => preference.key === item.skippedPreferenceKey,
-				)?.value || false;
+					(preference) => preference.name === item.skippedPreferenceKey,
+				)?.value,
+			);
+
+			newItem.isSkipped = isSkipped || false;
 			return newItem;
 		});
 
@@ -194,13 +198,13 @@ export default function Home(): JSX.Element {
 
 	// Fetch User Preferences
 	const { refetch: refetchUserPreferences } = useQuery({
-		queryFn: () => getAllUserPreferences(),
+		queryFn: () => listUserPreferences(),
 		queryKey: ['getUserPreferences'],
 		enabled: true,
 		refetchOnWindowFocus: false,
 		onSuccess: (response) => {
-			if (response.payload && response.payload.data) {
-				processUserPreferences(response.payload.data);
+			if (response.data) {
+				processUserPreferences(response.data);
 			}
 
 			setLoadingUserPreferences(false);
@@ -227,7 +231,7 @@ export default function Home(): JSX.Element {
 		setUpdatingUserPreferences(true);
 
 		updateUserPreference({
-			preferenceID: 'WELCOME_CHECKLIST_DO_LATER',
+			name: ORG_PREFERENCES.WELCOME_CHECKLIST_DO_LATER,
 			value: true,
 		});
 	};
@@ -237,7 +241,7 @@ export default function Home(): JSX.Element {
 			setUpdatingUserPreferences(true);
 
 			updateUserPreference({
-				preferenceID: item.skippedPreferenceKey,
+				name: item.skippedPreferenceKey,
 				value: true,
 			});
 		}
@@ -262,13 +266,9 @@ export default function Home(): JSX.Element {
 	}, []);
 
 	useEffect(() => {
-		const logsDataTotal = parseInt(
-			logsData?.payload?.data?.newResult?.data?.result?.[0]?.series?.[0]
-				?.values?.[0]?.value || '0',
-			10,
-		);
+		const isLogsIngestionActive = isIngestionActive(logsData?.payload);
 
-		if (logsDataTotal > 0) {
+		if (isLogsIngestionActive) {
 			setIsLogsIngestionActive(true);
 			handleUpdateChecklistDoneItem('SEND_LOGS');
 			handleUpdateChecklistDoneItem('ADD_DATA_SOURCE');
@@ -276,13 +276,9 @@ export default function Home(): JSX.Element {
 	}, [logsData, handleUpdateChecklistDoneItem]);
 
 	useEffect(() => {
-		const tracesDataTotal = parseInt(
-			tracesData?.payload?.data?.newResult?.data?.result?.[0]?.series?.[0]
-				?.values?.[0]?.value || '0',
-			10,
-		);
+		const isTracesIngestionActive = isIngestionActive(tracesData?.payload);
 
-		if (tracesDataTotal > 0) {
+		if (isTracesIngestionActive) {
 			setIsTracesIngestionActive(true);
 			handleUpdateChecklistDoneItem('SEND_TRACES');
 			handleUpdateChecklistDoneItem('ADD_DATA_SOURCE');
@@ -290,29 +286,14 @@ export default function Home(): JSX.Element {
 	}, [tracesData, handleUpdateChecklistDoneItem]);
 
 	useEffect(() => {
-		const hostDataTotal = hostData?.payload?.data?.total ?? 0;
-		const k8sPodsDataTotal = k8sPodsData?.payload?.data?.total ?? 0;
+		const metricsDataTotal = metricsData?.payload?.data?.total ?? 0;
 
-		if (hostDataTotal > 0 || k8sPodsDataTotal > 0) {
+		if (metricsDataTotal > 0) {
 			setIsMetricsIngestionActive(true);
 			handleUpdateChecklistDoneItem('ADD_DATA_SOURCE');
-			handleUpdateChecklistDoneItem('SEND_INFRA_METRICS');
+			handleUpdateChecklistDoneItem('SEND_METRICS');
 		}
-	}, [hostData, k8sPodsData, handleUpdateChecklistDoneItem]);
-
-	const { activeLicenseV3, isFetchingActiveLicenseV3 } = useAppContext();
-
-	const [isEnabled, setIsEnabled] = useState(false);
-
-	useEffect(() => {
-		if (isFetchingActiveLicenseV3) {
-			setIsEnabled(false);
-			return;
-		}
-		setIsEnabled(Boolean(activeLicenseV3?.platform === LicensePlatform.CLOUD));
-	}, [activeLicenseV3, isFetchingActiveLicenseV3]);
-
-	const { data: deploymentsData } = useGetDeploymentsData(isEnabled);
+	}, [metricsData, handleUpdateChecklistDoneItem]);
 
 	useEffect(() => {
 		logEvent('Homepage: Visited', {});
@@ -323,22 +304,27 @@ export default function Home(): JSX.Element {
 		setIsBannerDismissed(true);
 	};
 
+	const showBanner = useMemo(
+		() => !isBannerDismissed && (isCommunityUser || isCommunityEnterpriseUser),
+		[isBannerDismissed, isCommunityUser, isCommunityEnterpriseUser],
+	);
+
 	return (
 		<div className="home-container">
 			<div className="sticky-header">
-				{!isBannerDismissed && (
+				{showBanner && (
 					<div className="home-container-banner">
 						<div className="home-container-banner-content">
-							Big news: SigNoz Cloud Teams plan now starting at just $49/Month -
+							Big News: SigNoz Community Edition now available with SSO (Google OAuth)
+							and API keys -
 							<a
-								href="https://signoz.io/blog/cloud-teams-plan-now-at-49usd/"
+								href="https://signoz.io/blog/open-source-signoz-now-available-with-sso-and-api-keys/"
 								target="_blank"
 								rel="noreferrer"
 								className="home-container-banner-link"
 							>
 								<i>read more</i>
 							</a>
-							🥳🎉
 						</div>
 
 						<div className="home-container-banner-close">
@@ -514,19 +500,19 @@ export default function Home(): JSX.Element {
 												logEvent('Homepage: Ingestion Active Explore clicked', {
 													source: 'Metrics',
 												});
-												history.push(ROUTES.INFRASTRUCTURE_MONITORING_HOSTS);
+												history.push(ROUTES.METRICS_EXPLORER);
 											}}
 											onKeyDown={(e): void => {
 												if (e.key === 'Enter') {
 													logEvent('Homepage: Ingestion Active Explore clicked', {
 														source: 'Metrics',
 													});
-													history.push(ROUTES.INFRASTRUCTURE_MONITORING_HOSTS);
+													history.push(ROUTES.METRICS_EXPLORER);
 												}
 											}}
 										>
 											<CompassIcon size={12} />
-											Explore Infra Metrics
+											Explore Metrics
 										</div>
 									</div>
 								</Card.Content>
@@ -586,6 +572,20 @@ export default function Home(): JSX.Element {
 												}}
 											>
 												Open Traces Explorer
+											</Button>
+
+											<Button
+												type="default"
+												className="periscope-btn secondary"
+												icon={<Wrench size={14} />}
+												onClick={(): void => {
+													logEvent('Homepage: Explore clicked', {
+														source: 'Metrics',
+													});
+													history.push(ROUTES.METRICS_EXPLORER_EXPLORER);
+												}}
+											>
+												Open Metrics Explorer
 											</Button>
 										</div>
 									</div>
@@ -693,33 +693,6 @@ export default function Home(): JSX.Element {
 					)}
 				</div>
 				<div className="home-right-content">
-					{deploymentsData?.data?.data?.cluster?.region?.name === 'in' && (
-						<div className="home-notifications-container">
-							<div className="notification">
-								<Alert
-									message={
-										<>
-											We&apos;re updating our metric ingestion processing pipeline.
-											Currently, metric names and labels are normalized to replace dots and
-											other special characters with underscores (_). This restriction will
-											soon be removed. Learn more{' '}
-											<a
-												href="https://signoz.io/guides/metrics-migration-cloud-users"
-												target="_blank"
-												rel="noopener noreferrer"
-											>
-												here
-											</a>
-											.
-										</>
-									}
-									type="warning"
-									showIcon
-								/>
-							</div>
-						</div>
-					)}
-
 					{!isWelcomeChecklistSkipped && !loadingUserPreferences && (
 						<AnimatePresence initial={false}>
 							<Card className="checklist-card">

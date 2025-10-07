@@ -1,3 +1,4 @@
+import logEvent from 'api/common/logEvent';
 import updateCustomFiltersAPI from 'api/quickFilters/updateCustomFilters';
 import axios, { AxiosError } from 'axios';
 import { SignalType } from 'components/QuickFilters/types';
@@ -11,7 +12,7 @@ import { Filter as FilterType } from 'types/api/quickFilters/getCustomFilters';
 interface UseQuickFilterSettingsProps {
 	setIsSettingsOpen: (isSettingsOpen: boolean) => void;
 	customFilters: FilterType[];
-	setIsStale: (isStale: boolean) => void;
+	refetchCustomFilters: () => void;
 	signal?: SignalType;
 }
 
@@ -31,7 +32,7 @@ interface UseQuickFilterSettingsReturn {
 const useQuickFilterSettings = ({
 	customFilters,
 	setIsSettingsOpen,
-	setIsStale,
+	refetchCustomFilters,
 	signal,
 }: UseQuickFilterSettingsProps): UseQuickFilterSettingsReturn => {
 	const [inputValue, setInputValue] = useState<string>('');
@@ -45,7 +46,10 @@ const useQuickFilterSettings = ({
 	} = useMutation(updateCustomFiltersAPI, {
 		onSuccess: () => {
 			setIsSettingsOpen(false);
-			setIsStale(true);
+			refetchCustomFilters();
+			logEvent('Quick Filters Settings: changes saved', {
+				addedFilters,
+			});
 			notifications.success({
 				message: 'Quick filters updated successfully',
 				placement: 'bottomRight',

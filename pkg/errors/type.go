@@ -9,6 +9,9 @@ var (
 	TypeAlreadyExists        = typ{"already-exists"}
 	TypeUnauthenticated      = typ{"unauthenticated"}
 	TypeForbidden            = typ{"forbidden"}
+	TypeCanceled             = typ{"canceled"}
+	TypeTimeout              = typ{"timeout"}
+	TypeUnexpected           = typ{"unexpected"} // Generic mismatch of expectations
 )
 
 // Defines custom error types

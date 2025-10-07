@@ -21,7 +21,7 @@ export interface OrgDetails {
 	usesObservability: boolean | null;
 	observabilityTool: string | null;
 	otherTool: string | null;
-	familiarity: string | null;
+	usesOtel: boolean | null;
 }
 
 interface OrgQuestionsProps {
@@ -38,13 +38,7 @@ const observabilityTools = {
 	AzureAppMonitor: 'Azure App Monitor',
 	GCPNativeO11yTools: 'GCP-native o11y tools',
 	Honeycomb: 'Honeycomb',
-};
-
-const o11yFamiliarityOptions: Record<string, string> = {
-	beginner: 'Beginner',
-	intermediate: 'Intermediate',
-	expert: 'Expert',
-	notFamiliar: "I'm not familiar with it",
+	None: 'None/Starting fresh',
 };
 
 function OrgQuestions({
@@ -60,17 +54,11 @@ function OrgQuestions({
 	const [organisationName, setOrganisationName] = useState<string>(
 		orgDetails?.organisationName || '',
 	);
-	const [usesObservability, setUsesObservability] = useState<boolean | null>(
-		orgDetails?.usesObservability || null,
-	);
 	const [observabilityTool, setObservabilityTool] = useState<string | null>(
 		orgDetails?.observabilityTool || null,
 	);
 	const [otherTool, setOtherTool] = useState<string>(
 		orgDetails?.otherTool || '',
-	);
-	const [familiarity, setFamiliarity] = useState<string | null>(
-		orgDetails?.familiarity || null,
 	);
 	const [isNextDisabled, setIsNextDisabled] = useState<boolean>(true);
 
@@ -79,6 +67,10 @@ function OrgQuestions({
 	}, [orgDetails.organisationName]);
 
 	const [isLoading, setIsLoading] = useState<boolean>(false);
+
+	const [usesOtel, setUsesOtel] = useState<boolean | null>(
+		orgDetails?.usesOtel || null,
+	);
 
 	const handleOrgNameUpdate = async (): Promise<void> => {
 		/* Early bailout if orgData is not set or if the organisation name is not set or if the organisation name is empty or if the organisation name is the same as the one in the orgData */
@@ -89,18 +81,18 @@ function OrgQuestions({
 			orgDetails.organisationName === organisationName
 		) {
 			logEvent('Org Onboarding: Answered', {
-				usesObservability,
+				usesObservability: !observabilityTool?.includes('None'),
 				observabilityTool,
 				otherTool,
-				familiarity,
+				usesOtel,
 			});
 
 			onNext({
 				organisationName,
-				usesObservability,
+				usesObservability: !observabilityTool?.includes('None'),
 				observabilityTool,
 				otherTool,
-				familiarity,
+				usesOtel,
 			});
 
 			return;
@@ -120,18 +112,18 @@ function OrgQuestions({
 				});
 
 				logEvent('Org Onboarding: Answered', {
-					usesObservability,
+					usesObservability: !observabilityTool?.includes('None'),
 					observabilityTool,
 					otherTool,
-					familiarity,
+					usesOtel,
 				});
 
 				onNext({
 					organisationName,
-					usesObservability,
+					usesObservability: !observabilityTool?.includes('None'),
 					observabilityTool,
 					otherTool,
-					familiarity,
+					usesOtel,
 				});
 			} else {
 				logEvent('Org Onboarding: Org Name Update Failed', {
@@ -158,16 +150,16 @@ function OrgQuestions({
 	};
 
 	const isValidUsesObservability = (): boolean => {
-		if (usesObservability === null) {
-			return false;
-		}
-
-		if (usesObservability && (!observabilityTool || observabilityTool === '')) {
+		if (!observabilityTool || observabilityTool === '') {
 			return false;
 		}
 
 		// eslint-disable-next-line sonarjs/prefer-single-boolean-return
-		if (usesObservability && observabilityTool === 'Others' && otherTool === '') {
+		if (
+			!observabilityTool?.includes('None') &&
+			observabilityTool === 'Others' &&
+			otherTool === ''
+		) {
 			return false;
 		}
 
@@ -177,19 +169,13 @@ function OrgQuestions({
 	useEffect(() => {
 		const isValidObservability = isValidUsesObservability();
 
-		if (organisationName !== '' && familiarity !== null && isValidObservability) {
+		if (organisationName !== '' && usesOtel !== null && isValidObservability) {
 			setIsNextDisabled(false);
 		} else {
 			setIsNextDisabled(true);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [
-		organisationName,
-		usesObservability,
-		familiarity,
-		observabilityTool,
-		otherTool,
-	]);
+	}, [organisationName, usesOtel, observabilityTool, otherTool]);
 
 	const handleOnNext = (): void => {
 		handleOrgNameUpdate();
@@ -198,7 +184,7 @@ function OrgQuestions({
 	return (
 		<div className="questions-container">
 			<Typography.Title level={3} className="title">
-				Welcome, {user?.displayName}!
+				{user?.displayName ? `Welcome, ${user.displayName}!` : 'Welcome!'}
 			</Typography.Title>
 			<Typography.Paragraph className="sub-title">
 				We&apos;ll help you get the most out of SigNoz, whether you&apos;re new to
@@ -223,119 +209,89 @@ function OrgQuestions({
 					</div>
 
 					<div className="form-group">
-						<label className="question" htmlFor="usesObservability">
-							Do you currently use any observability/monitoring tool?
+						<label className="question" htmlFor="observabilityTool">
+							Which observability tool do you currently use?
 						</label>
+						<div className="two-column-grid">
+							{Object.keys(observabilityTools).map((tool) => (
+								<Button
+									key={tool}
+									type="primary"
+									className={`onboarding-questionaire-button ${
+										observabilityTool === tool ? 'active' : ''
+									}`}
+									onClick={(): void => setObservabilityTool(tool)}
+								>
+									{observabilityTools[tool as keyof typeof observabilityTools]}
 
+									{observabilityTool === tool && (
+										<CheckCircle size={12} color={Color.BG_FOREST_500} />
+									)}
+								</Button>
+							))}
+
+							{observabilityTool === 'Others' ? (
+								<Input
+									type="text"
+									className="onboarding-questionaire-other-input"
+									placeholder="Please specify the tool"
+									value={otherTool || ''}
+									autoFocus
+									addonAfter={
+										otherTool && otherTool !== '' ? (
+											<CheckCircle size={12} color={Color.BG_FOREST_500} />
+										) : (
+											''
+										)
+									}
+									onChange={(e): void => setOtherTool(e.target.value)}
+								/>
+							) : (
+								<Button
+									type="primary"
+									className={`onboarding-questionaire-button ${
+										observabilityTool === 'Others' ? 'active' : ''
+									}`}
+									onClick={(): void => setObservabilityTool('Others')}
+								>
+									Others
+								</Button>
+							)}
+						</div>
+					</div>
+
+					<div className="form-group">
+						<div className="question">Do you already use OpenTelemetry?</div>
 						<div className="two-column-grid">
 							<Button
 								type="primary"
 								name="usesObservability"
 								className={`onboarding-questionaire-button ${
-									usesObservability === true ? 'active' : ''
+									usesOtel === true ? 'active' : ''
 								}`}
 								onClick={(): void => {
-									setUsesObservability(true);
+									setUsesOtel(true);
 								}}
 							>
 								Yes{' '}
-								{usesObservability === true && (
+								{usesOtel === true && (
 									<CheckCircle size={12} color={Color.BG_FOREST_500} />
 								)}
 							</Button>
 							<Button
 								type="primary"
 								className={`onboarding-questionaire-button ${
-									usesObservability === false ? 'active' : ''
+									usesOtel === false ? 'active' : ''
 								}`}
 								onClick={(): void => {
-									setUsesObservability(false);
-									setObservabilityTool(null);
-									setOtherTool('');
+									setUsesOtel(false);
 								}}
 							>
 								No{' '}
-								{usesObservability === false && (
+								{usesOtel === false && (
 									<CheckCircle size={12} color={Color.BG_FOREST_500} />
 								)}
 							</Button>
-						</div>
-					</div>
-
-					{usesObservability && (
-						<div className="form-group">
-							<label className="question" htmlFor="observabilityTool">
-								Which observability tool do you currently use?
-							</label>
-							<div className="two-column-grid">
-								{Object.keys(observabilityTools).map((tool) => (
-									<Button
-										key={tool}
-										type="primary"
-										className={`onboarding-questionaire-button ${
-											observabilityTool === tool ? 'active' : ''
-										}`}
-										onClick={(): void => setObservabilityTool(tool)}
-									>
-										{observabilityTools[tool as keyof typeof observabilityTools]}
-
-										{observabilityTool === tool && (
-											<CheckCircle size={12} color={Color.BG_FOREST_500} />
-										)}
-									</Button>
-								))}
-
-								{observabilityTool === 'Others' ? (
-									<Input
-										type="text"
-										className="onboarding-questionaire-other-input"
-										placeholder="Please specify the tool"
-										value={otherTool || ''}
-										autoFocus
-										addonAfter={
-											otherTool && otherTool !== '' ? (
-												<CheckCircle size={12} color={Color.BG_FOREST_500} />
-											) : (
-												''
-											)
-										}
-										onChange={(e): void => setOtherTool(e.target.value)}
-									/>
-								) : (
-									<button
-										type="button"
-										className={`onboarding-questionaire-button ${
-											observabilityTool === 'Others' ? 'active' : ''
-										}`}
-										onClick={(): void => setObservabilityTool('Others')}
-									>
-										Others
-									</button>
-								)}
-							</div>
-						</div>
-					)}
-
-					<div className="form-group">
-						<div className="question">
-							Are you familiar with setting up observability (o11y)?
-						</div>
-						<div className="two-column-grid">
-							{Object.keys(o11yFamiliarityOptions).map((option: string) => (
-								<Button
-									key={option}
-									type="primary"
-									className={`onboarding-questionaire-button ${
-										familiarity === option ? 'active' : ''
-									}`}
-									onClick={(): void => setFamiliarity(option)}
-								>
-									{o11yFamiliarityOptions[option]}
-									{familiarity === option && (
-										<CheckCircle size={12} color={Color.BG_FOREST_500} />
-									)}
-								</Button>
-							))}
 						</div>
 					</div>
 				</div>

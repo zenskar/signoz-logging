@@ -6,23 +6,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/SigNoz/signoz/pkg/types/thirdpartyapitypes"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/SigNoz/govaluate"
 	"github.com/SigNoz/signoz/pkg/query-service/app/integrations/messagingQueues/kafka"
 	queues2 "github.com/SigNoz/signoz/pkg/query-service/app/integrations/messagingQueues/queues"
-	"github.com/SigNoz/signoz/pkg/query-service/app/integrations/thirdPartyApi"
-
-	"github.com/SigNoz/govaluate"
 	"github.com/gorilla/mux"
 	promModel "github.com/prometheus/common/model"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
+	errorsV2 "github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/query-service/app/metrics"
 	"github.com/SigNoz/signoz/pkg/query-service/app/queryBuilder"
 	"github.com/SigNoz/signoz/pkg/query-service/common"
@@ -483,7 +484,7 @@ func parseAggregateAttributeRequest(r *http.Request) (*v3.AggregateAttributeRequ
 		limit = 50
 	}
 
-	if dataSource != v3.DataSourceMetrics {
+	if dataSource != v3.DataSourceMetrics && dataSource != v3.DataSourceMeter {
 		if err := aggregateOperator.Validate(); err != nil {
 			return nil, err
 		}
@@ -603,7 +604,7 @@ func parseFilterAttributeKeyRequest(r *http.Request) (*v3.FilterAttributeKeyRequ
 		return nil, err
 	}
 
-	if dataSource != v3.DataSourceMetrics {
+	if dataSource != v3.DataSourceMetrics && dataSource != v3.DataSourceMeter {
 		if err := aggregateOperator.Validate(); err != nil {
 			return nil, err
 		}
@@ -882,10 +883,23 @@ func ParseQueryRangeParams(r *http.Request) (*v3.QueryRangeParamsV3, *model.ApiE
 			}
 
 			chTransformQuery(chQuery.Query, queryRangeParams.Variables)
-			for name, value := range queryRangeParams.Variables {
-				chQuery.Query = strings.Replace(chQuery.Query, fmt.Sprintf("{{%s}}", name), fmt.Sprint(value), -1)
-				chQuery.Query = strings.Replace(chQuery.Query, fmt.Sprintf("[[%s]]", name), fmt.Sprint(value), -1)
-				chQuery.Query = strings.Replace(chQuery.Query, fmt.Sprintf("$%s", name), fmt.Sprint(value), -1)
+
+			keys := make([]string, 0, len(queryRangeParams.Variables))
+
+			querytemplate.AssignReservedVarsV3(queryRangeParams)
+
+			for k := range queryRangeParams.Variables {
+				keys = append(keys, k)
+			}
+
+			sort.Slice(keys, func(i, j int) bool {
+				return len(keys[i]) > len(keys[j])
+			})
+
+			for _, k := range keys {
+				chQuery.Query = strings.Replace(chQuery.Query, fmt.Sprintf("{{%s}}", k), fmt.Sprint(queryRangeParams.Variables[k]), -1)
+				chQuery.Query = strings.Replace(chQuery.Query, fmt.Sprintf("[[%s]]", k), fmt.Sprint(queryRangeParams.Variables[k]), -1)
+				chQuery.Query = strings.Replace(chQuery.Query, fmt.Sprintf("$%s", k), fmt.Sprint(queryRangeParams.Variables[k]), -1)
 			}
 
 			tmpl := template.New("clickhouse-query")
@@ -896,7 +910,6 @@ func ParseQueryRangeParams(r *http.Request) (*v3.QueryRangeParamsV3, *model.ApiE
 			var query bytes.Buffer
 
 			// replace go template variables
-			querytemplate.AssignReservedVarsV3(queryRangeParams)
 
 			err = tmpl.Execute(&query, queryRangeParams.Variables)
 			if err != nil {
@@ -913,10 +926,22 @@ func ParseQueryRangeParams(r *http.Request) (*v3.QueryRangeParamsV3, *model.ApiE
 				continue
 			}
 
-			for name, value := range queryRangeParams.Variables {
-				promQuery.Query = strings.Replace(promQuery.Query, fmt.Sprintf("{{%s}}", name), fmt.Sprint(value), -1)
-				promQuery.Query = strings.Replace(promQuery.Query, fmt.Sprintf("[[%s]]", name), fmt.Sprint(value), -1)
-				promQuery.Query = strings.Replace(promQuery.Query, fmt.Sprintf("$%s", name), fmt.Sprint(value), -1)
+			querytemplate.AssignReservedVarsV3(queryRangeParams)
+
+			keys := make([]string, 0, len(queryRangeParams.Variables))
+
+			for k := range queryRangeParams.Variables {
+				keys = append(keys, k)
+			}
+
+			sort.Slice(keys, func(i, j int) bool {
+				return len(keys[i]) > len(keys[j])
+			})
+
+			for _, k := range keys {
+				promQuery.Query = strings.Replace(promQuery.Query, fmt.Sprintf("{{%s}}", k), fmt.Sprint(queryRangeParams.Variables[k]), -1)
+				promQuery.Query = strings.Replace(promQuery.Query, fmt.Sprintf("[[%s]]", k), fmt.Sprint(queryRangeParams.Variables[k]), -1)
+				promQuery.Query = strings.Replace(promQuery.Query, fmt.Sprintf("$%s", k), fmt.Sprint(queryRangeParams.Variables[k]), -1)
 			}
 
 			tmpl := template.New("prometheus-query")
@@ -925,9 +950,6 @@ func ParseQueryRangeParams(r *http.Request) (*v3.QueryRangeParamsV3, *model.ApiE
 				return nil, &model.ApiError{Typ: model.ErrorBadData, Err: err}
 			}
 			var query bytes.Buffer
-
-			// replace go template variables
-			querytemplate.AssignReservedVarsV3(queryRangeParams)
 
 			err = tmpl.Execute(&query, queryRangeParams.Variables)
 			if err != nil {
@@ -959,10 +981,15 @@ func ParseQueueBody(r *http.Request) (*queues2.QueueListRequest, *model.ApiError
 }
 
 // ParseRequestBody for third party APIs
-func ParseRequestBody(r *http.Request) (*thirdPartyApi.ThirdPartyApis, *model.ApiError) {
-	thirdPartApis := new(thirdPartyApi.ThirdPartyApis)
-	if err := json.NewDecoder(r.Body).Decode(thirdPartApis); err != nil {
-		return nil, &model.ApiError{Typ: model.ErrorBadData, Err: fmt.Errorf("cannot parse the request body: %v", err)}
+func ParseRequestBody(r *http.Request) (*thirdpartyapitypes.ThirdPartyApiRequest, error) {
+	req := new(thirdpartyapitypes.ThirdPartyApiRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		return nil, errorsV2.Newf(errorsV2.TypeInvalidInput, errorsV2.CodeInvalidInput, "cannot parse the request body: %v", err)
 	}
-	return thirdPartApis, nil
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }

@@ -1,12 +1,17 @@
+import Convert from 'ansi-to-html';
 import { DataNode } from 'antd/es/tree';
 import { MetricsType } from 'container/MetricsApplication/constant';
+import dompurify from 'dompurify';
 import { uniqueId } from 'lodash-es';
 import { ILog, ILogAggregateAttributesResources } from 'types/api/logs/log';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
+import { FORBID_DOM_PURIFY_TAGS } from 'utils/app';
 
 import BodyTitleRenderer from './BodyTitleRenderer';
 import { typeToArrayTypeMapper } from './config';
 import { AnyObject, IFieldAttributes } from './LogDetailedView.types';
+
+const convertInstance = new Convert();
 
 export const recursiveParseJSON = (obj: string): Record<string, unknown> => {
 	try {
@@ -259,10 +264,28 @@ export const getDataTypes = (value: unknown): DataTypes => {
 	return determineType(value);
 };
 
+// prevent html rendering in the value
+export const escapeHtml = (unsafe: string): string =>
+	unsafe
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+
+// parse field value to remove escaping characters
+export const parseFieldValue = (value: string): string => {
+	try {
+		return JSON.parse(value);
+	} catch (error) {
+		return value;
+	}
+};
+
 // now we do not want to render colors everywhere like in tooltip and monaco editor hence we remove such codes to make
 // the log line readable
 export const removeEscapeCharacters = (str: string): string =>
-	str
+	(str ?? '')
 		.replace(/\\x1[bB][[0-9;]*m/g, '')
 		.replace(/\\u001[bB][[0-9;]*m/g, '')
 		.replace(/\\x[0-9A-Fa-f]{2}/g, '')
@@ -274,7 +297,7 @@ export const removeEscapeCharacters = (str: string): string =>
 //
 // so we need to remove this escapes to render the color properly
 export const unescapeString = (str: string): string =>
-	str
+	(str ?? '')
 		.replace(/\\n/g, '\n') // Replaces escaped newlines
 		.replace(/\\r/g, '\r') // Replaces escaped carriage returns
 		.replace(/\\t/g, '\t') // Replaces escaped tabs
@@ -318,3 +341,21 @@ export function findKeyPath(
 	});
 	return finalPath;
 }
+
+export const getSanitizedLogBody = (
+	text: string,
+	options: { shouldEscapeHtml?: boolean } = {},
+): string => {
+	const { shouldEscapeHtml = false } = options;
+	const escapedText = shouldEscapeHtml ? escapeHtml(text) : text;
+	try {
+		return convertInstance.toHtml(
+			dompurify.sanitize(unescapeString(escapedText), {
+				FORBID_TAGS: [...FORBID_DOM_PURIFY_TAGS],
+			}),
+		);
+	} catch (error) {
+		console.error('Error sanitizing text', error, text);
+		return '{}';
+	}
+};

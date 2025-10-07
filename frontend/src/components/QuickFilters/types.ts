@@ -5,6 +5,7 @@ import { DataSource } from 'types/common/queryBuilder';
 export enum FiltersType {
 	SLIDER = 'SLIDER',
 	CHECKBOX = 'CHECKBOX',
+	DURATION = 'DURATION', // ALIAS FOR DURATION_NANO
 }
 
 export enum MinMax {
@@ -22,6 +23,7 @@ export enum SignalType {
 	LOGS = 'logs',
 	API_MONITORING = 'api_monitoring',
 	EXCEPTIONS = 'exceptions',
+	METER_EXPLORER = 'meter',
 }
 
 export interface IQuickFiltersConfig {
@@ -42,6 +44,8 @@ export interface IQuickFiltersProps {
 	onFilterChange?: (query: Query) => void;
 	signal?: SignalType;
 	className?: string;
+	showFilterCollapse?: boolean;
+	showQueryName?: boolean;
 }
 
 export enum QuickFiltersSource {
@@ -50,4 +54,5 @@ export enum QuickFiltersSource {
 	TRACES_EXPLORER = 'traces-explorer',
 	API_MONITORING = 'api-monitoring',
 	EXCEPTIONS = 'exceptions',
+	METER_EXPLORER = 'meter',
 }

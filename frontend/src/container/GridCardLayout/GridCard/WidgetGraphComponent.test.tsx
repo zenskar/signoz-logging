@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import ROUTES from 'constants/routes';
 import { AppProvider } from 'providers/App/App';
+import { ErrorModalProvider } from 'providers/ErrorModalProvider';
 import MockQueryClientProvider from 'providers/test/MockQueryClientProvider';
 import { Provider } from 'react-redux';
 import store from 'store';
@@ -29,20 +30,6 @@ jest.mock('hooks/useSafeNavigate', () => ({
 	}),
 }));
 
-jest.mock('uplot', () => {
-	const paths = {
-		spline: jest.fn(),
-		bars: jest.fn(),
-	};
-	const uplotMock = jest.fn(() => ({
-		paths,
-	}));
-	return {
-		paths,
-		default: uplotMock,
-	};
-});
-
 // Mock data
 const mockProps: WidgetGraphComponentProps = {
 	widget: {
@@ -52,7 +39,6 @@ const mockProps: WidgetGraphComponentProps = {
 		description: '',
 		fillSpans: false,
 		id: '17f905f6-d355-46bd-a78e-cbc87e6f58cc',
-		isStacked: false,
 		mergeAllActiveQueries: false,
 		nullZeroValues: 'zero',
 		opacity: '1',
@@ -64,8 +50,6 @@ const mockProps: WidgetGraphComponentProps = {
 						aggregateAttribute: {
 							dataType: DataTypes.String,
 							id: 'span_id--string----true',
-							isColumn: true,
-							isJSON: false,
 							key: 'span_id',
 							type: '',
 						},
@@ -91,6 +75,7 @@ const mockProps: WidgetGraphComponentProps = {
 					},
 				],
 				queryFormulas: [],
+				queryTraceOperator: [],
 			},
 			clickhouse_sql: [
 				{
@@ -189,24 +174,26 @@ describe('WidgetGraphComponent', () => {
 	it('should show correct menu items when hovering over more options while loading', async () => {
 		const { getByTestId, findByRole, getByText, container } = render(
 			<MockQueryClientProvider>
-				<Provider store={store}>
-					<AppProvider>
-						<WidgetGraphComponent
-							widget={mockProps.widget}
-							queryResponse={mockProps.queryResponse}
-							errorMessage={mockProps.errorMessage}
-							version={mockProps.version}
-							headerMenuList={mockProps.headerMenuList}
-							isWarning={mockProps.isWarning}
-							isFetchingResponse={mockProps.isFetchingResponse}
-							setRequestData={mockProps.setRequestData}
-							onClickHandler={mockProps.onClickHandler}
-							onDragSelect={mockProps.onDragSelect}
-							openTracesButton={mockProps.openTracesButton}
-							onOpenTraceBtnClick={mockProps.onOpenTraceBtnClick}
-						/>
-					</AppProvider>
-				</Provider>
+				<ErrorModalProvider>
+					<Provider store={store}>
+						<AppProvider>
+							<WidgetGraphComponent
+								widget={mockProps.widget}
+								queryResponse={mockProps.queryResponse}
+								errorMessage={mockProps.errorMessage}
+								version={mockProps.version}
+								headerMenuList={mockProps.headerMenuList}
+								isWarning={mockProps.isWarning}
+								isFetchingResponse={mockProps.isFetchingResponse}
+								setRequestData={mockProps.setRequestData}
+								onClickHandler={mockProps.onClickHandler}
+								onDragSelect={mockProps.onDragSelect}
+								openTracesButton={mockProps.openTracesButton}
+								onOpenTraceBtnClick={mockProps.onOpenTraceBtnClick}
+							/>
+						</AppProvider>
+					</Provider>
+				</ErrorModalProvider>
 			</MockQueryClientProvider>,
 		);
 

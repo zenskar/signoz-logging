@@ -16,8 +16,9 @@ import {
 	Tabs,
 	Typography,
 } from 'antd';
-import updateCreditCardApi from 'api/billing/checkout';
 import logEvent from 'api/common/logEvent';
+import updateCreditCardApi from 'api/v1/checkout/create';
+import RefreshPaymentStatus from 'components/RefreshPaymentStatus/RefreshPaymentStatus';
 import ROUTES from 'constants/routes';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
@@ -26,6 +27,7 @@ import { useAppContext } from 'providers/App/App';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from 'react-query';
+import APIError from 'types/api/error';
 import { LicensePlatform } from 'types/api/licensesV3/getActive';
 import { getFormattedDate } from 'utils/timeUtils';
 
@@ -41,9 +43,9 @@ import {
 export default function WorkspaceBlocked(): JSX.Element {
 	const {
 		user,
-		isFetchingActiveLicenseV3,
+		isFetchingActiveLicense,
 		trialInfo,
-		activeLicenseV3,
+		activeLicense,
 	} = useAppContext();
 	const isAdmin = user.role === 'ADMIN';
 	const { notifications } = useNotifications();
@@ -70,37 +72,38 @@ export default function WorkspaceBlocked(): JSX.Element {
 	};
 
 	useEffect(() => {
-		if (!isFetchingActiveLicenseV3) {
+		if (!isFetchingActiveLicense) {
 			const shouldBlockWorkspace = trialInfo?.workSpaceBlock;
 
 			if (
 				!shouldBlockWorkspace ||
-				activeLicenseV3?.platform === LicensePlatform.SELF_HOSTED
+				activeLicense?.platform === LicensePlatform.SELF_HOSTED
 			) {
 				history.push(ROUTES.HOME);
 			}
 		}
 	}, [
-		isFetchingActiveLicenseV3,
+		isFetchingActiveLicense,
 		trialInfo?.workSpaceBlock,
-		activeLicenseV3?.platform,
+		activeLicense?.platform,
 	]);
 
 	const { mutate: updateCreditCard, isLoading } = useMutation(
 		updateCreditCardApi,
 		{
 			onSuccess: (data) => {
-				if (data.payload?.redirectURL) {
+				if (data.data?.redirectURL) {
 					const newTab = document.createElement('a');
-					newTab.href = data.payload.redirectURL;
+					newTab.href = data.data.redirectURL;
 					newTab.target = '_blank';
 					newTab.rel = 'noopener noreferrer';
 					newTab.click();
 				}
 			},
-			onError: () =>
+			onError: (error: APIError) =>
 				notifications.error({
-					message: t('somethingWentWrong'),
+					message: error.getErrorCode(),
+					description: error.getErrorMessage(),
 				}),
 		},
 	);
@@ -287,26 +290,28 @@ export default function WorkspaceBlocked(): JSX.Element {
 						</span>
 						<span className="workspace-locked__modal__header__actions">
 							{isAdmin && (
-								<Button
-									className="workspace-locked__modal__header__actions__billing"
-									type="link"
-									size="small"
-									role="button"
-									onClick={handleViewBilling}
-								>
-									View Billing
-								</Button>
+								<Flex gap={8} justify="center" align="center">
+									<Button
+										className="workspace-locked__modal__header__actions__billing"
+										type="link"
+										size="small"
+										role="button"
+										onClick={handleViewBilling}
+									>
+										View Billing
+									</Button>
+
+									<RefreshPaymentStatus btnShape="round" />
+								</Flex>
 							)}
 
-							<Typography.Text className="workspace-locked__modal__title">
-								Got Questions?
-							</Typography.Text>
 							<Button
 								type="default"
 								shape="round"
 								size="middle"
 								href="mailto:cloud-support@signoz.io"
 								role="button"
+								className="periscope-btn"
 								onClick={handleContactUsClick}
 							>
 								Contact Us
@@ -320,7 +325,7 @@ export default function WorkspaceBlocked(): JSX.Element {
 				width="65%"
 			>
 				<div className="workspace-locked__container">
-					{isFetchingActiveLicenseV3 || !trialInfo ? (
+					{isFetchingActiveLicense || !trialInfo ? (
 						<Skeleton />
 					) : (
 						<>
@@ -347,7 +352,7 @@ export default function WorkspaceBlocked(): JSX.Element {
 									justify="center"
 									align="middle"
 									className="workspace-locked__modal__cta"
-									gutter={[16, 16]}
+									gutter={[8, 8]}
 								>
 									<Col>
 										<Alert
@@ -358,34 +363,37 @@ export default function WorkspaceBlocked(): JSX.Element {
 								</Row>
 							)}
 							{isAdmin && (
-								<Row
-									justify="center"
-									align="middle"
-									className="workspace-locked__modal__cta"
-									gutter={[16, 16]}
-								>
-									<Col>
-										<Button
-											type="primary"
-											shape="round"
-											size="middle"
-											loading={isLoading}
-											onClick={handleUpdateCreditCard}
-										>
-											Continue my Journey
-										</Button>
-									</Col>
-									<Col>
-										<Button
-											type="default"
-											shape="round"
-											size="middle"
-											onClick={handleExtendTrial}
-										>
-											{t('needMoreTime')}
-										</Button>
-									</Col>
-								</Row>
+								<Flex gap={8} vertical justify="center" align="center">
+									<Row
+										justify="center"
+										align="middle"
+										className="workspace-locked__modal__cta"
+										gutter={[8, 8]}
+									>
+										<Col>
+											<Button
+												type="primary"
+												shape="round"
+												size="middle"
+												loading={isLoading}
+												onClick={handleUpdateCreditCard}
+											>
+												Continue my Journey
+											</Button>
+										</Col>
+										<Col>
+											<Button
+												type="default"
+												shape="round"
+												size="middle"
+												className="periscope-btn"
+												onClick={handleExtendTrial}
+											>
+												{t('needMoreTime')}
+											</Button>
+										</Col>
+									</Row>
+								</Flex>
 							)}
 
 							<div className="workspace-locked__tabs">

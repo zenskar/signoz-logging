@@ -1,9 +1,12 @@
 .span-details-drawer {
 	display: flex;
 	flex-direction: column;
-	width: 330px;
+	height: calc(100vh - 44px); //44px -> trace details top bar
 	border-left: 1px solid var(--bg-slate-400);
-	overflow-y: auto;
+	overflow-y: auto !important;
+	&:not(&-docked) {
+		min-width: 450px;
+	}
 
 	&::-webkit-scrollbar {
 		width: 0.1rem;
@@ -124,24 +127,6 @@
 		}
 	}
 
-	.related-logs {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: fit-content;
-		padding: 5px 12px;
-		margin: 10px 12px;
-		box-shadow: none;
-
-		color: var(--bg-vanilla-400);
-		font-family: Inter;
-		font-size: 14px;
-		font-style: normal;
-		font-weight: 400;
-		line-height: 20px; /* 142.857% */
-		letter-spacing: -0.07px;
-	}
-
 	.attributes-events {
 		.details-drawer-tabs {
 			.ant-tabs-extra-content {
@@ -158,20 +143,57 @@
 				border-bottom: 1px solid var(--bg-slate-400) !important;
 			}
 
-			.attributes-tab-btn {
+			.ant-tabs-tab {
+				margin: 0 !important;
+				padding: 0 2px !important;
+				min-width: 36px;
+				height: 36px;
 				display: flex;
 				align-items: center;
-			}
-			.attributes-tab-btn:hover {
-				background: unset;
+				justify-content: center;
 			}
 
-			.events-tab-btn {
+			.attributes-tab-btn,
+			.events-tab-btn,
+			.linked-spans-tab-btn {
 				display: flex;
 				align-items: center;
+				justify-content: center;
+				width: 100%;
+				padding: 4px 8px;
+				margin-right: 8px;
+				gap: 4px;
+
+				.tab-label {
+					display: flex;
+					align-items: center;
+				}
+
+				.count-badge {
+					display: flex;
+					align-items: center;
+					justify-content: center;
+					min-width: 20px;
+					height: 20px;
+					padding: 0 6px;
+					border-radius: 10px;
+					background: rgba(171, 189, 255, 0.1);
+					color: var(--bg-vanilla-400);
+					font-variant-numeric: lining-nums tabular-nums slashed-zero;
+					font-feature-settings: 'dlig' on, 'salt' on;
+					font-family: Inter;
+					font-size: 13px;
+					font-style: normal;
+					font-weight: 400;
+					line-height: 20px;
+					letter-spacing: -0.065px;
+					text-transform: uppercase;
+				}
 			}
 
-			.events-tab-btn:hover {
+			.attributes-tab-btn:hover,
+			.events-tab-btn:hover,
+			.linked-spans-tab-btn:hover {
 				background: unset;
 			}
 		}
@@ -180,9 +202,19 @@
 
 .span-details-drawer-docked {
 	width: 48px;
+	flex: 0 48px !important;
 
 	.header {
 		justify-content: center;
+	}
+}
+.resizable-handle {
+	box-sizing: border-box;
+	border: 2px solid transparent;
+	&:hover,
+	&[data-resize-handle-state='drag'],
+	&[data-resize-handle-state='hover'] {
+		border-color: rgba(35, 196, 248, 0.2);
 	}
 }
 
@@ -231,10 +263,6 @@
 			}
 		}
 
-		.related-logs {
-			color: var(--bg-ink-400);
-		}
-
 		.attributes-events {
 			.details-drawer-tabs {
 				.ant-tabs-nav::before {
@@ -260,4 +288,10 @@
 			}
 		}
 	}
+}
+
+.linked-spans-tab-btn {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
 }

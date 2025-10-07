@@ -3,38 +3,59 @@ package querybuilder
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	chparser "github.com/AfterShip/clickhouse-sql-parser/parser"
 	"github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/factory"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
 	"github.com/huandu/go-sqlbuilder"
 )
 
-type AggExprRewriterOptions struct {
-	FieldKeys        map[string][]*telemetrytypes.TelemetryFieldKey
-	FullTextColumn   *telemetrytypes.TelemetryFieldKey
-	FieldMapper      qbtypes.FieldMapper
-	ConditionBuilder qbtypes.ConditionBuilder
-	JsonBodyPrefix   string
-	JsonKeyToKey     qbtypes.JsonKeyToFieldFunc
-	RateInterval     uint64
-}
-
 type aggExprRewriter struct {
-	opts AggExprRewriterOptions
+	logger           *slog.Logger
+	fullTextColumn   *telemetrytypes.TelemetryFieldKey
+	fieldMapper      qbtypes.FieldMapper
+	conditionBuilder qbtypes.ConditionBuilder
+	jsonBodyPrefix   string
+	jsonKeyToKey     qbtypes.JsonKeyToFieldFunc
 }
 
-func NewAggExprRewriter(opts AggExprRewriterOptions) *aggExprRewriter {
-	return &aggExprRewriter{opts: opts}
+var _ qbtypes.AggExprRewriter = (*aggExprRewriter)(nil)
+
+func NewAggExprRewriter(
+	settings factory.ProviderSettings,
+	fullTextColumn *telemetrytypes.TelemetryFieldKey,
+	fieldMapper qbtypes.FieldMapper,
+	conditionBuilder qbtypes.ConditionBuilder,
+	jsonBodyPrefix string,
+	jsonKeyToKey qbtypes.JsonKeyToFieldFunc,
+) *aggExprRewriter {
+	set := factory.NewScopedProviderSettings(settings, "github.com/SigNoz/signoz/pkg/querybuilder/agg_rewrite")
+
+	return &aggExprRewriter{
+		logger:           set.Logger(),
+		fullTextColumn:   fullTextColumn,
+		fieldMapper:      fieldMapper,
+		conditionBuilder: conditionBuilder,
+		jsonBodyPrefix:   jsonBodyPrefix,
+		jsonKeyToKey:     jsonKeyToKey,
+	}
 }
 
 // Rewrite parses the given aggregation expression, maps the column, and condition to
 // valid data source column and condition expression, and returns the rewritten expression
 // and the args if the parametric aggregation function is used.
-func (r *aggExprRewriter) Rewrite(expr string) (string, []any, error) {
+func (r *aggExprRewriter) Rewrite(
+	ctx context.Context,
+	expr string,
+	rateInterval uint64,
+	keys map[string][]*telemetrytypes.TelemetryFieldKey,
+) (string, []any, error) {
+
 	wrapped := fmt.Sprintf("SELECT %s", expr)
 	p := chparser.NewParser(wrapped)
 	stmts, err := p.ParseStmts()
@@ -56,37 +77,36 @@ func (r *aggExprRewriter) Rewrite(expr string) (string, []any, error) {
 		return "", nil, errors.NewInternalf(errors.CodeInternal, "no SELECT items for %q", expr)
 	}
 
-	visitor := newExprVisitor(r.opts.FieldKeys,
-		r.opts.FullTextColumn,
-		r.opts.FieldMapper,
-		r.opts.ConditionBuilder,
-		r.opts.JsonBodyPrefix,
-		r.opts.JsonKeyToKey,
+	visitor := newExprVisitor(r.logger, keys,
+		r.fullTextColumn,
+		r.fieldMapper,
+		r.conditionBuilder,
+		r.jsonBodyPrefix,
+		r.jsonKeyToKey,
 	)
 	// Rewrite the first select item (our expression)
 	if err := sel.SelectItems[0].Accept(visitor); err != nil {
 		return "", nil, err
 	}
-	// If nothing changed, return original
-	if !visitor.Modified {
-		return expr, nil, nil
-	}
 
 	if visitor.isRate {
-		return fmt.Sprintf("%s/%d", sel.SelectItems[0].String(), r.opts.RateInterval), visitor.chArgs, nil
+		return fmt.Sprintf("%s/%d", sel.SelectItems[0].String(), rateInterval), visitor.chArgs, nil
 	}
 	return sel.SelectItems[0].String(), visitor.chArgs, nil
 }
 
-// RewriteMultiple rewrites a slice of expressions.
-func (r *aggExprRewriter) RewriteMultiple(
+// RewriteMulti rewrites a slice of expressions.
+func (r *aggExprRewriter) RewriteMulti(
+	ctx context.Context,
 	exprs []string,
+	rateInterval uint64,
+	keys map[string][]*telemetrytypes.TelemetryFieldKey,
 ) ([]string, [][]any, error) {
 	out := make([]string, len(exprs))
 	var errs []error
 	var chArgsList [][]any
 	for i, e := range exprs {
-		w, chArgs, err := r.Rewrite(e)
+		w, chArgs, err := r.Rewrite(ctx, e, rateInterval, keys)
 		if err != nil {
 			errs = append(errs, err)
 			out[i] = e
@@ -104,6 +124,7 @@ func (r *aggExprRewriter) RewriteMultiple(
 // exprVisitor walks FunctionExpr nodes and applies the mappers.
 type exprVisitor struct {
 	chparser.DefaultASTVisitor
+	logger           *slog.Logger
 	fieldKeys        map[string][]*telemetrytypes.TelemetryFieldKey
 	fullTextColumn   *telemetrytypes.TelemetryFieldKey
 	fieldMapper      qbtypes.FieldMapper
@@ -116,6 +137,7 @@ type exprVisitor struct {
 }
 
 func newExprVisitor(
+	logger *slog.Logger,
 	fieldKeys map[string][]*telemetrytypes.TelemetryFieldKey,
 	fullTextColumn *telemetrytypes.TelemetryFieldKey,
 	fieldMapper qbtypes.FieldMapper,
@@ -124,6 +146,7 @@ func newExprVisitor(
 	jsonKeyToKey qbtypes.JsonKeyToFieldFunc,
 ) *exprVisitor {
 	return &exprVisitor{
+		logger:           logger,
 		fieldKeys:        fieldKeys,
 		fullTextColumn:   fullTextColumn,
 		fieldMapper:      fieldMapper,
@@ -139,7 +162,7 @@ func (v *exprVisitor) VisitFunctionExpr(fn *chparser.FunctionExpr) error {
 
 	aggFunc, ok := AggreFuncMap[valuer.NewString(name)]
 	if !ok {
-		return nil
+		return errors.NewInvalidInputf(errors.CodeInvalidInput, "unrecognized function: %s", name)
 	}
 
 	var args []chparser.Expr
@@ -158,13 +181,19 @@ func (v *exprVisitor) VisitFunctionExpr(fn *chparser.FunctionExpr) error {
 		v.isRate = true
 	}
 
+	dataType := telemetrytypes.FieldDataTypeString
+	if aggFunc.Numeric {
+		dataType = telemetrytypes.FieldDataTypeFloat64
+	}
+
 	// Handle *If functions with predicate + values
 	if aggFunc.FuncCombinator {
 		// Map the predicate (last argument)
 		origPred := args[len(args)-1].String()
-		whereClause, _, err := PrepareWhereClause(
+		whereClause, err := PrepareWhereClause(
 			origPred,
 			FilterExprVisitorOpts{
+				Logger:           v.logger,
 				FieldKeys:        v.fieldKeys,
 				FieldMapper:      v.fieldMapper,
 				ConditionBuilder: v.conditionBuilder,
@@ -177,7 +206,7 @@ func (v *exprVisitor) VisitFunctionExpr(fn *chparser.FunctionExpr) error {
 			return err
 		}
 
-		newPred, chArgs := whereClause.BuildWithFlavor(sqlbuilder.ClickHouse)
+		newPred, chArgs := whereClause.WhereClause.BuildWithFlavor(sqlbuilder.ClickHouse)
 		newPred = strings.TrimPrefix(newPred, "WHERE")
 		parsedPred, err := parseFragment(newPred)
 		if err != nil {
@@ -190,11 +219,13 @@ func (v *exprVisitor) VisitFunctionExpr(fn *chparser.FunctionExpr) error {
 		// Map each value column argument
 		for i := 0; i < len(args)-1; i++ {
 			origVal := args[i].String()
-			colName, err := v.fieldMapper.ColumnExpressionFor(context.Background(), &telemetrytypes.TelemetryFieldKey{Name: origVal}, v.fieldKeys)
+			fieldKey := telemetrytypes.GetFieldKeyFromKeyText(origVal)
+			expr, exprArgs, err := CollisionHandledFinalExpr(context.Background(), &fieldKey, v.fieldMapper, v.conditionBuilder, v.fieldKeys, dataType, v.jsonBodyPrefix, v.jsonKeyToKey)
 			if err != nil {
 				return errors.WrapInvalidInputf(err, errors.CodeInvalidInput, "failed to get table field name for %q", origVal)
 			}
-			newVal := colName
+			v.chArgs = append(v.chArgs, exprArgs...)
+			newVal := expr
 			parsedVal, err := parseFragment(newVal)
 			if err != nil {
 				return err
@@ -206,11 +237,13 @@ func (v *exprVisitor) VisitFunctionExpr(fn *chparser.FunctionExpr) error {
 		// Non-If functions: map every argument as a column/value
 		for i, arg := range args {
 			orig := arg.String()
-			colName, err := v.fieldMapper.ColumnExpressionFor(context.Background(), &telemetrytypes.TelemetryFieldKey{Name: orig}, v.fieldKeys)
+			fieldKey := telemetrytypes.GetFieldKeyFromKeyText(orig)
+			expr, exprArgs, err := CollisionHandledFinalExpr(context.Background(), &fieldKey, v.fieldMapper, v.conditionBuilder, v.fieldKeys, dataType, v.jsonBodyPrefix, v.jsonKeyToKey)
 			if err != nil {
-				return errors.WrapInvalidInputf(err, errors.CodeInvalidInput, "failed to get table field name for %q", orig)
+				return err
 			}
-			newCol := colName
+			v.chArgs = append(v.chArgs, exprArgs...)
+			newCol := expr
 			parsed, err := parseFragment(newCol)
 			if err != nil {
 				return err

@@ -15,6 +15,7 @@ import {
 	CustomTimeType,
 	Time,
 } from 'container/TopNav/DateTimeSelectionV2/config';
+import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import { useResizeObserver } from 'hooks/useDimensions';
 import {
@@ -23,11 +24,15 @@ import {
 } from 'lib/dashboard/getQueryResults';
 import { getUPlotChartOptions } from 'lib/uPlotLib/getUplotChartOptions';
 import { getUPlotChartData } from 'lib/uPlotLib/utils/getUplotChartData';
-import { useMemo, useRef } from 'react';
-import { useQueries, UseQueryResult } from 'react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { QueryFunctionContext, useQueries, UseQueryResult } from 'react-query';
 import { SuccessResponse } from 'types/api';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
 import { Options } from 'uplot';
+
+import { FeatureKeys } from '../../../../constants/features';
+import { useMultiIntersectionObserver } from '../../../../hooks/useMultiIntersectionObserver';
+import { useAppContext } from '../../../../providers/App/App';
 
 interface EntityMetricsProps<T> {
 	timeRange: {
@@ -49,6 +54,7 @@ interface EntityMetricsProps<T> {
 		node: T,
 		start: number,
 		end: number,
+		dotMetricsEnabled: boolean,
 	) => GetQueryResultsProps[];
 	queryKey: string;
 	category: K8sCategory;
@@ -65,23 +71,50 @@ function EntityMetrics<T>({
 	queryKey,
 	category,
 }: EntityMetricsProps<T>): JSX.Element {
+	const { featureFlags } = useAppContext();
+	const dotMetricsEnabled =
+		featureFlags?.find((flag) => flag.name === FeatureKeys.DOT_METRICS_ENABLED)
+			?.active || false;
+
+	const {
+		visibilities,
+		setElement,
+	} = useMultiIntersectionObserver(entityWidgetInfo.length, { threshold: 0.1 });
+
 	const queryPayloads = useMemo(
-		() => getEntityQueryPayload(entity, timeRange.startTime, timeRange.endTime),
-		[getEntityQueryPayload, entity, timeRange.startTime, timeRange.endTime],
+		() =>
+			getEntityQueryPayload(
+				entity,
+				timeRange.startTime,
+				timeRange.endTime,
+				dotMetricsEnabled,
+			),
+		[
+			getEntityQueryPayload,
+			entity,
+			timeRange.startTime,
+			timeRange.endTime,
+			dotMetricsEnabled,
+		],
 	);
 
 	const queries = useQueries(
-		queryPayloads.map((payload) => ({
+		queryPayloads.map((payload, index) => ({
 			queryKey: [queryKey, payload, ENTITY_VERSION_V4, category],
-			queryFn: (): Promise<SuccessResponse<MetricRangePayloadProps>> =>
-				GetMetricQueryRange(payload, ENTITY_VERSION_V4),
-			enabled: !!payload,
+			queryFn: ({
+				signal,
+			}: QueryFunctionContext): Promise<
+				SuccessResponse<MetricRangePayloadProps>
+			> => GetMetricQueryRange(payload, ENTITY_VERSION_V4, undefined, signal),
+			enabled: !!payload && visibilities[index],
+			keepPreviousData: true,
 		})),
 	);
 
 	const isDarkMode = useIsDarkMode();
 	const graphRef = useRef<HTMLDivElement>(null);
 	const dimensions = useResizeObserver(graphRef);
+	const { currentQuery } = useQueryBuilder();
 
 	const chartData = useMemo(
 		() =>
@@ -92,6 +125,45 @@ function EntityMetrics<T>({
 					: getUPlotChartData(data?.payload);
 			}),
 		[queries],
+	);
+
+	const [graphTimeIntervals, setGraphTimeIntervals] = useState<
+		{
+			start: number;
+			end: number;
+		}[]
+	>(
+		new Array(queries.length).fill({
+			start: timeRange.startTime,
+			end: timeRange.endTime,
+		}),
+	);
+
+	useEffect(() => {
+		setGraphTimeIntervals(
+			new Array(queries.length).fill({
+				start: timeRange.startTime,
+				end: timeRange.endTime,
+			}),
+		);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [timeRange]);
+
+	const onDragSelect = useCallback(
+		(start: number, end: number, graphIndex: number) => {
+			const startTimestamp = Math.trunc(start);
+			const endTimestamp = Math.trunc(end);
+
+			setGraphTimeIntervals((prev) => {
+				const newIntervals = [...prev];
+				newIntervals[graphIndex] = {
+					start: Math.floor(startTimestamp / 1000),
+					end: Math.floor(endTimestamp / 1000),
+				};
+				return newIntervals;
+			});
+		},
+		[],
 	);
 
 	const options = useMemo(
@@ -108,8 +180,10 @@ function EntityMetrics<T>({
 					yAxisUnit: entityWidgetInfo[idx].yAxisUnit,
 					softMax: null,
 					softMin: null,
-					minTimeScale: timeRange.startTime,
-					maxTimeScale: timeRange.endTime,
+					minTimeScale: graphTimeIntervals[idx].start,
+					maxTimeScale: graphTimeIntervals[idx].end,
+					onDragSelect: (start, end) => onDragSelect(start, end, idx),
+					query: currentQuery,
 				});
 			}),
 		[
@@ -117,8 +191,9 @@ function EntityMetrics<T>({
 			isDarkMode,
 			dimensions,
 			entityWidgetInfo,
-			timeRange.startTime,
-			timeRange.endTime,
+			graphTimeIntervals,
+			onDragSelect,
+			currentQuery,
 		],
 	);
 
@@ -126,7 +201,7 @@ function EntityMetrics<T>({
 		query: UseQueryResult<SuccessResponse<MetricRangePayloadProps>, unknown>,
 		idx: number,
 	): JSX.Element => {
-		if (query.isLoading) {
+		if ((!query.data && query.isLoading) || !visibilities[idx]) {
 			return <Skeleton />;
 		}
 
@@ -136,7 +211,7 @@ function EntityMetrics<T>({
 			return <div>{errorMessage}</div>;
 		}
 
-		const { panelType } = (query.data?.params as any).compositeQuery;
+		const panelType = (query.data?.params as any)?.compositeQuery?.panelType;
 
 		return (
 			<div
@@ -162,7 +237,7 @@ function EntityMetrics<T>({
 			<div className="metrics-header">
 				<div className="metrics-datetime-section">
 					<DateTimeSelectionV2
-						showAutoRefresh={false}
+						showAutoRefresh
 						showRefreshText={false}
 						hideShareModal
 						onTimeChange={handleTimeChange}
@@ -174,7 +249,7 @@ function EntityMetrics<T>({
 			</div>
 			<Row gutter={24} className="entity-metrics-container">
 				{queries.map((query, idx) => (
-					<Col span={12} key={entityWidgetInfo[idx].title}>
+					<Col ref={setElement(idx)} span={12} key={entityWidgetInfo[idx].title}>
 						<Typography.Text>{entityWidgetInfo[idx].title}</Typography.Text>
 						<Card bordered className="entity-metrics-card" ref={graphRef}>
 							{renderCardContent(query, idx)}

@@ -172,6 +172,13 @@
 			.ant-table-cell:nth-child(n + 3) {
 				padding-right: 24px;
 			}
+			.memory-usage-header {
+				display: flex;
+				align-items: center;
+				justify-content: flex-end;
+				gap: 4px;
+				margin-right: 4px;
+			}
 			.column-header-right {
 				text-align: right;
 			}
@@ -201,7 +208,7 @@
 			padding: 16px;
 			margin: 0;
 
-			// this is to offset intercom icon till we improve the design
+			// this is to offset chat support icon till we improve the design
 			right: 20px;
 
 			.ant-pagination-item {

@@ -1,24 +1,29 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 
+	"github.com/SigNoz/signoz/pkg/sharder"
+	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
-	"go.uber.org/zap"
+	"github.com/SigNoz/signoz/pkg/types/ctxtypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
+)
+
+const (
+	authCrossOrgMessage string = "::AUTH-CROSS-ORG::"
 )
 
 type Auth struct {
-	logger  *zap.Logger
 	jwt     *authtypes.JWT
 	headers []string
+	sharder sharder.Sharder
+	logger  *slog.Logger
 }
 
-func NewAuth(logger *zap.Logger, jwt *authtypes.JWT, headers []string) *Auth {
-	if logger == nil {
-		panic("cannot build auth middleware, logger is empty")
-	}
-
-	return &Auth{logger: logger, jwt: jwt, headers: headers}
+func NewAuth(jwt *authtypes.JWT, headers []string, sharder sharder.Sharder, logger *slog.Logger) *Auth {
+	return &Auth{jwt: jwt, headers: headers, sharder: sharder, logger: logger}
 }
 
 func (a *Auth) Wrap(next http.Handler) http.Handler {
@@ -34,7 +39,26 @@ func (a *Auth) Wrap(next http.Handler) http.Handler {
 			return
 		}
 
-		r = r.WithContext(ctx)
+		claims, err := authtypes.ClaimsFromContext(ctx)
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if err := a.sharder.IsMyOwnedKey(r.Context(), types.NewOrganizationKey(valuer.MustNewUUID(claims.OrgID))); err != nil {
+			a.logger.ErrorContext(r.Context(), authCrossOrgMessage, "claims", claims, "error", err)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		ctx = ctxtypes.SetAuthType(ctx, ctxtypes.AuthTypeJWT)
+
+		comment := ctxtypes.CommentFromContext(ctx)
+		comment.Set("auth_type", ctxtypes.AuthTypeJWT.StringValue())
+		comment.Set("user_id", claims.UserID)
+		comment.Set("org_id", claims.OrgID)
+
+		r = r.WithContext(ctxtypes.NewContextWithComment(ctx, comment))
 
 		next.ServeHTTP(w, r)
 	})

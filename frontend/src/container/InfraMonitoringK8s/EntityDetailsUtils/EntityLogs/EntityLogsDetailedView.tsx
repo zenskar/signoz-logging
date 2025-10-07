@@ -1,5 +1,6 @@
 import './entityLogs.styles.scss';
 
+import { VIEWS } from 'components/HostMetricsDetail/constants';
 import { K8sCategory } from 'container/InfraMonitoringK8s/constants';
 import QueryBuilderSearch from 'container/QueryBuilder/filters/QueryBuilderSearch';
 import DateTimeSelectionV2 from 'container/TopNav/DateTimeSelectionV2';
@@ -25,7 +26,7 @@ interface Props {
 		interval: Time | CustomTimeType,
 		dateTimeRange?: [number, number],
 	) => void;
-	handleChangeLogFilters: (value: IBuilderQuery['filters']) => void;
+	handleChangeLogFilters: (value: IBuilderQuery['filters'], view: VIEWS) => void;
 	logFilters: IBuilderQuery['filters'];
 	selectedInterval: Time;
 	queryKey: string;
@@ -59,14 +60,14 @@ function EntityLogsDetailedView({
 							...currentQuery.builder.queryData[0].aggregateAttribute,
 						},
 						filters: {
-							items: filterOutPrimaryFilters(logFilters.items, queryKeyFilters),
+							items: filterOutPrimaryFilters(logFilters?.items || [], queryKeyFilters),
 							op: 'AND',
 						},
 					},
 				],
 			},
 		}),
-		[currentQuery, logFilters.items, queryKeyFilters],
+		[currentQuery, logFilters?.items, queryKeyFilters],
 	);
 
 	const query = updatedCurrentQuery?.builder?.queryData[0] || null;
@@ -77,15 +78,15 @@ function EntityLogsDetailedView({
 				<div className="filter-section">
 					{query && (
 						<QueryBuilderSearch
-							query={query}
-							onChange={handleChangeLogFilters}
+							query={query as IBuilderQuery}
+							onChange={(value): void => handleChangeLogFilters(value, VIEWS.LOGS)}
 							disableNavigationShortcuts
 						/>
 					)}
 				</div>
 				<div className="datetime-section">
 					<DateTimeSelectionV2
-						showAutoRefresh={false}
+						showAutoRefresh
 						showRefreshText={false}
 						hideShareModal
 						isModalTimeSelection={isModalTimeSelection}
@@ -97,7 +98,6 @@ function EntityLogsDetailedView({
 			</div>
 			<EntityLogs
 				timeRange={timeRange}
-				handleChangeLogFilters={handleChangeLogFilters}
 				filters={logFilters}
 				queryKey={queryKey}
 				category={category}

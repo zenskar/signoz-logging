@@ -1,8 +1,10 @@
 import { Form, Row } from 'antd';
 import logEvent from 'api/common/logEvent';
-import { ENTITY_VERSION_V4 } from 'constants/app';
+import { ENTITY_VERSION_V5 } from 'constants/app';
 import { QueryParams } from 'constants/query';
+import CreateAlertV2 from 'container/CreateAlertV2';
 import FormAlertRules, { AlertDetectionTypes } from 'container/FormAlertRules';
+import { ThresholdProps } from 'container/NewWidget/RightContainer/Threshold/types';
 import { useGetCompositeQueryParam } from 'hooks/queryBuilder/useGetCompositeQueryParam';
 import history from 'lib/history';
 import { useEffect, useState } from 'react';
@@ -31,6 +33,12 @@ function CreateRules(): JSX.Element {
 		alertTypeFromURL === AlertDetectionTypes.ANOMALY_DETECTION_ALERT
 			? AlertTypes.ANOMALY_BASED_ALERT
 			: queryParams.get(QueryParams.alertType);
+
+	const { thresholds } = (location.state as {
+		thresholds: ThresholdProps[];
+	}) || {
+		thresholds: null,
+	};
 
 	const compositeQuery = useGetCompositeQueryParam();
 	function getAlertTypeFromDataSource(): AlertTypes | null {
@@ -64,14 +72,14 @@ function CreateRules(): JSX.Element {
 			case AlertTypes.ANOMALY_BASED_ALERT:
 				setInitValues({
 					...anamolyAlertDefaults,
-					version: version || ENTITY_VERSION_V4,
+					version: version || ENTITY_VERSION_V5,
 					ruleType: AlertDetectionTypes.ANOMALY_DETECTION_ALERT,
 				});
 				break;
 			default:
 				setInitValues({
 					...alertDefaults,
-					version: version || ENTITY_VERSION_V4,
+					version: version || ENTITY_VERSION_V5,
 					ruleType: AlertDetectionTypes.THRESHOLD_ALERT,
 				});
 		}
@@ -96,7 +104,9 @@ function CreateRules(): JSX.Element {
 		}
 
 		const generatedUrl = `${location.pathname}?${queryParams.toString()}`;
-		history.replace(generatedUrl);
+		history.replace(generatedUrl, {
+			thresholds,
+		});
 	};
 
 	useEffect(() => {
@@ -114,6 +124,16 @@ function CreateRules(): JSX.Element {
 				<SelectAlertType onSelect={onSelectType} />
 			</Row>
 		);
+	}
+
+	const showNewCreateAlertsPageFlag =
+		queryParams.get('showNewCreateAlertsPage') === 'true';
+
+	if (
+		showNewCreateAlertsPageFlag &&
+		alertType !== AlertTypes.ANOMALY_BASED_ALERT
+	) {
+		return <CreateAlertV2 alertType={alertType} />;
 	}
 
 	return (

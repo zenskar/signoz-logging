@@ -24,13 +24,18 @@ import { useQueryOperations } from 'hooks/queryBuilder/useQueryBuilderOperations
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { AppState } from 'store/reducers';
 import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
 import { GlobalReducer } from 'types/reducer/globalTime';
 
+import { FeatureKeys } from '../../../constants/features';
+import { useAppContext } from '../../../providers/App/App';
+import { getOrderByFromParams } from '../commonUtils';
 import {
+	GetK8sEntityToAggregateAttribute,
+	INFRA_MONITORING_K8S_PARAMS_KEYS,
 	K8sCategory,
-	K8sEntityToAggregateAttributeMapping,
 } from '../constants';
 import K8sHeader from '../K8sHeader';
 import LoadingContainer from '../LoadingContainer';
@@ -58,22 +63,54 @@ function K8sDaemonSetsList({
 		(state) => state.globalTime,
 	);
 
-	const [currentPage, setCurrentPage] = useState(1);
+	const [searchParams, setSearchParams] = useSearchParams();
 
+	const [currentPage, setCurrentPage] = useState(() => {
+		const page = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.CURRENT_PAGE);
+		if (page) {
+			return parseInt(page, 10);
+		}
+		return 1;
+	});
+	const [filtersInitialised, setFiltersInitialised] = useState(false);
 	const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
+
+	useEffect(() => {
+		setSearchParams({
+			...Object.fromEntries(searchParams.entries()),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.CURRENT_PAGE]: currentPage.toString(),
+		});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [currentPage]);
 
 	const [orderBy, setOrderBy] = useState<{
 		columnName: string;
 		order: 'asc' | 'desc';
-	} | null>(null);
+	} | null>(() => getOrderByFromParams(searchParams, true));
 
-	const [selectedDaemonSetUID, setselectedDaemonSetUID] = useState<
+	const [selectedDaemonSetUID, setSelectedDaemonSetUID] = useState<
 		string | null
-	>(null);
+	>(() => {
+		const daemonSetUID = searchParams.get(
+			INFRA_MONITORING_K8S_PARAMS_KEYS.DAEMONSET_UID,
+		);
+		if (daemonSetUID) {
+			return daemonSetUID;
+		}
+		return null;
+	});
 
 	const { pageSize, setPageSize } = usePageSize(K8sCategory.DAEMONSETS);
 
-	const [groupBy, setGroupBy] = useState<IBuilderQuery['groupBy']>([]);
+	const [groupBy, setGroupBy] = useState<IBuilderQuery['groupBy']>(() => {
+		const groupBy = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.GROUP_BY);
+		if (groupBy) {
+			const decoded = decodeURIComponent(groupBy);
+			const parsed = JSON.parse(decoded);
+			return parsed as IBuilderQuery['groupBy'];
+		}
+		return [];
+	});
 
 	const [
 		selectedRowData,
@@ -97,8 +134,15 @@ function K8sDaemonSetsList({
 
 	// Reset pagination every time quick filters are changed
 	useEffect(() => {
-		setCurrentPage(1);
+		if (quickFiltersLastUpdated !== -1) {
+			setCurrentPage(1);
+		}
 	}, [quickFiltersLastUpdated]);
+
+	const { featureFlags } = useAppContext();
+	const dotMetricsEnabled =
+		featureFlags?.find((flag) => flag.name === FeatureKeys.DOT_METRICS_ENABLED)
+			?.active || false;
 
 	const createFiltersForSelectedRowData = (
 		selectedRowData: K8sDaemonSetsRowData,
@@ -147,6 +191,32 @@ function K8sDaemonSetsList({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [minTime, maxTime, orderBy, selectedRowData, groupBy]);
 
+	const groupedByRowDataQueryKey = useMemo(() => {
+		if (selectedDaemonSetUID) {
+			return [
+				'daemonSetList',
+				JSON.stringify(queryFilters),
+				JSON.stringify(orderBy),
+				JSON.stringify(selectedRowData),
+			];
+		}
+		return [
+			'daemonSetList',
+			JSON.stringify(queryFilters),
+			JSON.stringify(orderBy),
+			JSON.stringify(selectedRowData),
+			String(minTime),
+			String(maxTime),
+		];
+	}, [
+		queryFilters,
+		orderBy,
+		selectedDaemonSetUID,
+		minTime,
+		maxTime,
+		selectedRowData,
+	]);
+
 	const {
 		data: groupedByRowData,
 		isFetching: isFetchingGroupedByRowData,
@@ -156,9 +226,11 @@ function K8sDaemonSetsList({
 	} = useGetK8sDaemonSetsList(
 		fetchGroupedByRowDataQuery as K8sDaemonSetsListPayload,
 		{
-			queryKey: ['daemonSetList', fetchGroupedByRowDataQuery],
+			queryKey: groupedByRowDataQueryKey,
 			enabled: !!fetchGroupedByRowDataQuery && !!selectedRowData,
 		},
+		undefined,
+		dotMetricsEnabled,
 	);
 
 	const {
@@ -167,8 +239,10 @@ function K8sDaemonSetsList({
 	} = useGetAggregateKeys(
 		{
 			dataSource: currentQuery.builder.queryData[0].dataSource,
-			aggregateAttribute:
-				K8sEntityToAggregateAttributeMapping[K8sCategory.DAEMONSETS],
+			aggregateAttribute: GetK8sEntityToAggregateAttribute(
+				K8sCategory.DAEMONSETS,
+				dotMetricsEnabled,
+			),
 			aggregateOperator: 'noop',
 			searchText: '',
 			tagType: '',
@@ -203,12 +277,47 @@ function K8sDaemonSetsList({
 		[groupedByRowData, groupBy],
 	);
 
+	const queryKey = useMemo(() => {
+		if (selectedDaemonSetUID) {
+			return [
+				'daemonSetList',
+				String(pageSize),
+				String(currentPage),
+				JSON.stringify(queryFilters),
+				JSON.stringify(orderBy),
+				JSON.stringify(groupBy),
+			];
+		}
+		return [
+			'daemonSetList',
+			String(pageSize),
+			String(currentPage),
+			JSON.stringify(queryFilters),
+			JSON.stringify(orderBy),
+			JSON.stringify(groupBy),
+			String(minTime),
+			String(maxTime),
+		];
+	}, [
+		selectedDaemonSetUID,
+		pageSize,
+		currentPage,
+		queryFilters,
+		orderBy,
+		groupBy,
+		minTime,
+		maxTime,
+	]);
+
 	const { data, isFetching, isLoading, isError } = useGetK8sDaemonSetsList(
 		query as K8sDaemonSetsListPayload,
 		{
-			queryKey: ['daemonSetList', query],
+			queryKey,
 			enabled: !!query,
+			keepPreviousData: true,
 		},
+		undefined,
+		dotMetricsEnabled,
 	);
 
 	const daemonSetsData = useMemo(() => data?.payload?.data?.records || [], [
@@ -262,15 +371,26 @@ function K8sDaemonSetsList({
 			}
 
 			if ('field' in sorter && sorter.order) {
-				setOrderBy({
+				const currentOrderBy = {
 					columnName: sorter.field as string,
-					order: sorter.order === 'ascend' ? 'asc' : 'desc',
+					order: (sorter.order === 'ascend' ? 'asc' : 'desc') as 'asc' | 'desc',
+				};
+				setOrderBy(currentOrderBy);
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.ORDER_BY]: JSON.stringify(
+						currentOrderBy,
+					),
 				});
 			} else {
 				setOrderBy(null);
+				setSearchParams({
+					...Object.fromEntries(searchParams.entries()),
+					[INFRA_MONITORING_K8S_PARAMS_KEYS.ORDER_BY]: JSON.stringify(null),
+				});
 			}
 		},
-		[],
+		[searchParams, setSearchParams],
 	);
 
 	const { handleChangeQueryData } = useQueryOperations({
@@ -282,9 +402,13 @@ function K8sDaemonSetsList({
 	const handleFiltersChange = useCallback(
 		(value: IBuilderQuery['filters']): void => {
 			handleChangeQueryData('filters', value);
-			setCurrentPage(1);
+			if (filtersInitialised) {
+				setCurrentPage(1);
+			} else {
+				setFiltersInitialised(true);
+			}
 
-			if (value.items.length > 0) {
+			if (value?.items && value?.items?.length > 0) {
 				logEvent(InfraMonitoringEvents.FilterApplied, {
 					entity: InfraMonitoringEvents.K8sEntity,
 					page: InfraMonitoringEvents.ListPage,
@@ -292,7 +416,8 @@ function K8sDaemonSetsList({
 				});
 			}
 		},
-		[handleChangeQueryData],
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[],
 	);
 
 	useEffect(() => {
@@ -329,7 +454,11 @@ function K8sDaemonSetsList({
 	const handleRowClick = (record: K8sDaemonSetsRowData): void => {
 		if (groupBy.length === 0) {
 			setSelectedRowData(null);
-			setselectedDaemonSetUID(record.daemonsetUID);
+			setSelectedDaemonSetUID(record.daemonsetUID);
+			setSearchParams({
+				...Object.fromEntries(searchParams.entries()),
+				[INFRA_MONITORING_K8S_PARAMS_KEYS.DAEMONSET_UID]: record.daemonsetUID,
+			});
 		} else {
 			handleGroupByRowClick(record);
 		}
@@ -356,6 +485,11 @@ function K8sDaemonSetsList({
 		setSelectedRowData(null);
 		setGroupBy([]);
 		setOrderBy(null);
+		setSearchParams({
+			...Object.fromEntries(searchParams.entries()),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.GROUP_BY]: JSON.stringify([]),
+			[INFRA_MONITORING_K8S_PARAMS_KEYS.ORDER_BY]: JSON.stringify(null),
+		});
 	};
 
 	const expandedRowRender = (): JSX.Element => (
@@ -380,7 +514,9 @@ function K8sDaemonSetsList({
 						}}
 						showHeader={false}
 						onRow={(record): { onClick: () => void; className: string } => ({
-							onClick: (): void => setselectedDaemonSetUID(record.daemonsetUID),
+							onClick: (): void => {
+								setSelectedDaemonSetUID(record.daemonsetUID);
+							},
 							className: 'expanded-clickable-row',
 						})}
 					/>
@@ -443,7 +579,21 @@ function K8sDaemonSetsList({
 	};
 
 	const handleCloseDaemonSetDetail = (): void => {
-		setselectedDaemonSetUID(null);
+		setSelectedDaemonSetUID(null);
+		setSearchParams({
+			...Object.fromEntries(
+				Array.from(searchParams.entries()).filter(
+					([key]) =>
+						![
+							INFRA_MONITORING_K8S_PARAMS_KEYS.DAEMONSET_UID,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.VIEW,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.TRACES_FILTERS,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.EVENTS_FILTERS,
+							INFRA_MONITORING_K8S_PARAMS_KEYS.LOG_FILTERS,
+						].includes(key),
+				),
+			),
+		});
 	};
 
 	const handleGroupByChange = useCallback(
@@ -464,6 +614,10 @@ function K8sDaemonSetsList({
 
 			setCurrentPage(1);
 			setGroupBy(groupBy);
+			setSearchParams({
+				...Object.fromEntries(searchParams.entries()),
+				[INFRA_MONITORING_K8S_PARAMS_KEYS.GROUP_BY]: JSON.stringify(groupBy),
+			});
 			setExpandedRowKeys([]);
 
 			logEvent(InfraMonitoringEvents.GroupByChanged, {
@@ -472,7 +626,7 @@ function K8sDaemonSetsList({
 				category: InfraMonitoringEvents.DaemonSet,
 			});
 		},
-		[groupByFiltersData],
+		[groupByFiltersData, searchParams, setSearchParams],
 	);
 
 	useEffect(() => {
@@ -496,6 +650,9 @@ function K8sDaemonSetsList({
 		});
 	};
 
+	const showTableLoadingState =
+		(isFetching || isLoading) && formattedDaemonSetsData.length === 0;
+
 	return (
 		<div className="k8s-list">
 			<K8sHeader
@@ -508,6 +665,7 @@ function K8sDaemonSetsList({
 				handleGroupByChange={handleGroupByChange}
 				selectedGroupBy={groupBy}
 				entity={K8sCategory.DAEMONSETS}
+				showAutoRefresh={!selectedDaemonSetData}
 			/>
 			{isError && <Typography>{data?.error || 'Something went wrong'}</Typography>}
 
@@ -515,7 +673,7 @@ function K8sDaemonSetsList({
 				className={classNames('k8s-list-table', 'daemonSets-list-table', {
 					'expanded-daemonsets-list-table': isGroupedByAttribute,
 				})}
-				dataSource={isFetching || isLoading ? [] : formattedDaemonSetsData}
+				dataSource={showTableLoadingState ? [] : formattedDaemonSetsData}
 				columns={columns}
 				pagination={{
 					current: currentPage,
@@ -527,26 +685,25 @@ function K8sDaemonSetsList({
 				}}
 				scroll={{ x: true }}
 				loading={{
-					spinning: isFetching || isLoading,
+					spinning: showTableLoadingState,
 					indicator: <Spin indicator={<LoadingOutlined size={14} spin />} />,
 				}}
 				locale={{
-					emptyText:
-						isFetching || isLoading ? null : (
-							<div className="no-filtered-hosts-message-container">
-								<div className="no-filtered-hosts-message-content">
-									<img
-										src="/Icons/emptyState.svg"
-										alt="thinking-emoji"
-										className="empty-state-svg"
-									/>
+					emptyText: showTableLoadingState ? null : (
+						<div className="no-filtered-hosts-message-container">
+							<div className="no-filtered-hosts-message-content">
+								<img
+									src="/Icons/emptyState.svg"
+									alt="thinking-emoji"
+									className="empty-state-svg"
+								/>
 
-									<Typography.Text className="no-filtered-hosts-message">
-										This query had no results. Edit your query and try again!
-									</Typography.Text>
-								</div>
+								<Typography.Text className="no-filtered-hosts-message">
+									This query had no results. Edit your query and try again!
+								</Typography.Text>
 							</div>
-						),
+						</div>
+					),
 				}}
 				tableLayout="fixed"
 				onChange={handleTableChange}

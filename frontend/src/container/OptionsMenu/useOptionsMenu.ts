@@ -1,23 +1,25 @@
-import getFromLocalstorage from 'api/browser/localstorage/get';
-import setToLocalstorage from 'api/browser/localstorage/set';
-import { getAggregateKeys } from 'api/queryBuilder/getAttributeKeys';
-import { LOCALSTORAGE } from 'constants/localStorage';
+import { getKeySuggestions } from 'api/querySuggestions/getKeySuggestions';
+import { TelemetryFieldKey } from 'api/v5/v5';
+import { AxiosResponse } from 'axios';
 import { LogViewMode } from 'container/LogsTable';
-import { useGetAggregateKeys } from 'hooks/queryBuilder/useGetAggregateKeys';
+import { useGetQueryKeySuggestions } from 'hooks/querySuggestions/useGetQueryKeySuggestions';
 import useDebounce from 'hooks/useDebounce';
 import { useNotifications } from 'hooks/useNotifications';
 import useUrlQueryData from 'hooks/useUrlQueryData';
-import {
-	AllTraceFilterKeys,
-	AllTraceFilterKeyValue,
-} from 'pages/TracesExplorer/Filter/filterUtils';
+import { has } from 'lodash-es';
+import { AllTraceFilterKeyValue } from 'pages/TracesExplorer/Filter/filterUtils';
+import { usePreferenceContext } from 'providers/preferences/context/PreferenceContextProvider';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueries } from 'react-query';
-import { ErrorResponse, SuccessResponse } from 'types/api';
 import {
-	BaseAutocompleteData,
-	IQueryAutocompleteResponse,
-} from 'types/api/queryBuilder/queryAutocompleteResponse';
+	QueryKeyRequestProps,
+	QueryKeySuggestionsResponseProps,
+} from 'types/api/querySuggestions/types';
+import {
+	FieldContext,
+	FieldDataType,
+	SignalType,
+} from 'types/api/v5/queryRange';
 import { DataSource } from 'types/common/queryBuilder';
 
 import {
@@ -35,10 +37,10 @@ import {
 import { getOptionsFromKeys } from './utils';
 
 interface UseOptionsMenuProps {
+	storageKey?: string;
 	dataSource: DataSource;
 	aggregateOperator: string;
 	initialOptions?: InitialOptions;
-	storageKey: LOCALSTORAGE;
 }
 
 interface UseOptionsMenu {
@@ -48,56 +50,49 @@ interface UseOptionsMenu {
 }
 
 const useOptionsMenu = ({
-	storageKey,
 	dataSource,
-	aggregateOperator,
+	// aggregateOperator,
 	initialOptions = {},
 }: UseOptionsMenuProps): UseOptionsMenu => {
 	const { notifications } = useNotifications();
+	const {
+		preferences,
+		updateColumns,
+		updateFormatting,
+	} = usePreferenceContext();
 
 	const [searchText, setSearchText] = useState<string>('');
 	const [isFocused, setIsFocused] = useState<boolean>(false);
 	const debouncedSearchText = useDebounce(searchText, 300);
 
-	const localStorageOptionsQuery = useMemo(
-		() => getFromLocalstorage(storageKey),
-		[storageKey],
-	);
-
-	const initialQueryParams = useMemo(
+	const initialQueryParamsV5: QueryKeyRequestProps = useMemo(
 		() => ({
+			signal: dataSource,
 			searchText: '',
-			aggregateAttribute: '',
-			tagType: undefined,
-			dataSource,
-			aggregateOperator,
 		}),
-		[dataSource, aggregateOperator],
+		[dataSource],
 	);
 
 	const {
 		query: optionsQuery,
-		queryData: optionsQueryData,
 		redirectWithQuery: redirectWithOptionsData,
 	} = useUrlQueryData<OptionsQuery>(URL_OPTIONS, defaultOptionsQuery);
 
-	const initialQueries = useMemo(
+	const initialQueriesV5 = useMemo(
 		() =>
 			initialOptions?.selectColumns?.map((column) => ({
 				queryKey: column,
-				queryFn: (): Promise<
-					SuccessResponse<IQueryAutocompleteResponse> | ErrorResponse
-				> =>
-					getAggregateKeys({
-						...initialQueryParams,
+				queryFn: (): Promise<AxiosResponse<QueryKeySuggestionsResponseProps>> =>
+					getKeySuggestions({
+						...initialQueryParamsV5,
 						searchText: column,
 					}),
 				enabled: !!column && !optionsQuery,
 			})) || [],
-		[initialOptions?.selectColumns, initialQueryParams, optionsQuery],
+		[initialOptions?.selectColumns, initialQueryParamsV5, optionsQuery],
 	);
 
-	const initialAttributesResult = useQueries(initialQueries);
+	const initialAttributesResult = useQueries(initialQueriesV5);
 
 	const isFetchedInitialAttributes = useMemo(
 		() => initialAttributesResult.every((result) => result.isFetched),
@@ -105,51 +100,60 @@ const useOptionsMenu = ({
 	);
 
 	const initialSelectedColumns = useMemo(() => {
-		if (!isFetchedInitialAttributes) return [];
+		if (!isFetchedInitialAttributes) {
+			return [];
+		}
 
 		const attributesData = initialAttributesResult?.reduce(
-			(acc, attributeResponse) => {
-				const data = attributeResponse?.data?.payload?.attributeKeys || [];
+			(acc: TelemetryFieldKey[], attributeResponse): TelemetryFieldKey[] => {
+				const suggestions =
+					Object.values(attributeResponse?.data?.data?.data?.keys || {}).flat() ||
+					[];
 
-				return [...acc, ...data];
+				const mappedSuggestions: TelemetryFieldKey[] = suggestions.map(
+					(suggestion) => ({
+						name: suggestion.name,
+						signal: suggestion.signal as SignalType,
+						fieldDataType: suggestion.fieldDataType as FieldDataType,
+						fieldContext: suggestion.fieldContext as FieldContext,
+					}),
+				);
+
+				return [...acc, ...mappedSuggestions];
 			},
-			[] as BaseAutocompleteData[],
+			[],
 		);
 
-		let initialSelected = initialOptions.selectColumns
-			?.map((column) => attributesData.find(({ key }) => key === column))
-			.filter(Boolean) as BaseAutocompleteData[];
+		let initialSelected: TelemetryFieldKey[] = (initialOptions?.selectColumns
+			?.map((column) => attributesData.find(({ name }) => name === column))
+			.filter((e) => !!e) || []) as TelemetryFieldKey[];
 
 		if (dataSource === DataSource.TRACES) {
 			initialSelected = initialSelected
 				?.map((col) => {
-					if (col && Object.keys(AllTraceFilterKeyValue).includes(col?.key)) {
+					if (col && Object.keys(AllTraceFilterKeyValue).includes(col?.name)) {
 						const metaData = defaultTraceSelectedColumns.find(
-							(coln) => coln.key === (col.key as AllTraceFilterKeys),
+							(coln) => coln.name === col.name,
 						);
 
 						return {
 							...metaData,
-							key: metaData?.key,
-							dataType: metaData?.dataType,
-							type: metaData?.type,
-							isColumn: metaData?.isColumn,
-							isJSON: metaData?.isJSON,
-							id: metaData?.id,
+							name: metaData?.name || '',
 						};
 					}
 					return col;
 				})
-				.filter(Boolean) as BaseAutocompleteData[];
+				.filter((e) => !!e);
 
-			// this is the last point where we can set the default columns and if uptil now also we have an empty array then we will set the default columns
 			if (!initialSelected || !initialSelected?.length) {
-				initialSelected = defaultTraceSelectedColumns;
+				initialSelected = defaultTraceSelectedColumns.map((e) => ({
+					...e,
+					name: e.name,
+				}));
 			}
 		}
 
 		return initialSelected || [];
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
 		isFetchedInitialAttributes,
 		initialOptions?.selectColumns,
@@ -158,62 +162,114 @@ const useOptionsMenu = ({
 	]);
 
 	const {
-		data: searchedAttributesData,
-		isFetching: isSearchedAttributesFetching,
-	} = useGetAggregateKeys(
+		data: searchedAttributesDataV5,
+		isFetching: isSearchedAttributesFetchingV5,
+	} = useGetQueryKeySuggestions(
 		{
-			...initialQueryParams,
+			...initialQueryParamsV5,
 			searchText: debouncedSearchText,
 		},
 		{ queryKey: [debouncedSearchText, isFocused], enabled: isFocused },
 	);
 
-	const searchedAttributeKeys = useMemo(() => {
-		if (searchedAttributesData?.payload?.attributeKeys?.length) {
+	// const {
+	// 	data: searchedAttributesData,
+	// 	isFetching: isSearchedAttributesFetching,
+	// } = useGetAggregateKeys(
+	// 	{
+	// 		...initialQueryParams,
+	// 		searchText: debouncedSearchText,
+	// 	},
+	// 	{ queryKey: [debouncedSearchText, isFocused], enabled: isFocused },
+	// );
+
+	const searchedAttributeKeys: TelemetryFieldKey[] = useMemo(() => {
+		const searchedAttributesDataList = Object.values(
+			searchedAttributesDataV5?.data.data.keys || {},
+		).flat();
+		if (searchedAttributesDataList.length) {
 			if (dataSource === DataSource.LOGS) {
-				// add timestamp and body to the list of attributes
+				const logsSelectedColumns: TelemetryFieldKey[] = defaultLogsSelectedColumns.map(
+					(e) => ({
+						...e,
+						name: e.name,
+						signal: e.signal as SignalType,
+						fieldContext: e.fieldContext as FieldContext,
+						fieldDataType: e.fieldDataType as FieldDataType,
+					}),
+				);
 				return [
-					...defaultLogsSelectedColumns,
-					...searchedAttributesData.payload.attributeKeys.filter(
-						(attribute) => attribute.key !== 'body',
-					),
+					...logsSelectedColumns,
+					...searchedAttributesDataList
+						.filter((attribute) => attribute.name !== 'body')
+						// eslint-disable-next-line sonarjs/no-identical-functions
+						.map((e) => ({
+							...e,
+							name: e.name,
+							signal: e.signal as SignalType,
+							fieldContext: e.fieldContext as FieldContext,
+							fieldDataType: e.fieldDataType as FieldDataType,
+						})),
 				];
 			}
-			return searchedAttributesData.payload.attributeKeys;
+			// eslint-disable-next-line sonarjs/no-identical-functions
+			return searchedAttributesDataList.map((e) => ({
+				...e,
+				name: e.name,
+				signal: e.signal as SignalType,
+				fieldContext: e.fieldContext as FieldContext,
+				fieldDataType: e.fieldDataType as FieldDataType,
+			}));
 		}
 		if (dataSource === DataSource.TRACES) {
-			return defaultTraceSelectedColumns;
+			return defaultTraceSelectedColumns.map((e) => ({
+				...e,
+				name: e.name,
+			}));
 		}
 
 		return [];
-	}, [dataSource, searchedAttributesData?.payload?.attributeKeys]);
+	}, [dataSource, searchedAttributesDataV5?.data.data.keys]);
 
-	const initialOptionsQuery: OptionsQuery = useMemo(
-		() => ({
+	const initialOptionsQuery: OptionsQuery = useMemo(() => {
+		let defaultColumns: TelemetryFieldKey[] = defaultOptionsQuery.selectColumns;
+		if (dataSource === DataSource.TRACES) {
+			defaultColumns = defaultTraceSelectedColumns.map((e) => ({
+				...e,
+				name: e.name,
+			}));
+		} else if (dataSource === DataSource.LOGS) {
+			// eslint-disable-next-line sonarjs/no-identical-functions
+			defaultColumns = defaultLogsSelectedColumns.map((e) => ({
+				...e,
+				name: e.name,
+				signal: e.signal as SignalType,
+				fieldContext: e.fieldContext as FieldContext,
+				fieldDataType: e.fieldDataType as FieldDataType,
+			}));
+		}
+
+		const finalSelectColumns = initialOptions?.selectColumns
+			? initialSelectedColumns
+			: defaultColumns;
+
+		return {
 			...defaultOptionsQuery,
 			...initialOptions,
-			// eslint-disable-next-line no-nested-ternary
-			selectColumns: initialOptions?.selectColumns
-				? initialSelectedColumns
-				: dataSource === DataSource.TRACES
-				? defaultTraceSelectedColumns
-				: defaultOptionsQuery.selectColumns,
-		}),
-		[dataSource, initialOptions, initialSelectedColumns],
-	);
+			selectColumns: finalSelectColumns,
+		};
+	}, [dataSource, initialOptions, initialSelectedColumns]);
 
 	const selectedColumnKeys = useMemo(
-		() => optionsQueryData?.selectColumns?.map(({ id }) => id) || [],
-		[optionsQueryData],
+		() => preferences?.columns?.map(({ name }) => name) || [],
+		[preferences?.columns],
 	);
 
 	const optionsFromAttributeKeys = useMemo(() => {
 		const filteredAttributeKeys = searchedAttributeKeys.filter((item) => {
-			// For other data sources, only filter out 'body' if it exists
 			if (dataSource !== DataSource.LOGS) {
-				return item.key !== 'body';
+				return item.name !== 'body';
 			}
-			// For LOGS, keep all keys
 			return true;
 		});
 
@@ -223,10 +279,8 @@ const useOptionsMenu = ({
 	const handleRedirectWithOptionsData = useCallback(
 		(newQueryData: OptionsQuery) => {
 			redirectWithOptionsData(newQueryData);
-
-			setToLocalstorage(storageKey, JSON.stringify(newQueryData));
 		},
-		[storageKey, redirectWithOptionsData],
+		[redirectWithOptionsData],
 	);
 
 	const handleSelectColumns = useCallback(
@@ -235,83 +289,124 @@ const useOptionsMenu = ({
 			const newSelectedColumns = newSelectedColumnKeys.reduce((acc, key) => {
 				const column = [
 					...searchedAttributeKeys,
-					...optionsQueryData.selectColumns,
-				].find(({ id }) => id === key);
+					...(preferences?.columns || []),
+				].find(({ name }) => name === key);
 
 				if (!column) return acc;
 				return [...acc, column];
-			}, [] as BaseAutocompleteData[]);
+			}, [] as TelemetryFieldKey[]);
 
 			const optionsData: OptionsQuery = {
-				...optionsQueryData,
+				...defaultOptionsQuery,
 				selectColumns: newSelectedColumns,
+				format: preferences?.formatting?.format || defaultOptionsQuery.format,
+				maxLines: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
+				fontSize: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
 			};
 
+			updateColumns(newSelectedColumns);
 			handleRedirectWithOptionsData(optionsData);
 		},
 		[
 			searchedAttributeKeys,
 			selectedColumnKeys,
-			optionsQueryData,
+			preferences,
 			handleRedirectWithOptionsData,
+			updateColumns,
 		],
 	);
 
 	const handleRemoveSelectedColumn = useCallback(
 		(columnKey: string) => {
-			const newSelectedColumns = optionsQueryData?.selectColumns?.filter(
-				({ id }) => id !== columnKey,
+			const newSelectedColumns = preferences?.columns?.filter(
+				({ name }) => name !== columnKey,
 			);
 
-			if (!newSelectedColumns.length && dataSource !== DataSource.LOGS) {
+			if (!newSelectedColumns?.length && dataSource !== DataSource.LOGS) {
 				notifications.error({
 					message: 'There must be at least one selected column',
 				});
 			} else {
 				const optionsData: OptionsQuery = {
-					...optionsQueryData,
-					selectColumns: newSelectedColumns,
+					...defaultOptionsQuery,
+					selectColumns: newSelectedColumns || [],
+					format: preferences?.formatting?.format || defaultOptionsQuery.format,
+					maxLines:
+						preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
+					fontSize:
+						preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
 				};
-
+				updateColumns(newSelectedColumns || []);
 				handleRedirectWithOptionsData(optionsData);
 			}
 		},
-		[dataSource, notifications, optionsQueryData, handleRedirectWithOptionsData],
+		[
+			dataSource,
+			notifications,
+			preferences,
+			handleRedirectWithOptionsData,
+			updateColumns,
+		],
 	);
 
 	const handleFormatChange = useCallback(
 		(value: LogViewMode) => {
 			const optionsData: OptionsQuery = {
-				...optionsQueryData,
+				...defaultOptionsQuery,
+				selectColumns: preferences?.columns || [],
 				format: value,
+				maxLines: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
+				fontSize: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
 			};
 
+			updateFormatting({
+				maxLines: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
+				format: value,
+				fontSize: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
+			});
 			handleRedirectWithOptionsData(optionsData);
 		},
-		[handleRedirectWithOptionsData, optionsQueryData],
+		[handleRedirectWithOptionsData, preferences, updateFormatting],
 	);
 
 	const handleMaxLinesChange = useCallback(
 		(value: string | number | null) => {
 			const optionsData: OptionsQuery = {
-				...optionsQueryData,
+				...defaultOptionsQuery,
+				selectColumns: preferences?.columns || [],
+				format: preferences?.formatting?.format || defaultOptionsQuery.format,
 				maxLines: value as number,
+				fontSize: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
 			};
 
+			updateFormatting({
+				maxLines: value as number,
+				format: preferences?.formatting?.format || defaultOptionsQuery.format,
+				fontSize: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
+			});
 			handleRedirectWithOptionsData(optionsData);
 		},
-		[handleRedirectWithOptionsData, optionsQueryData],
+		[handleRedirectWithOptionsData, preferences, updateFormatting],
 	);
+
 	const handleFontSizeChange = useCallback(
 		(value: FontSize) => {
 			const optionsData: OptionsQuery = {
-				...optionsQueryData,
+				...defaultOptionsQuery,
+				selectColumns: preferences?.columns || [],
+				format: preferences?.formatting?.format || defaultOptionsQuery.format,
+				maxLines: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
 				fontSize: value,
 			};
 
+			updateFormatting({
+				maxLines: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
+				format: preferences?.formatting?.format || defaultOptionsQuery.format,
+				fontSize: value,
+			});
 			handleRedirectWithOptionsData(optionsData);
 		},
-		[handleRedirectWithOptionsData, optionsQueryData],
+		[handleRedirectWithOptionsData, preferences, updateFormatting],
 	);
 
 	const handleSearchAttribute = useCallback((value: string) => {
@@ -330,8 +425,10 @@ const useOptionsMenu = ({
 	const optionsMenuConfig: Required<OptionsMenuConfig> = useMemo(
 		() => ({
 			addColumn: {
-				isFetching: isSearchedAttributesFetching,
-				value: optionsQueryData?.selectColumns || defaultOptionsQuery.selectColumns,
+				isFetching: isSearchedAttributesFetchingV5,
+				value:
+					preferences?.columns.filter((item) => has(item, 'name')) ||
+					defaultOptionsQuery.selectColumns.filter((item) => has(item, 'name')),
 				options: optionsFromAttributeKeys || [],
 				onFocus: handleFocus,
 				onBlur: handleBlur,
@@ -340,24 +437,21 @@ const useOptionsMenu = ({
 				onSearch: handleSearchAttribute,
 			},
 			format: {
-				value: optionsQueryData.format || defaultOptionsQuery.format,
+				value: preferences?.formatting?.format || defaultOptionsQuery.format,
 				onChange: handleFormatChange,
 			},
 			maxLines: {
-				value: optionsQueryData.maxLines || defaultOptionsQuery.maxLines,
+				value: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
 				onChange: handleMaxLinesChange,
 			},
 			fontSize: {
-				value: optionsQueryData?.fontSize || defaultOptionsQuery.fontSize,
+				value: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
 				onChange: handleFontSizeChange,
 			},
 		}),
 		[
-			isSearchedAttributesFetching,
-			optionsQueryData?.selectColumns,
-			optionsQueryData.format,
-			optionsQueryData.maxLines,
-			optionsQueryData?.fontSize,
+			isSearchedAttributesFetchingV5,
+			preferences,
 			optionsFromAttributeKeys,
 			handleSelectColumns,
 			handleRemoveSelectedColumn,
@@ -369,23 +463,25 @@ const useOptionsMenu = ({
 	);
 
 	useEffect(() => {
-		if (optionsQuery || !isFetchedInitialAttributes) return;
+		if (optionsQuery || !isFetchedInitialAttributes) {
+			return;
+		}
 
-		const nextOptionsQuery = localStorageOptionsQuery
-			? JSON.parse(localStorageOptionsQuery)
-			: initialOptionsQuery;
-
-		redirectWithOptionsData(nextOptionsQuery);
+		redirectWithOptionsData(initialOptionsQuery);
 	}, [
 		isFetchedInitialAttributes,
 		optionsQuery,
 		initialOptionsQuery,
-		localStorageOptionsQuery,
 		redirectWithOptionsData,
 	]);
 
 	return {
-		options: optionsQueryData,
+		options: {
+			selectColumns: preferences?.columns || [],
+			format: preferences?.formatting?.format || defaultOptionsQuery.format,
+			maxLines: preferences?.formatting?.maxLines || defaultOptionsQuery.maxLines,
+			fontSize: preferences?.formatting?.fontSize || defaultOptionsQuery.fontSize,
+		},
 		config: optionsMenuConfig,
 		handleOptionsChange: handleRedirectWithOptionsData,
 	};

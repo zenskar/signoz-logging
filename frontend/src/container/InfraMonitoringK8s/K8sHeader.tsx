@@ -7,11 +7,12 @@ import QueryBuilderSearch from 'container/QueryBuilder/filters/QueryBuilderSearc
 import DateTimeSelectionV2 from 'container/TopNav/DateTimeSelectionV2';
 import { Filter, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { BaseAutocompleteData } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
 import { DataSource } from 'types/common/queryBuilder';
 
-import { K8sCategory } from './constants';
+import { INFRA_MONITORING_K8S_PARAMS_KEYS, K8sCategory } from './constants';
 import K8sFiltersSidePanel from './K8sFiltersSidePanel/K8sFiltersSidePanel';
 import { IEntityColumn } from './utils';
 
@@ -29,6 +30,7 @@ interface K8sHeaderProps {
 	handleFilterVisibilityChange: () => void;
 	isFiltersVisible: boolean;
 	entity: K8sCategory;
+	showAutoRefresh: boolean;
 }
 
 function K8sHeader({
@@ -45,13 +47,22 @@ function K8sHeader({
 	handleFilterVisibilityChange,
 	isFiltersVisible,
 	entity,
+	showAutoRefresh,
 }: K8sHeaderProps): JSX.Element {
 	const [isFiltersSidePanelOpen, setIsFiltersSidePanelOpen] = useState(false);
+	const [searchParams, setSearchParams] = useSearchParams();
 
 	const currentQuery = initialQueriesMap[DataSource.METRICS];
 
-	const updatedCurrentQuery = useMemo(
-		() => ({
+	const updatedCurrentQuery = useMemo(() => {
+		const urlFilters = searchParams.get(INFRA_MONITORING_K8S_PARAMS_KEYS.FILTERS);
+		let { filters } = currentQuery.builder.queryData[0];
+		if (urlFilters) {
+			const decoded = decodeURIComponent(urlFilters);
+			const parsed = JSON.parse(decoded);
+			filters = parsed;
+		}
+		return {
 			...currentQuery,
 			builder: {
 				...currentQuery.builder,
@@ -62,20 +73,24 @@ function K8sHeader({
 						aggregateAttribute: {
 							...currentQuery.builder.queryData[0].aggregateAttribute,
 						},
+						filters,
 					},
 				],
 			},
-		}),
-		[currentQuery],
-	);
+		};
+	}, [currentQuery, searchParams]);
 
 	const query = updatedCurrentQuery?.builder?.queryData[0] || null;
 
 	const handleChangeTagFilters = useCallback(
 		(value: IBuilderQuery['filters']) => {
 			handleFiltersChange(value);
+			setSearchParams({
+				...Object.fromEntries(searchParams.entries()),
+				[INFRA_MONITORING_K8S_PARAMS_KEYS.FILTERS]: JSON.stringify(value),
+			});
 		},
-		[handleFiltersChange],
+		[handleFiltersChange, searchParams, setSearchParams],
 	);
 
 	return (
@@ -96,7 +111,7 @@ function K8sHeader({
 
 				<div className="k8s-qb-search-container">
 					<QueryBuilderSearch
-						query={query}
+						query={query as IBuilderQuery}
 						onChange={handleChangeTagFilters}
 						isInfraMonitoring
 						disableNavigationShortcuts
@@ -123,7 +138,7 @@ function K8sHeader({
 
 			<div className="k8s-list-controls-right">
 				<DateTimeSelectionV2
-					showAutoRefresh={false}
+					showAutoRefresh={showAutoRefresh}
 					showRefreshText={false}
 					hideShareModal
 				/>

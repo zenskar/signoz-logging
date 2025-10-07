@@ -66,6 +66,7 @@ e2e/.auth
 # go
 vendor/
 **/main/**
+__debug_bin**
 
 # git-town
 .git-branches.toml
@@ -84,6 +85,8 @@ queries.active
 # .devenv tmp files
 .devenv/**/tmp/**
 .qodo
+
+.dev
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
@@ -227,4 +230,6 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
-# End of https://www.toptal.com/developers/gitignore/api/python
+
+# cursor files
+frontend/.cursor/

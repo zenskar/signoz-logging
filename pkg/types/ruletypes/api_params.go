@@ -173,13 +173,16 @@ func (ns *NotificationSettings) UnmarshalJSON(data []byte) error {
 	// Validate states after unmarshaling
 	for _, state := range ns.Renotify.AlertStates {
 		if state != model.StateFiring && state != model.StateNoData {
-			return fmt.Errorf("invalid alert state: %s", state)
+			return signozError.NewInvalidInputf(signozError.CodeInvalidInput, "invalid alert state: %s", state)
+
 		}
 	}
 	return nil
 }
 
-func (r *PostableRule) processRuleDefaults() error {
+// processRuleDefaults applies the default values
+// for the rule options that are blank or unset.
+func (r *PostableRule) processRuleDefaults() {
 
 	if r.SchemaVersion == "" {
 		r.SchemaVersion = DefaultSchemaVersion
@@ -194,11 +197,12 @@ func (r *PostableRule) processRuleDefaults() error {
 	}
 
 	if r.RuleCondition != nil {
-		if r.RuleCondition.CompositeQuery.QueryType == v3.QueryTypeBuilder {
+		switch r.RuleCondition.CompositeQuery.QueryType {
+		case v3.QueryTypeBuilder:
 			if r.RuleType == "" {
 				r.RuleType = RuleTypeThreshold
 			}
-		} else if r.RuleCondition.CompositeQuery.QueryType == v3.QueryTypePromQL {
+		case v3.QueryTypePromQL:
 			r.RuleType = RuleTypeProm
 		}
 
@@ -207,6 +211,7 @@ func (r *PostableRule) processRuleDefaults() error {
 				q.Expression = qLabel
 			}
 		}
+
 		//added alerts v2 fields
 		if r.SchemaVersion == DefaultSchemaVersion {
 			thresholdName := CriticalThresholdName
@@ -215,12 +220,20 @@ func (r *PostableRule) processRuleDefaults() error {
 					thresholdName = severity
 				}
 			}
+
+			// For anomaly detection with ValueIsBelow, negate the target
+			targetValue := r.RuleCondition.Target
+			if r.RuleType == RuleTypeAnomaly && r.RuleCondition.CompareOp == ValueIsBelow && targetValue != nil {
+				negated := -1 * *targetValue
+				targetValue = &negated
+			}
+
 			thresholdData := RuleThresholdData{
 				Kind: BasicThresholdKind,
 				Spec: BasicRuleThresholds{{
 					Name:        thresholdName,
 					TargetUnit:  r.RuleCondition.TargetUnit,
-					TargetValue: r.RuleCondition.Target,
+					TargetValue: targetValue,
 					MatchType:   r.RuleCondition.MatchType,
 					CompareOp:   r.RuleCondition.CompareOp,
 					Channels:    r.PreferredChannels,
@@ -240,8 +253,6 @@ func (r *PostableRule) processRuleDefaults() error {
 			}
 		}
 	}
-
-	return r.Validate()
 }
 
 func (r *PostableRule) MarshalJSON() ([]byte, error) {
@@ -271,7 +282,8 @@ func (r *PostableRule) UnmarshalJSON(bytes []byte) error {
 	if err := json.Unmarshal(bytes, aux); err != nil {
 		return signozError.NewInvalidInputf(signozError.CodeInvalidInput, "failed to parse json: %v", err)
 	}
-	return r.processRuleDefaults()
+	r.processRuleDefaults()
+	return r.validate()
 }
 
 func isValidLabelName(ln string) bool {
@@ -329,17 +341,16 @@ func isAllQueriesDisabled(compositeQuery *v3.CompositeQuery) bool {
 	return true
 }
 
-func (r *PostableRule) Validate() error {
+func (r *PostableRule) validate() error {
 
 	var errs []error
 
 	if r.RuleCondition == nil {
 		// will get panic if we try to access CompositeQuery, so return here
 		return signozError.NewInvalidInputf(signozError.CodeInvalidInput, "rule condition is required")
-	} else {
-		if r.RuleCondition.CompositeQuery == nil {
-			errs = append(errs, signozError.NewInvalidInputf(signozError.CodeInvalidInput, "composite metric query is required"))
-		}
+	}
+	if r.RuleCondition.CompositeQuery == nil {
+		errs = append(errs, signozError.NewInvalidInputf(signozError.CodeInvalidInput, "composite query is required"))
 	}
 
 	if isAllQueriesDisabled(r.RuleCondition.CompositeQuery) {

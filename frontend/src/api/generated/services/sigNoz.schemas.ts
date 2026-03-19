@@ -2539,25 +2539,6 @@ export interface TypesPostableAPIKeyDTO {
 	role?: string;
 }
 
-export interface TypesPostableAcceptInviteDTO {
-	/**
-	 * @type string
-	 */
-	displayName?: string;
-	/**
-	 * @type string
-	 */
-	password?: string;
-	/**
-	 * @type string
-	 */
-	sourceUrl?: string;
-	/**
-	 * @type string
-	 */
-	token?: string;
-}
-
 export interface TypesPostableBulkInviteRequestDTO {
 	/**
 	 * @type array
@@ -3061,41 +3042,8 @@ export type GetGlobalConfig200 = {
 	status: string;
 };
 
-export type ListInvite200 = {
-	/**
-	 * @type array
-	 */
-	data: TypesInviteDTO[];
-	/**
-	 * @type string
-	 */
-	status: string;
-};
-
 export type CreateInvite201 = {
 	data: TypesInviteDTO;
-	/**
-	 * @type string
-	 */
-	status: string;
-};
-
-export type DeleteInvitePathParameters = {
-	id: string;
-};
-export type GetInvitePathParameters = {
-	token: string;
-};
-export type GetInvite200 = {
-	data: TypesInviteDTO;
-	/**
-	 * @type string
-	 */
-	status: string;
-};
-
-export type AcceptInvite201 = {
-	data: TypesUserDTO;
 	/**
 	 * @type string
 	 */

@@ -1,14 +1,13 @@
-/* eslint-disable import/first */
-// eslint-disable-next-line import/order
 import setupCommonMocks from '../../commonMocks';
 
 setupCommonMocks();
 
-import { fireEvent, render, screen } from '@testing-library/react';
-import PodDetails from 'container/InfraMonitoringK8s/Pods/PodDetails/PodDetails';
 import { QueryClient, QueryClientProvider } from 'react-query';
+// eslint-disable-next-line no-restricted-imports
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import PodDetails from 'container/InfraMonitoringK8s/Pods/PodDetails/PodDetails';
 import store from 'store';
 
 const queryClient = new QueryClient();

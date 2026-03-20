@@ -11,10 +11,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	contribsdkconfig "go.opentelemetry.io/contrib/config"
+	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/metric"
 	sdkmetricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	sdktrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -107,12 +108,15 @@ func New(ctx context.Context, cfg Config, build version.Build, serviceName strin
 		return nil, err
 	}
 
+	// Set the global tracer provider to the sdk tracer provider so that external packages can use this
+	otel.SetTracerProvider(sdk.TracerProvider())
+
 	return &SDK{
 		sdk:                       sdk,
 		meterProvider:             meterProvider,
 		meterProviderShutdownFunc: meterProviderShutdownFunc,
 		prometheusRegistry:        prometheusRegistry,
-		logger:                    NewLogger(cfg, loghandler.NewCorrelation()),
+		logger:                    NewLogger(cfg, loghandler.NewCorrelation(), loghandler.NewFiltering()),
 		startCh:                   make(chan struct{}),
 	}, nil
 }

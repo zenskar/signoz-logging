@@ -1,9 +1,18 @@
-import './SpanDetailsDrawer.styles.scss';
-
+import {
+	Dispatch,
+	SetStateAction,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
+import { useMutation, useQuery } from 'react-query';
 import {
 	Button,
 	Checkbox,
 	Input,
+	Modal,
 	Select,
 	Skeleton,
 	Tabs,
@@ -11,17 +20,16 @@ import {
 	Tooltip,
 	Typography,
 } from 'antd';
-import { RadioChangeEvent } from 'antd/lib';
 import getSpanPercentiles from 'api/trace/getSpanPercentiles';
 import getUserPreference from 'api/v1/user/preferences/name/get';
 import updateUserPreference from 'api/v1/user/preferences/name/update';
 import LogsIcon from 'assets/AlertHistory/LogsIcon';
 import { getYAxisFormattedValue } from 'components/Graph/yAxisConfig';
-import SignozRadioGroup from 'components/SignozRadioGroup/SignozRadioGroup';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
 import { themeColors } from 'constants/theme';
 import { USER_PREFERENCES } from 'constants/userPreferences';
+import AttributeActions from 'container/SpanDetailsDrawer/Attributes/AttributeActions';
 import dayjs from 'dayjs';
 import useClickOutside from 'hooks/useClickOutside';
 import { generateColor } from 'lib/uPlotLib/utils/generateColor';
@@ -39,25 +47,18 @@ import {
 	Search,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import {
-	Dispatch,
-	SetStateAction,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
-import { useMutation, useQuery } from 'react-query';
 import { Span } from 'types/api/trace/getTraceV2';
 import { formatEpochTimestamp } from 'utils/timeUtils';
 
 import Attributes from './Attributes/Attributes';
 import { RelatedSignalsViews } from './constants';
+import EventAttribute from './Events/components/EventAttribute';
 import Events from './Events/Events';
 import LinkedSpans from './LinkedSpans/LinkedSpans';
 import SpanRelatedSignals from './SpanRelatedSignals/SpanRelatedSignals';
 import { hasInfraMetadata } from './utils';
+
+import './SpanDetailsDrawer.styles.scss';
 
 interface ISpanDetailsDrawerProps {
 	isSpanDetailsDocked: boolean;
@@ -103,6 +104,10 @@ interface IResourceAttribute {
 const DEFAULT_RESOURCE_ATTRIBUTES = {
 	serviceName: 'service.name',
 	name: 'name',
+	spanId: 'span_id',
+	spanKind: 'kind_string',
+	statusCodeString: 'status_code_string',
+	statusMessage: 'status_message',
 };
 
 // eslint-disable-next-line sonarjs/cognitive-complexity
@@ -168,9 +173,25 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 		setShouldUpdateUserPreference,
 	] = useState<boolean>(false);
 
+	const [statusMessageModalContent, setStatusMessageModalContent] = useState<{
+		title: string;
+		content: string;
+	} | null>(null);
+
 	const handleTimeRangeChange = useCallback((value: number): void => {
 		setShouldFetchSpanPercentilesData(true);
 		setSelectedTimeRange(value);
+	}, []);
+
+	const showStatusMessageModal = useCallback(
+		(title: string, content: string): void => {
+			setStatusMessageModalContent({ title, content });
+		},
+		[],
+	);
+
+	const handleStatusMessageModalCancel = useCallback((): void => {
+		setStatusMessageModalContent(null);
 	}, []);
 
 	const color = generateColor(
@@ -178,11 +199,13 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 		themeColors.traceDetailColors,
 	);
 
-	const handleRelatedSignalsChange = useCallback((e: RadioChangeEvent): void => {
-		const selectedView = e.target.value as RelatedSignalsViews;
-		setActiveDrawerView(selectedView);
-		setIsRelatedSignalsOpen(true);
-	}, []);
+	const handleRelatedSignalsClick = useCallback(
+		(view: RelatedSignalsViews): void => {
+			setActiveDrawerView(view);
+			setIsRelatedSignalsOpen(true);
+		},
+		[],
+	);
 
 	const handleRelatedSignalsClose = useCallback((): void => {
 		setIsRelatedSignalsOpen(false);
@@ -817,6 +840,16 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 									{selectedSpan.spanId}
 								</Typography.Text>
 							</div>
+							<div className="attribute-actions-wrapper">
+								<AttributeActions
+									record={{
+										field: DEFAULT_RESOURCE_ATTRIBUTES.spanId,
+										value: selectedSpan.spanId,
+									}}
+									showPinned={false}
+									showCopyOptions={false}
+								/>
+							</div>
 						</div>
 						<div className="item">
 							<Typography.Text className="attribute-key">start time</Typography.Text>
@@ -845,6 +878,16 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 										</Typography.Text>
 									</Tooltip>
 								</div>
+								<div className="attribute-actions-wrapper">
+									<AttributeActions
+										record={{
+											field: DEFAULT_RESOURCE_ATTRIBUTES.serviceName,
+											value: selectedSpan.serviceName,
+										}}
+										showPinned={false}
+										showCopyOptions={false}
+									/>
+								</div>
 							</div>
 						</div>
 						<div className="item">
@@ -853,6 +896,16 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 								<Typography.Text className="attribute-value">
 									{selectedSpan.spanKind}
 								</Typography.Text>
+							</div>
+							<div className="attribute-actions-wrapper">
+								<AttributeActions
+									record={{
+										field: DEFAULT_RESOURCE_ATTRIBUTES.spanKind,
+										value: selectedSpan.spanKind,
+									}}
+									showPinned={false}
+									showCopyOptions={false}
+								/>
 							</div>
 						</div>
 						<div className="item">
@@ -864,17 +917,34 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 									{selectedSpan.statusCodeString}
 								</Typography.Text>
 							</div>
+							<div className="attribute-actions-wrapper">
+								<AttributeActions
+									record={{
+										field: DEFAULT_RESOURCE_ATTRIBUTES.statusCodeString,
+										value: selectedSpan.statusCodeString,
+									}}
+									showPinned={false}
+									showCopyOptions={false}
+								/>
+							</div>
 						</div>
 
 						{selectedSpan.statusMessage && (
 							<div className="item">
-								<Typography.Text className="attribute-key">
-									status message
-								</Typography.Text>
-								<div className="value-wrapper">
-									<Typography.Text className="attribute-value">
-										{selectedSpan.statusMessage}
-									</Typography.Text>
+								<EventAttribute
+									attributeKey="status message"
+									attributeValue={selectedSpan.statusMessage}
+									onExpand={showStatusMessageModal}
+								/>
+								<div className="attribute-actions-wrapper">
+									<AttributeActions
+										record={{
+											field: DEFAULT_RESOURCE_ATTRIBUTES.statusMessage,
+											value: selectedSpan.statusMessage,
+										}}
+										showPinned={false}
+										showCopyOptions={false}
+									/>
 								</div>
 							</div>
 						)}
@@ -883,12 +953,16 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 								related signals
 							</Typography.Text>
 							<div className="related-signals-section">
-								<SignozRadioGroup
-									value=""
-									options={relatedSignalsOptions}
-									onChange={handleRelatedSignalsChange}
-									className="related-signals-radio"
-								/>
+								<Button.Group className="related-signals-button-group">
+									{relatedSignalsOptions.map((option) => (
+										<Button
+											key={option.value}
+											onClick={(): void => handleRelatedSignalsClick(option.value)}
+										>
+											{option.label}
+										</Button>
+									))}
+								</Button.Group>
 							</div>
 						</div>
 					</section>
@@ -932,6 +1006,19 @@ function SpanDetailsDrawer(props: ISpanDetailsDrawerProps): JSX.Element {
 					key={activeDrawerView}
 				/>
 			)}
+
+			<Modal
+				title={statusMessageModalContent?.title}
+				open={!!statusMessageModalContent}
+				onCancel={handleStatusMessageModalCancel}
+				footer={null}
+				width="80vw"
+				centered
+			>
+				<pre className="attribute-with-expandable-popover__full-view">
+					{statusMessageModalContent?.content}
+				</pre>
+			</Modal>
 		</>
 	);
 }

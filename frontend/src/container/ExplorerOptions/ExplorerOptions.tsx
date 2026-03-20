@@ -1,6 +1,14 @@
-/* eslint-disable react/jsx-props-no-spreading */
-import './ExplorerOptions.styles.scss';
-
+import {
+	CSSProperties,
+	Dispatch,
+	SetStateAction,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
+import { useHistory } from 'react-router-dom';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Color } from '@signozhq/design-tokens';
 import {
@@ -56,17 +64,6 @@ import {
 } from 'lucide-react';
 import { useAppContext } from 'providers/App/App';
 import { FormattingOptions } from 'providers/preferences/types';
-import {
-	CSSProperties,
-	Dispatch,
-	SetStateAction,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
-import { useHistory } from 'react-router-dom';
 import { Dashboard } from 'types/api/dashboard/getAll';
 import { Query } from 'types/api/queryBuilder/queryBuilderData';
 import { ViewProps } from 'types/api/saveViews/types';
@@ -84,6 +81,8 @@ import {
 	saveNewViewHandler,
 	setExplorerToolBarVisibility,
 } from './utils';
+
+import './ExplorerOptions.styles.scss';
 
 const allowedRoles = [USER_ROLES.ADMIN, USER_ROLES.AUTHOR, USER_ROLES.EDITOR];
 
@@ -172,23 +171,51 @@ function ExplorerOptions({
 	const { user } = useAppContext();
 
 	const handleConditionalQueryModification = useCallback(
+		// eslint-disable-next-line sonarjs/cognitive-complexity
 		(defaultQuery: Query | null): string => {
 			const queryToUse = defaultQuery || query;
+			if (!queryToUse) {
+				throw new Error('No query provided');
+			}
 			if (
 				queryToUse?.builder?.queryData?.[0]?.aggregateOperator !==
-				StringOperators.NOOP
+					StringOperators.NOOP &&
+				sourcepage !== DataSource.LOGS
 			) {
 				return JSON.stringify(queryToUse);
 			}
 
-			// Modify aggregateOperator to count, as noop is not supported in alerts
+			// Convert NOOP to COUNT for alerts and strip orderBy for logs
 			const modifiedQuery = cloneDeep(queryToUse);
+			if (modifiedQuery && modifiedQuery.builder?.queryData) {
+				modifiedQuery.builder.queryData = modifiedQuery.builder.queryData.map(
+					(item) => {
+						const updatedItem = { ...item };
 
-			modifiedQuery.builder.queryData[0].aggregateOperator = StringOperators.COUNT;
+						if (updatedItem.aggregateOperator === StringOperators.NOOP) {
+							updatedItem.aggregateOperator = StringOperators.COUNT;
+						}
 
-			return JSON.stringify(modifiedQuery);
+						// Alerts do not support order by on logs explorer queries
+						if (sourcepage === DataSource.LOGS && panelType === PANEL_TYPES.LIST) {
+							updatedItem.orderBy = [];
+						}
+
+						return updatedItem;
+					},
+				);
+			}
+
+			try {
+				return JSON.stringify(modifiedQuery);
+			} catch (err) {
+				throw new Error(
+					'Failed to stringify modified query: ' +
+						(err instanceof Error ? err.message : String(err)),
+				);
+			}
 		},
-		[query],
+		[panelType, query, sourcepage],
 	);
 
 	const onCreateAlertsHandler = useCallback(
@@ -393,15 +420,21 @@ function ExplorerOptions({
 			backwardCompatibleOptions = omit(options, 'version');
 		}
 
+		// Use the correct default columns based on the current data source
+		const defaultColumns =
+			sourcepage === DataSource.TRACES
+				? defaultTraceSelectedColumns
+				: defaultLogsSelectedColumns;
+
 		if (extraData.selectColumns?.length) {
 			handleOptionsChange({
 				...backwardCompatibleOptions,
 				selectColumns: extraData.selectColumns,
 			});
-		} else if (!isEqual(defaultTraceSelectedColumns, options.selectColumns)) {
+		} else if (!isEqual(defaultColumns, options.selectColumns)) {
 			handleOptionsChange({
 				...backwardCompatibleOptions,
-				selectColumns: defaultTraceSelectedColumns,
+				selectColumns: defaultColumns,
 			});
 		}
 	};
@@ -411,7 +444,9 @@ function ExplorerOptions({
 				key,
 				viewsData?.data?.data,
 			);
-			if (!currentViewDetails) return;
+			if (!currentViewDetails) {
+				return;
+			}
 			const { query, name, id, panelType: currentPanelType } = currentViewDetails;
 
 			if (handleChangeSelectedView) {
@@ -657,7 +692,6 @@ function ExplorerOptions({
 			setIsRecentlyUsedSavedViewSelected(false);
 		}
 
-		// eslint-disable-next-line consistent-return
 		return (): void => {
 			clearTimeout(timeoutId);
 		};
@@ -749,9 +783,9 @@ function ExplorerOptions({
 		);
 	}, [
 		disabled,
+		query,
 		isOneChartPerQuery,
 		onCreateAlertsHandler,
-		query,
 		splitedQueries,
 	]);
 

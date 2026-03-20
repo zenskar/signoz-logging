@@ -1,5 +1,3 @@
-/* eslint-disable */
-
 import {
 	createContext,
 	extractQueryPairs,
@@ -26,7 +24,16 @@ describe('extractQueryPairs', () => {
 				valuesPosition: [],
 				hasNegation: true,
 				isMultiValue: false,
-				position: expect.any(Object),
+				position: {
+					keyStart: 0,
+					keyEnd: 5,
+					negationEnd: 9,
+					negationStart: 7,
+					operatorEnd: 16,
+					operatorStart: 11,
+					valueEnd: undefined,
+					valueStart: undefined,
+				},
 				isComplete: false,
 			},
 			{
@@ -37,7 +44,68 @@ describe('extractQueryPairs', () => {
 				valuesPosition: [],
 				hasNegation: true,
 				isMultiValue: false,
-				position: expect.any(Object),
+				position: {
+					keyEnd: 25,
+					keyStart: 22,
+					negationEnd: 29,
+					negationStart: 27,
+					operatorEnd: 34,
+					operatorStart: 31,
+					valueEnd: 42,
+					valueStart: 36,
+				},
+				isComplete: true,
+			},
+		]);
+	});
+
+	test('should test for filter expression with freeText', () => {
+		const input = "disconnected deployment.env not in ['mq-kafka']";
+		const result = extractQueryPairs(input);
+		expect(result).toEqual([
+			{
+				key: 'disconnected',
+				operator: '',
+				valueList: [],
+				valuesPosition: [],
+				hasNegation: false,
+				isMultiValue: false,
+				value: undefined,
+				position: {
+					keyStart: 0,
+					keyEnd: 11,
+					operatorStart: 0,
+					operatorEnd: 0,
+					negationStart: 0,
+					negationEnd: 0,
+					valueStart: undefined,
+					valueEnd: undefined,
+				},
+				isComplete: false,
+			},
+			{
+				key: 'deployment.env',
+				operator: 'in',
+				value: "['mq-kafka']",
+				valueList: ["'mq-kafka'"],
+				valuesPosition: [
+					{
+						start: 36,
+						end: 45,
+					},
+				],
+				hasNegation: true,
+				isMultiValue: true,
+				position: {
+					keyStart: 13,
+					keyEnd: 26,
+					operatorStart: 32,
+					operatorEnd: 33,
+					valueStart: 35,
+					valueEnd: 46,
+					negationStart: 28,
+					negationEnd: 30,
+				},
 				isComplete: true,
 			},
 		]);
@@ -54,12 +122,11 @@ describe('extractQueryPairs', () => {
 				isComplete: true,
 				value: expect.stringMatching(/^\(.*\)$/),
 				valueList: ['1', '2', '3'],
-				valuesPosition: expect.arrayContaining([
-					expect.objectContaining({
-						start: expect.any(Number),
-						end: expect.any(Number),
-					}),
-				]),
+				valuesPosition: [
+					{ start: 7, end: 7 },
+					{ start: 10, end: 10 },
+					{ start: 13, end: 13 },
+				],
 			}),
 		]);
 	});
@@ -75,6 +142,31 @@ describe('extractQueryPairs', () => {
 				isComplete: true,
 				value: expect.stringMatching(/^\[.*\]$/),
 				valueList: ["'a'", "'b'", "'c'"],
+				valuesPosition: [
+					{ start: 11, end: 13 },
+					{ start: 18, end: 20 },
+					{ start: 25, end: 27 },
+				],
+			}),
+		]);
+	});
+
+	test('should extract correct query pairs when the query has space at the start of the value', () => {
+		const input = "  label IN [ 'a' ,  'b' ,  'c' ]";
+		const result = extractQueryPairs(input);
+		expect(result).toEqual([
+			expect.objectContaining({
+				key: 'label',
+				operator: 'IN',
+				isMultiValue: true,
+				isComplete: true,
+				value: expect.stringMatching(/^\[.*\]$/),
+				valueList: ["'a'", "'b'", "'c'"],
+				valuesPosition: [
+					{ start: 13, end: 15 },
+					{ start: 20, end: 22 },
+					{ start: 27, end: 29 },
+				],
 			}),
 		]);
 	});
@@ -285,6 +377,23 @@ describe('extractQueryPairs', () => {
 		expect(Array.isArray(result)).toBe(true);
 
 		consoleSpy.mockRestore();
+	});
+
+	test('should treat lowercase exists as non-value operator', () => {
+		const input = 'body exists service.name contains "test"';
+		const result = extractQueryPairs(input);
+
+		expect(result).toHaveLength(2);
+		expect(result[0].key).toBe('body');
+		expect(result[0].operator).toBe('exists');
+		expect(result[0].value).toBeUndefined();
+		expect(result[0].valuesPosition).toEqual([]);
+		expect(result[0].isComplete).toBe(false);
+		expect(result[1].key).toBe('service.name');
+		expect(result[1].operator).toBe('contains');
+		expect(result[1].value).toBe('"test"');
+		expect(result[1].valuesPosition).toEqual([]);
+		expect(result[1].isComplete).toBe(true);
 	});
 });
 

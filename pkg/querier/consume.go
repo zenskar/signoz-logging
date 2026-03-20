@@ -51,7 +51,6 @@ func consume(rows driver.Rows, kind qbtypes.RequestType, queryWindow *qbtypes.Ti
 }
 
 func readAsTimeSeries(rows driver.Rows, queryWindow *qbtypes.TimeRange, step qbtypes.Step, queryName string) (*qbtypes.TimeSeriesData, error) {
-
 	colTypes := rows.ColumnTypes()
 	colNames := rows.Columns()
 
@@ -354,10 +353,22 @@ func readAsRaw(rows driver.Rows, queryName string) (*qbtypes.RawData, error) {
 	colTypes := rows.ColumnTypes()
 	colCnt := len(colNames)
 
+	// Helper that decides scan target per column based on DB type
+	makeScanTarget := func(i int) any {
+		dbt := strings.ToUpper(colTypes[i].DatabaseTypeName())
+		if strings.HasPrefix(dbt, "JSON") {
+			// Since the driver fails to decode JSON/Dynamic into native Go values, we read it as raw bytes
+			// TODO: check in future if fixed in the driver
+			var v []byte
+			return &v
+		}
+		return reflect.New(colTypes[i].ScanType()).Interface()
+	}
+
 	// Build a template slice of correctly-typed pointers once
 	scanTpl := make([]any, colCnt)
-	for i, ct := range colTypes {
-		scanTpl[i] = reflect.New(ct.ScanType()).Interface()
+	for i := range colTypes {
+		scanTpl[i] = makeScanTarget(i)
 	}
 
 	var outRows []*qbtypes.RawRow
@@ -366,7 +377,7 @@ func readAsRaw(rows driver.Rows, queryName string) (*qbtypes.RawData, error) {
 		// fresh copy of the scan slice (otherwise the driver reuses pointers)
 		scan := make([]any, colCnt)
 		for i := range scanTpl {
-			scan[i] = reflect.New(colTypes[i].ScanType()).Interface()
+			scan[i] = makeScanTarget(i)
 		}
 
 		if err := rows.Scan(scan...); err != nil {
@@ -382,6 +393,15 @@ func readAsRaw(rows driver.Rows, queryName string) (*qbtypes.RawData, error) {
 
 			// de-reference the typed pointer to any
 			val := reflect.ValueOf(cellPtr).Elem().Interface()
+			// Post-process JSON columns: normalize into String value
+			if strings.HasPrefix(strings.ToUpper(colTypes[i].DatabaseTypeName()), "JSON") {
+				switch x := val.(type) {
+				case []byte:
+					val = string(x)
+				default:
+					// already a structured type (map[string]any, []any, etc.)
+				}
+			}
 
 			// special-case: timestamp column
 			if name == "timestamp" || name == "timestamp_datetime" {

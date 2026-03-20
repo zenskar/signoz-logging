@@ -1,6 +1,4 @@
-import 'uplot/dist/uPlot.min.css';
-import './AnomalyAlertEvaluationView.styles.scss';
-
+import { useEffect, useRef, useState } from 'react';
 import { Checkbox, Input, Typography } from 'antd';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import useDebouncedFn from 'hooks/useDebouncedFunction';
@@ -10,10 +8,12 @@ import { getUplotChartDataForAnomalyDetection } from 'lib/uPlotLib/utils/getUplo
 import { getYAxisScaleForAnomalyDetection } from 'lib/uPlotLib/utils/getYAxisScale';
 import { LineChart } from 'lucide-react';
 import { useTimezone } from 'providers/Timezone';
-import { useEffect, useRef, useState } from 'react';
 import uPlot from 'uplot';
 
 import tooltipPlugin from './tooltipPlugin';
+
+import 'uplot/dist/uPlot.min.css';
+import './AnomalyAlertEvaluationView.styles.scss';
 
 const { Search } = Input;
 
@@ -30,21 +30,17 @@ function UplotChart({
 
 	useEffect(() => {
 		if (plotInstance.current) {
-			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 			// @ts-ignore
 			plotInstance.current.destroy();
 		}
 
 		if (data && data.length > 0) {
-			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 			// @ts-ignore
-			// eslint-disable-next-line new-cap
 			plotInstance.current = new uPlot(options, data, chartRef.current);
 		}
 
 		return (): void => {
 			if (plotInstance.current) {
-				// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 				// @ts-ignore
 				plotInstance.current.destroy();
 			}
@@ -62,7 +58,6 @@ function AnomalyAlertEvaluationView({
 	yAxisUnit: string;
 }): JSX.Element {
 	const { spline } = uPlot.paths;
-	// eslint-disable-next-line @typescript-eslint/naming-convention
 	const _spline = spline ? spline() : undefined;
 	const chartRef = useRef<HTMLDivElement>(null);
 	const isDarkMode = useIsDarkMode();
@@ -101,7 +96,9 @@ function AnomalyAlertEvaluationView({
 		hooks: {
 			draw: [
 				(u: any): void => {
-					if (!selectedSeries) return;
+					if (!selectedSeries) {
+						return;
+					}
 
 					const { ctx } = u;
 					const upperBandIdx = 3;
@@ -278,7 +275,6 @@ function AnomalyAlertEvaluationView({
 	};
 
 	const handleSearchValueChange = useDebouncedFn((event): void => {
-		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 		// @ts-ignore
 		const value = event?.target?.value || '';
 

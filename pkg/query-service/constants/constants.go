@@ -5,10 +5,10 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/SigNoz/signoz/pkg/query-service/model"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/valuer"
 )
 
 const (
@@ -28,9 +28,6 @@ const SpanSearchScopeRoot = "isroot"
 const SpanSearchScopeEntryPoint = "isentrypoint"
 const OrderBySpanCount = "span_count"
 
-// Deprecated: Use the new emailing service instead
-var InviteEmailTemplate = GetOrDefaultEnv("INVITE_EMAIL_TEMPLATE", "/root/templates/invitation_email.gotmpl")
-
 var MetricsExplorerClickhouseThreads = GetOrDefaultEnvInt("METRICS_EXPLORER_CLICKHOUSE_THREADS", 8)
 var UpdatedMetricsMetadataCachePrefix = GetOrDefaultEnv("METRICS_UPDATED_METADATA_CACHE_KEY", "UPDATED_METRICS_METADATA")
 
@@ -40,18 +37,11 @@ const NormalizedMetricsMapQueryThreads = 10
 var NormalizedMetricsMapRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 var NormalizedMetricsMapQuantileRegex = regexp.MustCompile(`(?i)([._-]?quantile.*)$`)
 
-// TODO(srikanthccv): remove after backfilling is done
-func UseMetricsPreAggregation() bool {
-	return GetOrDefaultEnv("USE_METRICS_PRE_AGGREGATION", "true") == "true"
-}
-
-var KafkaSpanEval = GetOrDefaultEnv("KAFKA_SPAN_EVAL", "false")
-
-func GetEvalDelay() time.Duration {
+func GetEvalDelay() valuer.TextDuration {
 	evalDelayStr := GetOrDefaultEnv("RULES_EVAL_DELAY", "2m")
-	evalDelayDuration, err := time.ParseDuration(evalDelayStr)
+	evalDelayDuration, err := valuer.ParseTextDuration(evalDelayStr)
 	if err != nil {
-		return 0
+		return valuer.TextDuration{}
 	}
 	return evalDelayDuration
 }
@@ -132,6 +122,8 @@ const (
 	SIGNOZ_TIMESERIES_v4_6HRS_TABLENAME        = "distributed_time_series_v4_6hrs"
 	SIGNOZ_ATTRIBUTES_METADATA_TABLENAME       = "distributed_attributes_metadata"
 	SIGNOZ_ATTRIBUTES_METADATA_LOCAL_TABLENAME = "attributes_metadata"
+	SIGNOZ_METADATA_TABLENAME                  = "distributed_metadata"
+	SIGNOZ_METADATA_LOCAL_TABLENAME            = "metadata"
 )
 
 // alert related constants
@@ -362,11 +354,6 @@ var NewStaticFieldsTraces = map[string]v3.AttributeKey{
 		DataType: v3.AttributeKeyDataTypeString,
 		IsColumn: true,
 	},
-	"kind": {
-		Key:      "kind",
-		DataType: v3.AttributeKeyDataTypeString,
-		IsColumn: true,
-	},
 	"kind_string": {
 		Key:      "kind_string",
 		DataType: v3.AttributeKeyDataTypeString,
@@ -521,7 +508,7 @@ var DeprecatedStaticFieldsTraces = map[string]v3.AttributeKey{
 	},
 	"kind": {
 		Key:      "kind",
-		DataType: v3.AttributeKeyDataTypeString,
+		DataType: v3.AttributeKeyDataTypeInt64,
 		IsColumn: true,
 	},
 	"spanKind": {
@@ -690,7 +677,6 @@ var OldToNewTraceFieldsMap = map[string]string{
 var StaticFieldsTraces = map[string]v3.AttributeKey{}
 
 var IsDotMetricsEnabled = false
-var PreferSpanMetrics = false
 var MaxJSONFlatteningDepth = 1
 
 func init() {
@@ -698,9 +684,6 @@ func init() {
 	maps.Copy(StaticFieldsTraces, DeprecatedStaticFieldsTraces)
 	if GetOrDefaultEnv(DotMetricsEnabled, "true") == "true" {
 		IsDotMetricsEnabled = true
-	}
-	if GetOrDefaultEnv("USE_SPAN_METRICS", "false") == "true" {
-		PreferSpanMetrics = true
 	}
 
 	// set max flattening depth

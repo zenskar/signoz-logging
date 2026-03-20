@@ -1,10 +1,12 @@
+import { useMemo, useState } from 'react';
+import { QueryFunctionContext, useQueries, useQuery } from 'react-query';
 import { LoadingOutlined } from '@ant-design/icons';
 import { Spin, Switch, Table, Tooltip, Typography } from 'antd';
 import { getQueryRangeV5 } from 'api/v5/queryRange/getQueryRange';
 import { MetricRangePayloadV5, ScalarData } from 'api/v5/v5';
 import { useNavigateToExplorer } from 'components/CeleryTask/useNavigateToExplorer';
 import { withErrorBoundary } from 'components/ErrorBoundaryHOC';
-import { ENTITY_VERSION_V4, ENTITY_VERSION_V5 } from 'constants/app';
+import { ENTITY_VERSION_V5 } from 'constants/app';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
 import {
 	END_POINT_DETAILS_QUERY_KEYS_ARRAY,
@@ -16,8 +18,6 @@ import {
 } from 'container/ApiMonitoring/utils';
 import { GetMetricQueryRange } from 'lib/dashboard/getQueryResults';
 import { Info } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { QueryFunctionContext, useQueries, useQuery } from 'react-query';
 import { SuccessResponse, SuccessResponseV2 } from 'types/api';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
@@ -56,17 +56,20 @@ function TopErrors({
 				{
 					items: endPointName
 						? [
+								// Remove any existing http_url filters from initialFilters to avoid duplicates
+								...(initialFilters?.items?.filter(
+									(item) => item.key?.key !== SPAN_ATTRIBUTES.HTTP_URL,
+								) || []),
 								{
 									id: '92b8a1c1',
 									key: {
 										dataType: DataTypes.String,
-										key: SPAN_ATTRIBUTES.URL_PATH,
+										key: SPAN_ATTRIBUTES.HTTP_URL,
 										type: 'tag',
 									},
 									op: '=',
 									value: endPointName,
 								},
-								...(initialFilters?.items || []),
 						  ]
 						: [...(initialFilters?.items || [])],
 					op: 'AND',
@@ -128,12 +131,12 @@ function TopErrors({
 	const endPointDropDownDataQueries = useQueries(
 		endPointDropDownQueryPayload.map((payload) => ({
 			queryKey: [
-				END_POINT_DETAILS_QUERY_KEYS_ARRAY[4],
+				END_POINT_DETAILS_QUERY_KEYS_ARRAY[2],
 				payload,
-				ENTITY_VERSION_V4,
+				ENTITY_VERSION_V5,
 			],
 			queryFn: (): Promise<SuccessResponse<MetricRangePayloadProps>> =>
-				GetMetricQueryRange(payload, ENTITY_VERSION_V4),
+				GetMetricQueryRange(payload, ENTITY_VERSION_V5),
 			enabled: !!payload,
 			staleTime: 60 * 1000,
 		})),

@@ -1,87 +1,153 @@
 # CODEOWNERS info: https://help.github.com/en/articles/about-code-owners
-# Owners are automatically requested for review for PRs that changes code
-# that they own.
 
-/frontend/ @YounixM @aks07
-/frontend/src/container/MetricsApplication @srikanthccv
-/frontend/src/container/NewWidget/RightContainer/types.ts @srikanthccv
+# Owners are automatically requested for review for PRs that changes code that they own.
 
-# Dashboard, Alert, Metrics, Service Map, Services
-/frontend/src/container/ListOfDashboard/ @srikanthccv
-/frontend/src/container/NewDashboard/ @srikanthccv
-/frontend/src/pages/DashboardsListPage/ @srikanthccv
-/frontend/src/pages/DashboardWidget/ @srikanthccv
-/frontend/src/pages/NewDashboard/ @srikanthccv
-/frontend/src/providers/Dashboard/ @srikanthccv
+/frontend/ @SigNoz/frontend-maintainers
 
-# Alerts
-/frontend/src/container/AlertHistory/ @srikanthccv
-/frontend/src/container/AllAlertChannels/ @srikanthccv
-/frontend/src/container/AnomalyAlertEvaluationView/ @srikanthccv
-/frontend/src/container/CreateAlertChannels/ @srikanthccv
-/frontend/src/container/CreateAlertRule/ @srikanthccv
-/frontend/src/container/EditAlertChannels/ @srikanthccv
-/frontend/src/container/FormAlertChannels/ @srikanthccv
-/frontend/src/container/FormAlertRules/ @srikanthccv
-/frontend/src/container/ListAlertRules/ @srikanthccv
-/frontend/src/container/TriggeredAlerts/ @srikanthccv
-/frontend/src/pages/AlertChannelCreate/ @srikanthccv
-/frontend/src/pages/AlertDetails/ @srikanthccv
-/frontend/src/pages/AlertHistory/ @srikanthccv
-/frontend/src/pages/AlertList/ @srikanthccv
-/frontend/src/pages/CreateAlert/ @srikanthccv
-/frontend/src/providers/Alert.tsx @srikanthccv
+# Onboarding
 
-# Metrics
-/frontend/src/container/MetricsExplorer/ @srikanthccv
-/frontend/src/pages/MetricsApplication/ @srikanthccv
-/frontend/src/pages/MetricsExplorer/ @srikanthccv
+/frontend/src/container/OnboardingV2Container/onboarding-configs/onboarding-config-with-links.json @makeavish
+/frontend/src/container/OnboardingV2Container/AddDataSource/AddDataSource.tsx @makeavish
 
-# Services and Service Map
-/frontend/src/container/ServiceApplication/ @srikanthccv
-/frontend/src/container/ServiceTable/ @srikanthccv
-/frontend/src/pages/Services/ @srikanthccv
-/frontend/src/pages/ServiceTopLevelOperations/ @srikanthccv
-/frontend/src/container/Home/Services/ @srikanthccv
-
-/deploy/ @SigNoz/devops
-.github @SigNoz/devops
+# CI
+/deploy/ @therealpandey
+.github @therealpandey
+go.mod @therealpandey
 
 # Scaffold Owners
-/pkg/config/ @therealpandey
-/pkg/errors/ @therealpandey
-/pkg/factory/ @therealpandey
-/pkg/types/ @therealpandey
-/pkg/valuer/ @therealpandey
-/cmd/ @therealpandey
-.golangci.yml @therealpandey
+
+/pkg/config/ @vikrantgupta25
+/pkg/errors/ @vikrantgupta25
+/pkg/factory/ @vikrantgupta25
+/pkg/types/ @vikrantgupta25
+/pkg/valuer/ @vikrantgupta25
+/cmd/ @vikrantgupta25
+.golangci.yml @vikrantgupta25
 
 # Zeus Owners
+
 /pkg/zeus/ @vikrantgupta25
 /ee/zeus/ @vikrantgupta25
 /pkg/licensing/ @vikrantgupta25
 /ee/licensing/ @vikrantgupta25
 
 # SQL Owners
+
 /pkg/sqlmigration/ @vikrantgupta25
 /ee/sqlmigration/ @vikrantgupta25
 /pkg/sqlschema/ @vikrantgupta25
 /ee/sqlschema/ @vikrantgupta25
 
 # Analytics Owners
+
 /pkg/analytics/ @vikrantgupta25
 /pkg/statsreporter/ @vikrantgupta25
 
+# Emailing Owners
+
+/pkg/emailing/ @vikrantgupta25
+/pkg/types/emailtypes/ @vikrantgupta25
+/templates/email/ @vikrantgupta25
+
 # Querier Owners
+
 /pkg/querier/ @srikanthccv
 /pkg/variables/ @srikanthccv
 /pkg/types/querybuildertypes/ @srikanthccv
+/pkg/types/telemetrytypes/ @srikanthccv
 /pkg/querybuilder/ @srikanthccv
 /pkg/telemetrylogs/ @srikanthccv
 /pkg/telemetrymetadata/ @srikanthccv
 /pkg/telemetrymetrics/ @srikanthccv
 /pkg/telemetrytraces/ @srikanthccv
 
-# AuthN / AuthZ Owners 
+# Metrics
 
-/pkg/authz/ @vikrantgupta25 @therealpandey
+/pkg/types/metrictypes/ @srikanthccv
+/pkg/types/metricsexplorertypes/ @srikanthccv
+/pkg/modules/metricsexplorer/ @srikanthccv
+/pkg/prometheus/ @srikanthccv
+
+# APM
+
+/pkg/types/servicetypes/ @srikanthccv
+/pkg/types/apdextypes/ @srikanthccv
+/pkg/modules/apdex/ @srikanthccv
+/pkg/modules/services/ @srikanthccv
+
+# Dashboard
+
+/pkg/types/dashboardtypes/ @srikanthccv
+/pkg/modules/dashboard/ @srikanthccv
+
+# Rule/Alertmanager
+
+/pkg/types/ruletypes/ @srikanthccv
+/pkg/types/alertmanagertypes @srikanthccv
+/pkg/alertmanager/ @srikanthccv
+/pkg/ruler/ @srikanthccv
+
+# Correlation-adjacent
+
+/pkg/contextlinks/ @srikanthccv
+/pkg/types/parsertypes/ @srikanthccv
+/pkg/queryparser/ @srikanthccv
+
+# AuthN / AuthZ Owners
+
+/pkg/authz/ @vikrantgupta25
+/ee/authz/ @vikrantgupta25
+/pkg/authn/ @vikrantgupta25
+/ee/authn/ @vikrantgupta25
+/pkg/modules/user/ @vikrantgupta25
+/pkg/modules/session/ @vikrantgupta25
+/pkg/modules/organization/ @vikrantgupta25
+/pkg/modules/authdomain/ @vikrantgupta25
+/pkg/modules/role/ @vikrantgupta25
+
+# IdentN Owners 
+/pkg/identn/ @vikrantgupta25
+/pkg/http/middleware/identn.go @vikrantgupta25
+
+# Integration tests
+
+/tests/integration/ @vikrantgupta25
+
+# OpenAPI types generator
+
+/frontend/src/api @SigNoz/frontend-maintainers
+
+# Dashboard Owners
+
+/frontend/src/hooks/dashboard/ @SigNoz/pulse-frontend
+/frontend/src/providers/Dashboard/ @SigNoz/pulse-frontend
+
+## Dashboard Types
+
+/frontend/src/api/types/dashboard/ @SigNoz/pulse-frontend
+
+## Dashboard List
+
+/frontend/src/pages/DashboardsListPage/ @SigNoz/pulse-frontend
+/frontend/src/container/ListOfDashboard/ @SigNoz/pulse-frontend
+
+# Dashboard Widget Page
+/frontend/src/pages/DashboardWidget/ @SigNoz/pulse-frontend
+/frontend/src/container/NewWidget/ @SigNoz/pulse-frontend
+
+## Dashboard Page
+
+/frontend/src/pages/DashboardPage/ @SigNoz/pulse-frontend
+/frontend/src/container/DashboardContainer/ @SigNoz/pulse-frontend
+/frontend/src/container/GridCardLayout/ @SigNoz/pulse-frontend
+
+## Public Dashboard Page
+
+/frontend/src/pages/PublicDashboard/ @SigNoz/pulse-frontend
+/frontend/src/container/PublicDashboardContainer/ @SigNoz/pulse-frontend
+
+## Dashboard Libs + Components
+/frontend/src/lib/uPlotV2/ @SigNoz/pulse-frontend
+/frontend/src/lib/dashboard/ @SigNoz/pulse-frontend
+/frontend/src/lib/dashboardVariables/ @SigNoz/pulse-frontend
+/frontend/src/components/NewSelect/ @SigNoz/pulse-frontend

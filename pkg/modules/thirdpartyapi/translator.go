@@ -2,70 +2,40 @@ package thirdpartyapi
 
 import (
 	"fmt"
-	"github.com/SigNoz/signoz/pkg/types/thirdpartyapitypes"
 	"net"
-	"regexp"
 	"time"
+
+	"github.com/SigNoz/signoz/pkg/types/thirdpartyapitypes"
 
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 )
 
 const (
-	urlPathKeyLegacy       = "http.url"
-	serverAddressKeyLegacy = "net.peer.name"
-
-	urlPathKey       = "url.full"
-	serverAddressKey = "server.address"
+	derivedKeyHTTPURL  = "http_url" // https://signoz.io/docs/traces-management/guides/derived-fields-spans/#http_url
+	derivedKeyHTTPHost = "http_host"
 )
 
 var defaultStepInterval = 60 * time.Second
 
-type SemconvFieldMapping struct {
-	LegacyField  string
-	CurrentField string
-	FieldType    telemetrytypes.FieldDataType
-	Context      telemetrytypes.FieldContext
-}
-
-var dualSemconvGroupByKeys = map[string][]qbtypes.GroupByKey{
-	"server": {
-		{
-			TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
-				Name:          serverAddressKey,
-				FieldDataType: telemetrytypes.FieldDataTypeString,
-				FieldContext:  telemetrytypes.FieldContextAttribute,
-				Signal:        telemetrytypes.SignalTraces,
-			},
+var (
+	groupByKeyHTTPHost = qbtypes.GroupByKey{
+		TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
+			Name:          derivedKeyHTTPHost,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextSpan,
+			Signal:        telemetrytypes.SignalTraces,
 		},
-		{
-			TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
-				Name:          serverAddressKeyLegacy,
-				FieldDataType: telemetrytypes.FieldDataTypeString,
-				FieldContext:  telemetrytypes.FieldContextAttribute,
-				Signal:        telemetrytypes.SignalTraces,
-			},
+	}
+	groupByKeyHTTPURL = qbtypes.GroupByKey{
+		TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
+			Name:          derivedKeyHTTPURL,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextSpan,
+			Signal:        telemetrytypes.SignalTraces,
 		},
-	},
-	"url": {
-		{
-			TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
-				Name:          urlPathKey,
-				FieldDataType: telemetrytypes.FieldDataTypeString,
-				FieldContext:  telemetrytypes.FieldContextAttribute,
-				Signal:        telemetrytypes.SignalTraces,
-			},
-		},
-		{
-			TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
-				Name:          urlPathKeyLegacy,
-				FieldDataType: telemetrytypes.FieldDataTypeString,
-				FieldContext:  telemetrytypes.FieldContextAttribute,
-				Signal:        telemetrytypes.SignalTraces,
-			},
-		},
-	},
-}
+	}
+)
 
 func FilterIntermediateColumns(result *qbtypes.QueryRangeResponse) *qbtypes.QueryRangeResponse {
 	if result == nil || result.Data.Results == nil {
@@ -114,103 +84,6 @@ func FilterIntermediateColumns(result *qbtypes.QueryRangeResponse) *qbtypes.Quer
 	return result
 }
 
-func MergeSemconvColumns(result *qbtypes.QueryRangeResponse) *qbtypes.QueryRangeResponse {
-	if result == nil || result.Data.Results == nil {
-		return result
-	}
-
-	for _, res := range result.Data.Results {
-		scalarData, ok := res.(*qbtypes.ScalarData)
-		if !ok {
-			continue
-		}
-
-		serverAddressKeyIdx := -1
-		serverAddressKeyLegacyIdx := -1
-
-		for i, col := range scalarData.Columns {
-			if col.Name == serverAddressKey {
-				serverAddressKeyIdx = i
-			} else if col.Name == serverAddressKeyLegacy {
-				serverAddressKeyLegacyIdx = i
-			}
-		}
-
-		if serverAddressKeyIdx == -1 || serverAddressKeyLegacyIdx == -1 {
-			continue
-		}
-
-		var newRows [][]any
-		for _, row := range scalarData.Data {
-			if len(row) <= serverAddressKeyIdx || len(row) <= serverAddressKeyLegacyIdx {
-				continue
-			}
-
-			var serverName any
-			if isValidValue(row[serverAddressKeyIdx]) {
-				serverName = row[serverAddressKeyIdx]
-			} else if isValidValue(row[serverAddressKeyLegacyIdx]) {
-				serverName = row[serverAddressKeyLegacyIdx]
-			}
-
-			if serverName != nil {
-				newRow := make([]any, len(row)-1)
-				newRow[0] = serverName
-
-				targetIdx := 1
-				for i, val := range row {
-					if i != serverAddressKeyLegacyIdx && i != serverAddressKeyIdx {
-						if targetIdx < len(newRow) {
-							newRow[targetIdx] = val
-							targetIdx++
-						}
-					}
-				}
-				newRows = append(newRows, newRow)
-			}
-		}
-
-		newColumns := make([]*qbtypes.ColumnDescriptor, len(scalarData.Columns)-1)
-		targetIdx := 0
-		for i, col := range scalarData.Columns {
-			if i == serverAddressKeyIdx {
-				newCol := &qbtypes.ColumnDescriptor{
-					TelemetryFieldKey: telemetrytypes.TelemetryFieldKey{
-						Name:          serverAddressKeyLegacy,
-						FieldDataType: col.FieldDataType,
-						FieldContext:  col.FieldContext,
-						Signal:        col.Signal,
-					},
-					QueryName:        col.QueryName,
-					AggregationIndex: col.AggregationIndex,
-					Meta:             col.Meta,
-					Type:             col.Type,
-				}
-				newColumns[targetIdx] = newCol
-				targetIdx++
-			} else if i != serverAddressKeyLegacyIdx {
-				newColumns[targetIdx] = col
-				targetIdx++
-			}
-		}
-
-		scalarData.Columns = newColumns
-		scalarData.Data = newRows
-	}
-
-	return result
-}
-
-func isValidValue(val any) bool {
-	if val == nil {
-		return false
-	}
-	if str, ok := val.(string); ok {
-		return str != "" && str != "n/a"
-	}
-	return true
-}
-
 func FilterResponse(results []*qbtypes.QueryRangeResponse) []*qbtypes.QueryRangeResponse {
 	filteredResults := make([]*qbtypes.QueryRangeResponse, 0, len(results))
 
@@ -247,6 +120,8 @@ func FilterResponse(results []*qbtypes.QueryRangeResponse) []*qbtypes.QueryRange
 					}
 				}
 				resultData.Rows = filteredRows
+			case *qbtypes.ScalarData:
+				resultData.Data = filterScalarDataIPs(resultData.Columns, resultData.Data)
 			}
 
 			filteredData = append(filteredData, result)
@@ -261,7 +136,7 @@ func FilterResponse(results []*qbtypes.QueryRangeResponse) []*qbtypes.QueryRange
 
 func shouldIncludeSeries(series *qbtypes.TimeSeries) bool {
 	for _, label := range series.Labels {
-		if label.Key.Name == serverAddressKeyLegacy || label.Key.Name == serverAddressKey {
+		if label.Key.Name == derivedKeyHTTPHost {
 			if strVal, ok := label.Value.(string); ok {
 				if net.ParseIP(strVal) != nil {
 					return false
@@ -272,14 +147,45 @@ func shouldIncludeSeries(series *qbtypes.TimeSeries) bool {
 	return true
 }
 
+func filterScalarDataIPs(columns []*qbtypes.ColumnDescriptor, data [][]any) [][]any {
+	// Find column indices for server address fields
+	serverColIndices := make([]int, 0)
+	for i, col := range columns {
+		if col.Name == derivedKeyHTTPHost {
+			serverColIndices = append(serverColIndices, i)
+		}
+	}
+
+	if len(serverColIndices) == 0 {
+		return data
+	}
+
+	filtered := make([][]any, 0, len(data))
+	for _, row := range data {
+		includeRow := true
+		for _, colIdx := range serverColIndices {
+			if colIdx < len(row) {
+				if strVal, ok := row[colIdx].(string); ok {
+					if net.ParseIP(strVal) != nil {
+						includeRow = false
+						break
+					}
+				}
+			}
+		}
+		if includeRow {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
 func shouldIncludeRow(row *qbtypes.RawRow) bool {
 	if row.Data != nil {
-		for _, key := range []string{serverAddressKeyLegacy, serverAddressKey} {
-			if domainVal, ok := row.Data[key]; ok {
-				if domainStr, ok := domainVal.(string); ok {
-					if net.ParseIP(domainStr) != nil {
-						return false
-					}
+		if domainVal, ok := row.Data[derivedKeyHTTPHost]; ok {
+			if domainStr, ok := domainVal.(string); ok {
+				if net.ParseIP(domainStr) != nil {
+					return false
 				}
 			}
 		}
@@ -287,13 +193,8 @@ func shouldIncludeRow(row *qbtypes.RawRow) bool {
 	return true
 }
 
-func containsKindStringOverride(expression string) bool {
-	kindStringPattern := regexp.MustCompile(`kind_string\s*[!=<>]+`)
-	return kindStringPattern.MatchString(expression)
-}
-
-func mergeGroupBy(base, additional []qbtypes.GroupByKey) []qbtypes.GroupByKey {
-	return append(base, additional...)
+func mergeGroupBy(base qbtypes.GroupByKey, additional []qbtypes.GroupByKey) []qbtypes.GroupByKey {
+	return append([]qbtypes.GroupByKey{base}, additional...)
 }
 
 func BuildDomainList(req *thirdpartyapitypes.ThirdPartyApiRequest) (*qbtypes.QueryRangeRequest, error) {
@@ -359,10 +260,10 @@ func buildEndpointsQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.Q
 			Signal:       telemetrytypes.SignalTraces,
 			StepInterval: qbtypes.Step{Duration: defaultStepInterval},
 			Aggregations: []qbtypes.TraceAggregation{
-				{Expression: "count_distinct(http.url)"},
+				{Expression: fmt.Sprintf("count_distinct(%s)", derivedKeyHTTPURL)},
 			},
 			Filter:  buildBaseFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["server"], req.GroupBy),
+			GroupBy: mergeGroupBy(groupByKeyHTTPHost, req.GroupBy),
 		},
 	}
 }
@@ -378,7 +279,7 @@ func buildLastSeenQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.Qu
 				{Expression: "max(timestamp)"},
 			},
 			Filter:  buildBaseFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["server"], req.GroupBy),
+			GroupBy: mergeGroupBy(groupByKeyHTTPHost, req.GroupBy),
 		},
 	}
 }
@@ -394,12 +295,14 @@ func buildRpsQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.QueryEn
 				{Expression: "rate()"},
 			},
 			Filter:  buildBaseFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["server"], req.GroupBy),
+			GroupBy: mergeGroupBy(groupByKeyHTTPHost, req.GroupBy),
 		},
 	}
 }
 
 func buildErrorQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.QueryEnvelope {
+	filter := buildBaseFilter(req.Filter)
+	filter.Expression = fmt.Sprintf("has_error = true AND (%s)", filter.Expression)
 	return qbtypes.QueryEnvelope{
 		Type: qbtypes.QueryTypeBuilder,
 		Spec: qbtypes.QueryBuilderQuery[qbtypes.TraceAggregation]{
@@ -409,8 +312,8 @@ func buildErrorQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.Query
 			Aggregations: []qbtypes.TraceAggregation{
 				{Expression: "count()"},
 			},
-			Filter:  buildErrorFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["server"], req.GroupBy),
+			Filter:  filter,
+			GroupBy: mergeGroupBy(groupByKeyHTTPHost, req.GroupBy),
 		},
 	}
 }
@@ -426,7 +329,7 @@ func buildTotalSpanQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.Q
 				{Expression: "count()"},
 			},
 			Filter:  buildBaseFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["server"], req.GroupBy),
+			GroupBy: mergeGroupBy(groupByKeyHTTPHost, req.GroupBy),
 		},
 	}
 }
@@ -442,7 +345,7 @@ func buildP99Query(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtypes.QueryEn
 				{Expression: "p99(duration_nano)"},
 			},
 			Filter:  buildBaseFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["server"], req.GroupBy),
+			GroupBy: mergeGroupBy(groupByKeyHTTPHost, req.GroupBy),
 		},
 	}
 }
@@ -465,10 +368,10 @@ func buildEndpointsInfoQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtyp
 			Signal:       telemetrytypes.SignalTraces,
 			StepInterval: qbtypes.Step{Duration: defaultStepInterval},
 			Aggregations: []qbtypes.TraceAggregation{
-				{Expression: "rate(http.url)"},
+				{Expression: fmt.Sprintf("rate(%s)", derivedKeyHTTPURL)},
 			},
 			Filter:  buildBaseFilter(req.Filter),
-			GroupBy: mergeGroupBy(dualSemconvGroupByKeys["url"], req.GroupBy),
+			GroupBy: mergeGroupBy(groupByKeyHTTPURL, req.GroupBy),
 		},
 	}
 }
@@ -522,29 +425,12 @@ func buildLastSeenInfoQuery(req *thirdpartyapitypes.ThirdPartyApiRequest) qbtype
 }
 
 func buildBaseFilter(additionalFilter *qbtypes.Filter) *qbtypes.Filter {
-	baseExpression := fmt.Sprintf("(%s EXISTS OR %s EXISTS) AND kind_string = 'Client'",
-		urlPathKeyLegacy, urlPathKey)
+	baseExpression := fmt.Sprintf("%s EXISTS AND kind_string = 'Client'", derivedKeyHTTPURL)
 
 	if additionalFilter != nil && additionalFilter.Expression != "" {
-		if containsKindStringOverride(additionalFilter.Expression) {
-			return &qbtypes.Filter{Expression: baseExpression}
-		}
+		// even if it contains kind_string we add with an AND so it doesn't matter if the user is overriding it.
 		baseExpression = fmt.Sprintf("(%s) AND (%s)", baseExpression, additionalFilter.Expression)
 	}
 
 	return &qbtypes.Filter{Expression: baseExpression}
-}
-
-func buildErrorFilter(additionalFilter *qbtypes.Filter) *qbtypes.Filter {
-	errorExpression := fmt.Sprintf("has_error = true AND (%s EXISTS OR %s EXISTS) AND kind_string = 'Client'",
-		urlPathKeyLegacy, urlPathKey)
-
-	if additionalFilter != nil && additionalFilter.Expression != "" {
-		if containsKindStringOverride(additionalFilter.Expression) {
-			return &qbtypes.Filter{Expression: errorExpression}
-		}
-		errorExpression = fmt.Sprintf("(%s) AND (%s)", errorExpression, additionalFilter.Expression)
-	}
-
-	return &qbtypes.Filter{Expression: errorExpression}
 }

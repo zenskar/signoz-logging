@@ -1,11 +1,16 @@
-/* eslint-disable jsx-a11y/no-static-element-interactions */
-/* eslint-disable jsx-a11y/click-events-have-key-events */
-import './TableView.styles.scss';
-
+import { useEffect, useMemo, useState } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useDispatch } from 'react-redux';
+import { generatePath } from 'react-router-dom';
 import { LinkOutlined } from '@ant-design/icons';
 import { Color } from '@signozhq/design-tokens';
-import { Button, Space, Tooltip, Typography } from 'antd';
-import { ColumnsType } from 'antd/es/table';
+import {
+	Button,
+	Space,
+	TableColumnsType as ColumnsType,
+	Tooltip,
+	Typography,
+} from 'antd';
 import cx from 'classnames';
 import AddToQueryHOC, {
 	AddToQueryHOCProps,
@@ -13,6 +18,7 @@ import AddToQueryHOC, {
 import { ResizeTable } from 'components/ResizeTable';
 import { OPERATORS } from 'constants/queryBuilder';
 import ROUTES from 'constants/routes';
+import { ChangeViewFunctionType } from 'container/ExplorerOptions/types';
 import { RESTRICTED_SELECTED_FIELDS } from 'container/LogsFilters/config';
 import { MetricsType } from 'container/MetricsApplication/constant';
 import { FontSize, OptionsQuery } from 'container/OptionsMenu/types';
@@ -21,9 +27,7 @@ import history from 'lib/history';
 import { fieldSearchFilter } from 'lib/logs/fieldSearch';
 import { removeJSONStringifyQuotes } from 'lib/removeJSONStringifyQuotes';
 import { Pin } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { useDispatch } from 'react-redux';
-import { generatePath } from 'react-router-dom';
+// eslint-disable-next-line no-restricted-imports
 import { Dispatch } from 'redux';
 import AppActions from 'types/actions';
 import { SET_DETAILED_LOG_DATA } from 'types/actions/logs';
@@ -41,13 +45,15 @@ import {
 	getFieldAttributes,
 } from './utils';
 
+import './TableView.styles.scss';
+
 interface TableViewProps {
 	logData: ILog;
 	fieldSearchInput: string;
 	selectedOptions: OptionsQuery;
 	isListViewPanel?: boolean;
 	listViewPanelSelectedFields?: IField[] | null;
-	onGroupByAttribute?: (fieldKey: string, dataType?: DataTypes) => Promise<void>;
+	handleChangeSelectedView?: ChangeViewFunctionType;
 }
 
 type Props = TableViewProps &
@@ -61,8 +67,8 @@ function TableView({
 	onClickActionItem,
 	isListViewPanel = false,
 	selectedOptions,
-	onGroupByAttribute,
 	listViewPanelSelectedFields,
+	handleChangeSelectedView,
 }: Props): JSX.Element | null {
 	const dispatch = useDispatch<Dispatch<AppActions>>();
 	const [isfilterInLoading, setIsFilterInLoading] = useState<boolean>(false);
@@ -91,6 +97,10 @@ function TableView({
 					pinnedAttributes[path] = true;
 				}
 			});
+		}
+		// pin trace_id by default when present
+		if (logData?.trace_id) {
+			pinnedAttributes.trace_id = true;
 		}
 
 		setPinnedAttributes(pinnedAttributes);
@@ -159,7 +169,9 @@ function TableView({
 		record: DataType,
 		event: React.MouseEvent<HTMLDivElement, MouseEvent>,
 	): void => {
-		if (flattenLogData === null) return;
+		if (flattenLogData === null) {
+			return;
+		}
 
 		const traceId = flattenLogData[record.field];
 
@@ -238,7 +250,7 @@ function TableView({
 							<Typography.Text>{renderedField}</Typography.Text>
 
 							{traceId && (
-								<Tooltip title="Inspect in Trace">
+								<Tooltip title="Inspect in Trace" mouseLeaveDelay={0}>
 									<Button
 										className="periscope-btn"
 										onClick={(
@@ -291,7 +303,7 @@ function TableView({
 					isfilterInLoading={isfilterInLoading}
 					isfilterOutLoading={isfilterOutLoading}
 					onClickHandler={onClickHandler}
-					onGroupByAttribute={onGroupByAttribute}
+					handleChangeSelectedView={handleChangeSelectedView}
 				/>
 			),
 		},
@@ -334,7 +346,7 @@ function TableView({
 TableView.defaultProps = {
 	isListViewPanel: false,
 	listViewPanelSelectedFields: null,
-	onGroupByAttribute: undefined,
+	handleChangeSelectedView: undefined,
 };
 
 export interface DataType {

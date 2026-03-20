@@ -33,7 +33,6 @@ type filterExpressionVisitor struct {
 	mainErrorURL       string
 	builder            *sqlbuilder.SelectBuilder
 	fullTextColumn     *telemetrytypes.TelemetryFieldKey
-	jsonBodyPrefix     string
 	jsonKeyToKey       qbtypes.JsonKeyToFieldFunc
 	skipResourceFilter bool
 	skipFullTextFilter bool
@@ -53,7 +52,6 @@ type FilterExprVisitorOpts struct {
 	FieldKeys          map[string][]*telemetrytypes.TelemetryFieldKey
 	Builder            *sqlbuilder.SelectBuilder
 	FullTextColumn     *telemetrytypes.TelemetryFieldKey
-	JsonBodyPrefix     string
 	JsonKeyToKey       qbtypes.JsonKeyToFieldFunc
 	SkipResourceFilter bool
 	SkipFullTextFilter bool
@@ -73,7 +71,6 @@ func newFilterExpressionVisitor(opts FilterExprVisitorOpts) *filterExpressionVis
 		fieldKeys:          opts.FieldKeys,
 		builder:            opts.Builder,
 		fullTextColumn:     opts.FullTextColumn,
-		jsonBodyPrefix:     opts.JsonBodyPrefix,
 		jsonKeyToKey:       opts.JsonKeyToKey,
 		skipResourceFilter: opts.SkipResourceFilter,
 		skipFullTextFilter: opts.SkipFullTextFilter,
@@ -94,6 +91,7 @@ type PreparedWhereClause struct {
 
 // PrepareWhereClause generates a ClickHouse compatible WHERE clause from the filter query
 func PrepareWhereClause(query string, opts FilterExprVisitorOpts, startNs uint64, endNs uint64) (*PreparedWhereClause, error) {
+
 	// Setup the ANTLR parsing pipeline
 	input := antlr.NewInputStream(query)
 	lexer := grammar.NewFilterQueryLexer(input)
@@ -172,7 +170,7 @@ func PrepareWhereClause(query string, opts FilterExprVisitorOpts, startNs uint64
 
 	whereClause := sqlbuilder.NewWhereClause().AddWhereExpr(visitor.builder.Args, cond)
 
-	return &PreparedWhereClause{whereClause, visitor.warnings, visitor.mainWarnURL}, nil
+	return &PreparedWhereClause{WhereClause: whereClause, Warnings: visitor.warnings, WarningsDocURL: visitor.mainWarnURL}, nil
 }
 
 // Visit dispatches to the specific visit method based on node type
@@ -315,37 +313,30 @@ func (v *filterExpressionVisitor) VisitPrimary(ctx *grammar.PrimaryContext) any 
 			return ""
 		}
 		child := ctx.GetChild(0)
+		var searchText string
 		if keyCtx, ok := child.(*grammar.KeyContext); ok {
 			// create a full text search condition on the body field
-
-			keyText := keyCtx.GetText()
-			cond, err := v.conditionBuilder.ConditionFor(context.Background(), v.fullTextColumn, qbtypes.FilterOperatorRegexp, FormatFullTextSearch(keyText), v.builder, v.startNs, v.endNs)
-			if err != nil {
-				v.errors = append(v.errors, fmt.Sprintf("failed to build full text search condition: %s", err.Error()))
-				return ""
-			}
-			return cond
+			searchText = keyCtx.GetText()
 		} else if valCtx, ok := child.(*grammar.ValueContext); ok {
-			var text string
 			if valCtx.QUOTED_TEXT() != nil {
-				text = trimQuotes(valCtx.QUOTED_TEXT().GetText())
+				searchText = trimQuotes(valCtx.QUOTED_TEXT().GetText())
 			} else if valCtx.NUMBER() != nil {
-				text = valCtx.NUMBER().GetText()
+				searchText = valCtx.NUMBER().GetText()
 			} else if valCtx.BOOL() != nil {
-				text = valCtx.BOOL().GetText()
+				searchText = valCtx.BOOL().GetText()
 			} else if valCtx.KEY() != nil {
-				text = valCtx.KEY().GetText()
+				searchText = valCtx.KEY().GetText()
 			} else {
 				v.errors = append(v.errors, fmt.Sprintf("unsupported value type: %s", valCtx.GetText()))
 				return ""
 			}
-			cond, err := v.conditionBuilder.ConditionFor(context.Background(), v.fullTextColumn, qbtypes.FilterOperatorRegexp, FormatFullTextSearch(text), v.builder, v.startNs, v.endNs)
-			if err != nil {
-				v.errors = append(v.errors, fmt.Sprintf("failed to build full text search condition: %s", err.Error()))
-				return ""
-			}
-			return cond
 		}
+		cond, err := v.conditionBuilder.ConditionFor(context.Background(), v.fullTextColumn, qbtypes.FilterOperatorRegexp, FormatFullTextSearch(searchText), v.builder, v.startNs, v.endNs)
+		if err != nil {
+			v.errors = append(v.errors, fmt.Sprintf("failed to build full text search condition: %s", err.Error()))
+			return ""
+		}
+		return cond
 	}
 
 	return "" // Should not happen with valid input
@@ -385,6 +376,7 @@ func (v *filterExpressionVisitor) VisitComparison(ctx *grammar.ComparisonContext
 		for _, key := range keys {
 			condition, err := v.conditionBuilder.ConditionFor(context.Background(), key, op, nil, v.builder, v.startNs, v.endNs)
 			if err != nil {
+				v.errors = append(v.errors, fmt.Sprintf("failed to build condition: %s", err.Error()))
 				return ""
 			}
 			conds = append(conds, condition)
@@ -437,6 +429,10 @@ func (v *filterExpressionVisitor) VisitComparison(ctx *grammar.ComparisonContext
 					}
 					switch varValues := varItem.Value.(type) {
 					case []any:
+						if len(varValues) == 0 {
+							v.errors = append(v.errors, fmt.Sprintf("malformed request payload: variable `%s` used in expression has an empty list value", strings.TrimPrefix(var_, "$")))
+							return ""
+						}
 						values = varValues
 					case any:
 						values = []any{varValues}
@@ -481,6 +477,22 @@ func (v *filterExpressionVisitor) VisitComparison(ctx *grammar.ComparisonContext
 		value1 := v.Visit(values[0])
 		value2 := v.Visit(values[1])
 
+		switch value1.(type) {
+		case float64:
+			if _, ok := value2.(float64); !ok {
+				v.errors = append(v.errors, fmt.Sprintf("value type mismatch for key %s: expected number for both operands", keys[0].Name))
+				return ""
+			}
+		case string:
+			if _, ok := value2.(string); !ok {
+				v.errors = append(v.errors, fmt.Sprintf("value type mismatch for key %s: expected string for both operands", keys[0].Name))
+				return ""
+			}
+		default:
+			v.errors = append(v.errors, fmt.Sprintf("value type mismatch for key %s: operands must be number or string", keys[0].Name))
+			return ""
+		}
+
 		var conds []string
 		for _, key := range keys {
 			condition, err := v.conditionBuilder.ConditionFor(context.Background(), key, op, []any{value1, value2}, v.builder, v.startNs, v.endNs)
@@ -516,6 +528,10 @@ func (v *filterExpressionVisitor) VisitComparison(ctx *grammar.ComparisonContext
 			if ok {
 				switch varValues := varItem.Value.(type) {
 				case []any:
+					if len(varValues) == 0 {
+						v.errors = append(v.errors, fmt.Sprintf("malformed request payload: variable `%s` used in expression has an empty list value", strings.TrimPrefix(var_, "$")))
+						return ""
+					}
 					value = varValues[0]
 				case any:
 					value = varValues
@@ -626,7 +642,6 @@ func (v *filterExpressionVisitor) VisitValueList(ctx *grammar.ValueListContext) 
 
 // VisitFullText handles standalone quoted strings for full-text search
 func (v *filterExpressionVisitor) VisitFullText(ctx *grammar.FullTextContext) any {
-
 	if v.skipFullTextFilter {
 		return ""
 	}
@@ -648,6 +663,7 @@ func (v *filterExpressionVisitor) VisitFullText(ctx *grammar.FullTextContext) an
 		v.errors = append(v.errors, fmt.Sprintf("failed to build full text search condition: %s", err.Error()))
 		return ""
 	}
+
 	return cond
 }
 
@@ -684,6 +700,22 @@ func (v *filterExpressionVisitor) VisitFunctionCall(ctx *grammar.FunctionCallCon
 		v.errors = append(v.errors, fmt.Sprintf("function `%s` expects key parameter to be a field key", functionName))
 		return ""
 	}
+
+	// filter arrays from keys
+	if BodyJSONQueryEnabled && functionName != "hasToken" {
+		filteredKeys := []*telemetrytypes.TelemetryFieldKey{}
+		for _, key := range keys {
+			if key.FieldDataType.IsArray() {
+				filteredKeys = append(filteredKeys, key)
+			}
+		}
+		if len(filteredKeys) == 0 {
+			v.errors = append(v.errors, fmt.Sprintf("function `%s` expects key parameter to be an array field; no array fields found", functionName))
+			return ""
+		}
+		keys = filteredKeys
+	}
+
 	value := params[1:]
 	var conds []string
 	for _, key := range keys {
@@ -709,8 +741,17 @@ func (v *filterExpressionVisitor) VisitFunctionCall(ctx *grammar.FunctionCallCon
 			conds = append(conds, fmt.Sprintf("hasToken(LOWER(%s), LOWER(%s))", key.Name, v.builder.Var(value[0])))
 		} else {
 			// this is that all other functions only support array fields
-			if strings.HasPrefix(key.Name, v.jsonBodyPrefix) {
-				fieldName, _ = v.jsonKeyToKey(context.Background(), key, qbtypes.FilterOperatorUnknown, value)
+			if key.FieldContext == telemetrytypes.FieldContextBody {
+				var err error
+				if BodyJSONQueryEnabled {
+					fieldName, err = v.fieldMapper.FieldFor(context.Background(), key)
+					if err != nil {
+						v.errors = append(v.errors, fmt.Sprintf("failed to get field name for key %s: %s", key.Name, err.Error()))
+						return ""
+					}
+				} else {
+					fieldName, _ = v.jsonKeyToKey(context.Background(), key, qbtypes.FilterOperatorUnknown, value)
+				}
 			} else {
 				// TODO(add docs for json body search)
 				if v.mainErrorURL == "" {
@@ -800,58 +841,57 @@ func (v *filterExpressionVisitor) VisitValue(ctx *grammar.ValueContext) any {
 
 // VisitKey handles field/column references
 func (v *filterExpressionVisitor) VisitKey(ctx *grammar.KeyContext) any {
-
 	fieldKey := telemetrytypes.GetFieldKeyFromKeyText(ctx.GetText())
+	keyName := fieldKey.Name
 
-	keyName := strings.TrimPrefix(fieldKey.Name, v.jsonBodyPrefix)
+	// GetFieldKeyFromKeyText function extracts the context prefix (attribute., resource., body.) if present
+	// extracts data type if present (e.g., :string, :int)
+	// so we need to filter the available field keys based on the provided context and data type
+	fieldKeysForName := []*telemetrytypes.TelemetryFieldKey{}
 
-	fieldKeysForName := v.fieldKeys[keyName]
-
-	// if the context is explicitly provided, filter out the remaining
-	// example, resource.attr = 'value', then we don't want to search on
-	// anything other than the resource attributes
-	if fieldKey.FieldContext != telemetrytypes.FieldContextUnspecified {
-		filteredKeys := []*telemetrytypes.TelemetryFieldKey{}
-		for _, item := range fieldKeysForName {
-			if item.FieldContext == fieldKey.FieldContext {
-				filteredKeys = append(filteredKeys, item)
-			}
+	// If user said key = 'xyz', we look up in the map for all possible field keys with name 'xyz'
+	for _, item := range v.fieldKeys[keyName] {
+		// Match items where:
+		// 1) user didn't specify context OR context matches, AND
+		// 2) user didn't specify data type OR data type matches.
+		if (fieldKey.FieldContext == telemetrytypes.FieldContextUnspecified || fieldKey.FieldContext == item.FieldContext) &&
+			(fieldKey.FieldDataType == telemetrytypes.FieldDataTypeUnspecified || fieldKey.FieldDataType == item.FieldDataType) {
+			fieldKeysForName = append(fieldKeysForName, item)
 		}
-		fieldKeysForName = filteredKeys
 	}
 
-	// if the data type is explicitly provided, filter out the remaining
-	// example, level:string = 'value', then we don't want to search on
-	// anything other than the string attributes
-	if fieldKey.FieldDataType != telemetrytypes.FieldDataTypeUnspecified {
-		filteredKeys := []*telemetrytypes.TelemetryFieldKey{}
-		for _, item := range fieldKeysForName {
-			if item.FieldDataType == fieldKey.FieldDataType {
-				filteredKeys = append(filteredKeys, item)
+	// Now consider that GetFieldKeyFromKeyText may have extracted the context which was actually part of the name
+	// If user said attribute.key = 'xyz',
+	// 1. either user meant key ( this is already handled above in fieldKeysForName )
+	// 2. or user meant `attribute.key` we look up in the map for all possible field keys with name 'attribute.key'
+
+	// Note:
+	// If user only wants to search `attribute.key`, then they have to use `attribute.attribute.key`
+	// If user only wants to search `key`, then they have to use `key`
+	// If user wants to search both, they can use `attribute.key` and we will resolve the ambiguity
+	if fieldKey.FieldContext != telemetrytypes.FieldContextUnspecified {
+		contextPrefixedFieldName := fmt.Sprintf("%s.%s", fieldKey.FieldContext.StringValue(), fieldKey.Name)
+		for _, item := range v.fieldKeys[contextPrefixedFieldName] {
+			// Match items where: user didn't specify data type OR data type matches. Context filtering not needed here since context was used to construct the lookup key.
+			if fieldKey.FieldDataType == telemetrytypes.FieldDataTypeUnspecified || item.FieldDataType == fieldKey.FieldDataType {
+				fieldKeysForName = append(fieldKeysForName, item)
 			}
 		}
-		fieldKeysForName = filteredKeys
 	}
 
 	// for the body json search, we need to add search on the body field even
 	// if there is a field with the same name as attribute/resource attribute
 	// Since it will ORed with the fieldKeysForName, it will not result empty
 	// when either of them have values
-	if strings.HasPrefix(fieldKey.Name, v.jsonBodyPrefix) && v.jsonBodyPrefix != "" {
-		if keyName != "" {
-			fieldKeysForName = append(fieldKeysForName, &fieldKey)
-		}
+	// Note: Skip this logic if body json query is enabled so we can look up the key inside fields
+	//
+	// TODO(Piyush): After entire migration this is supposed to be removed.
+	if !BodyJSONQueryEnabled && fieldKey.FieldContext == telemetrytypes.FieldContextBody {
+		fieldKeysForName = append(fieldKeysForName, &fieldKey)
 	}
 
 	if len(fieldKeysForName) == 0 {
-		// check if the key exists with {fieldContext}.{key}
-		// because the context could be legitimate prefix in user data, example `span.div_num = 20`
-		keyWithContext := fmt.Sprintf("%s.%s", fieldKey.FieldContext.StringValue(), fieldKey.Name)
-		if len(v.fieldKeys[keyWithContext]) > 0 {
-			return v.fieldKeys[keyWithContext]
-		}
-
-		if strings.HasPrefix(fieldKey.Name, v.jsonBodyPrefix) && v.jsonBodyPrefix != "" && keyName == "" {
+		if fieldKey.FieldContext == telemetrytypes.FieldContextBody && keyName == "" {
 			v.errors = append(v.errors, "missing key for body json search - expected key of the form `body.key` (ex: `body.status`)")
 		} else if !v.ignoreNotFoundKeys {
 			// TODO(srikanthccv): do we want to return an error here?

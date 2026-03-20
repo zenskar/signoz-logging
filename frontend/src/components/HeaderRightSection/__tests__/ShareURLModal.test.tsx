@@ -1,13 +1,14 @@
 // Mock dependencies before imports
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
+import { matchPath, useLocation } from 'react-router-dom';
+import { useCopyToClipboard } from 'react-use';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import logEvent from 'api/common/logEvent';
 import ROUTES from 'constants/routes';
 import useUrlQuery from 'hooks/useUrlQuery';
 import GetMinMax from 'lib/getMinMax';
-import { useSelector } from 'react-redux';
-import { matchPath, useLocation } from 'react-router-dom';
-import { useCopyToClipboard } from 'react-use';
 
 import ShareURLModal from '../ShareURLModal';
 

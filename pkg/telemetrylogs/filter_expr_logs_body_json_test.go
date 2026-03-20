@@ -15,7 +15,6 @@ import (
 func TestFilterExprLogsBodyJSON(t *testing.T) {
 	fm := NewFieldMapper()
 	cb := NewConditionBuilder(fm)
-
 	// Define a comprehensive set of field keys to support all test cases
 	keys := buildCompleteFieldKeyMap()
 
@@ -27,8 +26,7 @@ func TestFilterExprLogsBodyJSON(t *testing.T) {
 		FullTextColumn: &telemetrytypes.TelemetryFieldKey{
 			Name: "body",
 		},
-		JsonBodyPrefix: "body",
-		JsonKeyToKey:   GetBodyJSONKey,
+		JsonKeyToKey: GetBodyJSONKey,
 	}
 
 	testCases := []struct {
@@ -163,7 +161,7 @@ func TestFilterExprLogsBodyJSON(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s: %s", tc.category, limitString(tc.query, 50)), func(t *testing.T) {
 
-            clause, err := querybuilder.PrepareWhereClause(tc.query, opts, 0, 0)
+			clause, err := querybuilder.PrepareWhereClause(tc.query, opts, 0, 0)
 
 			if tc.shouldPass {
 				if err != nil {

@@ -1,8 +1,7 @@
-import './LiveLogsList.styles.scss';
-
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { Card, Typography } from 'antd';
 import LogDetail from 'components/LogDetail';
-import { VIEW_TYPES } from 'components/LogDetail/constants';
 import ListLogView from 'components/Logs/ListLogView';
 import RawLogView from 'components/Logs/RawLogView';
 import OverlayScrollbar from 'components/OverlayScrollbar/OverlayScrollbar';
@@ -14,18 +13,23 @@ import { InfinityWrapperStyled } from 'container/LogsExplorerList/styles';
 import { convertKeysToColumnFields } from 'container/LogsExplorerList/utils';
 import { useOptionsMenu } from 'container/OptionsMenu';
 import { defaultLogsSelectedColumns } from 'container/OptionsMenu/constants';
-import { useActiveLog } from 'hooks/logs/useActiveLog';
 import { useCopyLogLink } from 'hooks/logs/useCopyLogLink';
+import useLogDetailHandlers from 'hooks/logs/useLogDetailHandlers';
+import useScrollToLog from 'hooks/logs/useScrollToLog';
 import { useEventSource } from 'providers/EventSource';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 // interfaces
 import { ILog } from 'types/api/logs/log';
 import { DataSource, StringOperators } from 'types/common/queryBuilder';
 
 import { LiveLogsListProps } from './types';
 
-function LiveLogsList({ logs, isLoading }: LiveLogsListProps): JSX.Element {
+import './LiveLogsList.styles.scss';
+
+function LiveLogsList({
+	logs,
+	isLoading,
+	handleChangeSelectedView,
+}: LiveLogsListProps): JSX.Element {
 	const ref = useRef<VirtuosoHandle>(null);
 
 	const { isConnectionLoading } = useEventSource();
@@ -34,11 +38,11 @@ function LiveLogsList({ logs, isLoading }: LiveLogsListProps): JSX.Element {
 
 	const {
 		activeLog,
-		onClearActiveLog,
 		onAddToQuery,
-		onGroupByAttribute,
-		onSetActiveLog,
-	} = useActiveLog();
+		selectedTab,
+		handleSetActiveLog,
+		handleCloseLogDetail,
+	} = useLogDetailHandlers();
 
 	// get only data from the logs object
 	const formattedLogs: ILog[] = useMemo(
@@ -62,44 +66,63 @@ function LiveLogsList({ logs, isLoading }: LiveLogsListProps): JSX.Element {
 		...options.selectColumns,
 	]);
 
+	const handleScrollToLog = useScrollToLog({
+		logs: formattedLogs,
+		virtuosoRef: ref,
+	});
+
 	const getItemContent = useCallback(
 		(_: number, log: ILog): JSX.Element => {
 			if (options.format === 'raw') {
 				return (
-					<RawLogView
-						key={log.id}
-						data={log}
-						linesPerRow={options.maxLines}
-						selectedFields={selectedFields}
-						fontSize={options.fontSize}
-					/>
+					<div key={log.id}>
+						<RawLogView
+							data={log}
+							isActiveLog={activeLog?.id === log.id}
+							linesPerRow={options.maxLines}
+							selectedFields={selectedFields}
+							fontSize={options.fontSize}
+							handleChangeSelectedView={handleChangeSelectedView}
+							onSetActiveLog={handleSetActiveLog}
+							onClearActiveLog={handleCloseLogDetail}
+						/>
+					</div>
 				);
 			}
 
 			return (
-				<ListLogView
-					key={log.id}
-					logData={log}
-					selectedFields={selectedFields}
-					linesPerRow={options.maxLines}
-					onAddToQuery={onAddToQuery}
-					onSetActiveLog={onSetActiveLog}
-					fontSize={options.fontSize}
-				/>
+				<div key={log.id}>
+					<ListLogView
+						logData={log}
+						isActiveLog={activeLog?.id === log.id}
+						selectedFields={selectedFields}
+						linesPerRow={options.maxLines}
+						onAddToQuery={onAddToQuery}
+						onSetActiveLog={handleSetActiveLog}
+						onClearActiveLog={handleCloseLogDetail}
+						fontSize={options.fontSize}
+						handleChangeSelectedView={handleChangeSelectedView}
+					/>
+				</div>
 			);
 		},
 		[
-			onAddToQuery,
-			onSetActiveLog,
-			options.fontSize,
 			options.format,
 			options.maxLines,
+			options.fontSize,
+			activeLog?.id,
 			selectedFields,
+			onAddToQuery,
+			handleSetActiveLog,
+			handleCloseLogDetail,
+			handleChangeSelectedView,
 		],
 	);
 
 	useEffect(() => {
-		if (!activeLogId || activeLogIndex < 0) return;
+		if (!activeLogId || activeLogIndex < 0) {
+			return;
+		}
 
 		ref?.current?.scrollToIndex({
 			index: activeLogIndex,
@@ -124,7 +147,6 @@ function LiveLogsList({ logs, isLoading }: LiveLogsListProps): JSX.Element {
 				</div>
 			</div>
 		),
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[],
 	);
 
@@ -147,6 +169,11 @@ function LiveLogsList({ logs, isLoading }: LiveLogsListProps): JSX.Element {
 								appendTo: 'end',
 								activeLogIndex,
 							}}
+							handleChangeSelectedView={handleChangeSelectedView}
+							logs={formattedLogs}
+							onSetActiveLog={handleSetActiveLog}
+							onClearActiveLog={handleCloseLogDetail}
+							activeLog={activeLog}
 						/>
 					) : (
 						<Card style={{ width: '100%' }} bodyStyle={CARD_BODY_STYLE}>
@@ -164,18 +191,20 @@ function LiveLogsList({ logs, isLoading }: LiveLogsListProps): JSX.Element {
 				</InfinityWrapperStyled>
 			)}
 
-			{activeLog && (
+			{activeLog && selectedTab && (
 				<LogDetail
-					selectedTab={VIEW_TYPES.OVERVIEW}
+					selectedTab={selectedTab}
 					log={activeLog}
-					onClose={onClearActiveLog}
+					onClose={handleCloseLogDetail}
 					onAddToQuery={onAddToQuery}
-					onGroupByAttribute={onGroupByAttribute}
 					onClickActionItem={onAddToQuery}
+					handleChangeSelectedView={handleChangeSelectedView}
+					logs={formattedLogs}
+					onNavigateLog={handleSetActiveLog}
+					onScrollToLog={handleScrollToLog}
 				/>
 			)}
 		</div>
 	);
 }
-
 export default memo(LiveLogsList);

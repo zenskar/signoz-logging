@@ -1,10 +1,6 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable jsx-a11y/no-static-element-interactions */
-/* eslint-disable jsx-a11y/click-events-have-key-events */
-import './LogsFormatOptionsMenu.styles.scss';
-
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Input, InputNumber, Popover, Tooltip, Typography } from 'antd';
-import { DefaultOptionType } from 'antd/es/select';
+import type { DefaultOptionType } from 'antd/es/select';
 import cx from 'classnames';
 import { LogViewMode } from 'container/LogsTable';
 import { FontSize, OptionsMenuConfig } from 'container/OptionsMenu/types';
@@ -18,7 +14,8 @@ import {
 	Sliders,
 	X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+
+import './LogsFormatOptionsMenu.styles.scss';
 
 interface LogsFormatOptionsMenuProps {
 	items: any;
@@ -52,7 +49,9 @@ function OptionsMenu({
 
 	const onChange = useCallback(
 		(key: LogViewMode) => {
-			if (!format) return;
+			if (!format) {
+				return;
+			}
 
 			format.onChange(key);
 		},
@@ -78,7 +77,6 @@ function OptionsMenu({
 	};
 
 	const handleSearchValueChange = useDebouncedFn((event): void => {
-		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 		// @ts-ignore
 		const value = event?.target?.value || '';
 
@@ -148,7 +146,9 @@ function OptionsMenu({
 	}
 
 	const handleKeyDown = (e: KeyboardEvent): void => {
-		if (!selectedValue) return;
+		if (!selectedValue) {
+			return;
+		}
 
 		const optionsData = addColumn?.options || [];
 
@@ -471,11 +471,13 @@ function LogsFormatOptionsMenu({
 			rootClassName="format-options-popover"
 			destroyTooltipOnHide
 		>
-			<Button
-				className="periscope-btn ghost"
-				icon={<Sliders size={14} />}
-				data-testid="periscope-btn-format-options"
-			/>
+			<Tooltip title="Options">
+				<Button
+					className="periscope-btn ghost"
+					icon={<Sliders size={14} />}
+					data-testid="periscope-btn-format-options"
+				/>
+			</Tooltip>
 		</Popover>
 	);
 }

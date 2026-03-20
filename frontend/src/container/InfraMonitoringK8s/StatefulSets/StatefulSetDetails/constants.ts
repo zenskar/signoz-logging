@@ -1,10 +1,9 @@
-/* eslint-disable sonarjs/no-duplicate-string */
 import { K8sStatefulSetsData } from 'api/infraMonitoring/getsK8sStatefulSetsList';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import { GetQueryResultsProps } from 'lib/dashboard/getQueryResults';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import { EQueryType } from 'types/common/dashboard';
-import { DataSource } from 'types/common/queryBuilder';
+import { DataSource, ReduceOperators } from 'types/common/queryBuilder';
 import { v4 } from 'uuid';
 
 export const statefulSetWidgetInfo = [
@@ -139,7 +138,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'A',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'avg',
@@ -189,7 +188,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'B',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'latest',
@@ -239,7 +238,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'C',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'latest',
@@ -309,7 +308,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'A',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'avg',
 							stepInterval: 60,
 							timeAggregation: 'avg',
@@ -359,7 +358,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'B',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'avg',
 							stepInterval: 60,
 							timeAggregation: 'avg',
@@ -429,7 +428,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'A',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'avg',
@@ -479,7 +478,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'B',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'latest',
@@ -529,7 +528,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'C',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'latest',
@@ -599,7 +598,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'A',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'avg',
 							stepInterval: 60,
 							timeAggregation: 'avg',
@@ -649,7 +648,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'B',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'avg',
 							stepInterval: 60,
 							timeAggregation: 'avg',
@@ -732,7 +731,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'A',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'rate',
@@ -815,7 +814,7 @@ export const getStatefulSetMetricsQueryPayload = (
 							limit: null,
 							orderBy: [],
 							queryName: 'A',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							spaceAggregation: 'sum',
 							stepInterval: 60,
 							timeAggregation: 'increase',

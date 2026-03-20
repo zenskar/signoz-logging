@@ -1,6 +1,7 @@
 const ROUTES = {
 	SIGN_UP: '/signup',
 	LOGIN: '/login',
+	FORGOT_PASSWORD: '/forgot-password',
 	HOME: '/home',
 	SERVICE_METRICS: '/services/:servicename',
 	SERVICE_TOP_LEVEL_OPERATIONS: '/services/:servicename/top-level-operations',
@@ -27,6 +28,7 @@ const ROUTES = {
 	ALERTS_NEW: '/alerts/new',
 	ALERT_HISTORY: '/alerts/history',
 	ALERT_OVERVIEW: '/alerts/overview',
+	ALERT_TYPE_SELECTION: '/alerts/type-selection',
 	ALL_CHANNELS: '/settings/channels',
 	CHANNELS_NEW: '/settings/channels/new',
 	CHANNELS_EDIT: '/settings/channels/edit/:channelId',
@@ -36,7 +38,6 @@ const ROUTES = {
 	SETTINGS: '/settings',
 	MY_SETTINGS: '/settings/my-settings',
 	ORG_SETTINGS: '/settings/org-settings',
-	CUSTOM_DOMAIN_SETTINGS: '/settings/custom-domain-settings',
 	API_KEYS: '/settings/api-keys',
 	INGESTION_SETTINGS: '/settings/ingestion-settings',
 	SOMETHING_WENT_WRONG: '/something-went-wrong',
@@ -53,6 +54,9 @@ const ROUTES = {
 	LOGS_INDEX_FIELDS: '/logs-explorer/index-fields',
 	TRACE_EXPLORER: '/trace-explorer',
 	BILLING: '/settings/billing',
+	ROLES_SETTINGS: '/settings/roles',
+	ROLE_DETAILS: '/settings/roles/:roleId',
+	MEMBERS_SETTINGS: '/settings/members',
 	SUPPORT: '/support',
 	LOGS_SAVE_VIEWS: '/logs/saved-views',
 	TRACES_SAVE_VIEWS: '/traces/saved-views',
@@ -81,6 +85,8 @@ const ROUTES = {
 	METER_EXPLORER: '/meter/explorer',
 	METER_EXPLORER_VIEWS: '/meter/explorer/views',
 	HOME_PAGE: '/',
+	PUBLIC_DASHBOARD: '/public/dashboard/:dashboardId',
+	SERVICE_ACCOUNTS_SETTINGS: '/settings/service-accounts',
 } as const;
 
 export default ROUTES;

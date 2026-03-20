@@ -1,18 +1,18 @@
-/* eslint-disable no-restricted-syntax */
-/* eslint-disable @typescript-eslint/explicit-function-return-type */
-import '../InfraMonitoringK8s.styles.scss';
-import './K8sNamespacesList.styles.scss';
-
+import { useCallback, useEffect, useMemo, useState } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { LoadingOutlined } from '@ant-design/icons';
 import {
 	Button,
 	Spin,
 	Table,
+	TableColumnType as ColumnType,
 	TablePaginationConfig,
 	TableProps,
 	Typography,
 } from 'antd';
-import { ColumnType, SorterResult } from 'antd/es/table/interface';
+import type { SorterResult } from 'antd/es/table/interface';
 import logEvent from 'api/common/logEvent';
 import { K8sNamespacesListPayload } from 'api/infraMonitoring/getK8sNamespacesList';
 import { InfraMonitoringEvents } from 'constants/events';
@@ -21,9 +21,6 @@ import { useGetAggregateKeys } from 'hooks/queryBuilder/useGetAggregateKeys';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { useQueryOperations } from 'hooks/queryBuilder/useQueryBuilderOperations';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom-v5-compat';
 import { AppState } from 'store/reducers';
 import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
 import { GlobalReducer } from 'types/reducer/globalTime';
@@ -48,7 +45,9 @@ import {
 	K8sNamespacesRowData,
 } from './utils';
 
-// eslint-disable-next-line sonarjs/cognitive-complexity
+import '../InfraMonitoringK8s.styles.scss';
+import './K8sNamespacesList.styles.scss';
+
 function K8sNamespacesList({
 	isFiltersVisible,
 	handleFilterVisibilityChange,
@@ -152,7 +151,9 @@ function K8sNamespacesList({
 			op: 'and',
 		};
 
-		if (!selectedRowData) return baseFilters;
+		if (!selectedRowData) {
+			return baseFilters;
+		}
 
 		const { groupedByMeta } = selectedRowData;
 
@@ -172,7 +173,9 @@ function K8sNamespacesList({
 	};
 
 	const fetchGroupedByRowDataQuery = useMemo(() => {
-		if (!selectedRowData) return null;
+		if (!selectedRowData) {
+			return null;
+		}
 
 		const baseQuery = getK8sNamespacesListQuery();
 
@@ -330,7 +333,9 @@ function K8sNamespacesList({
 	);
 
 	const nestedNamespacesData = useMemo(() => {
-		if (!selectedRowData || !groupedByRowData?.payload?.data.records) return [];
+		if (!selectedRowData || !groupedByRowData?.payload?.data.records) {
+			return [];
+		}
 		return groupedByRowData?.payload?.data?.records || [];
 	}, [groupedByRowData, selectedRowData]);
 
@@ -429,7 +434,9 @@ function K8sNamespacesList({
 	}, [data?.payload?.data?.total]);
 
 	const selectedNamespaceData = useMemo(() => {
-		if (!selectedNamespaceUID) return null;
+		if (!selectedNamespaceUID) {
+			return null;
+		}
 		if (groupBy.length > 0) {
 			// If grouped by, return the namespace from the formatted grouped by namespaces data
 			return (
@@ -475,7 +482,9 @@ function K8sNamespacesList({
 	const isGroupedByAttribute = groupBy.length > 0;
 
 	const handleExpandedRowViewAllClick = (): void => {
-		if (!selectedRowData) return;
+		if (!selectedRowData) {
+			return;
+		}
 
 		const filters = createFiltersForSelectedRowData(selectedRowData, groupBy);
 

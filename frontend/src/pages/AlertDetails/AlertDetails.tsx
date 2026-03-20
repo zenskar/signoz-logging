@@ -1,23 +1,30 @@
-import './AlertDetails.styles.scss';
-
-import { Breadcrumb, Button, Divider, Empty } from 'antd';
-import logEvent from 'api/common/logEvent';
-import { Filters } from 'components/AlertDetailsFilters/Filters';
-import RouteTab from 'components/RouteTab';
-import Spinner from 'components/Spinner';
-import ROUTES from 'constants/routes';
-import { CreateAlertProvider } from 'container/CreateAlertV2/context';
-import { getCreateAlertLocalStateFromAlertDef } from 'container/CreateAlertV2/utils';
-import history from 'lib/history';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
+import { Breadcrumb, Button, Divider } from 'antd';
+import logEvent from 'api/common/logEvent';
+import classNames from 'classnames';
+import { Filters } from 'components/AlertDetailsFilters/Filters';
+import RouteTab from 'components/RouteTab';
+import Spinner from 'components/Spinner';
+import { QueryParams } from 'constants/query';
+import ROUTES from 'constants/routes';
+import { CreateAlertProvider } from 'container/CreateAlertV2/context';
+import { getCreateAlertLocalStateFromAlertDef } from 'container/CreateAlertV2/utils';
+import useUrlQuery from 'hooks/useUrlQuery';
+import history from 'lib/history';
 import { AlertTypes } from 'types/api/alerts/alertTypes';
-import { PostableAlertRuleV2 } from 'types/api/alerts/alertTypesV2';
+import {
+	NEW_ALERT_SCHEMA_VERSION,
+	PostableAlertRuleV2,
+} from 'types/api/alerts/alertTypesV2';
 
 import AlertHeader from './AlertHeader/AlertHeader';
+import AlertNotFound from './AlertNotFound';
 import { useGetAlertRuleDetails, useRouteTabUtils } from './hooks';
 import { AlertDetailsStatusRendererProps } from './types';
+
+import './AlertDetails.styles.scss';
 
 function AlertDetailsStatusRenderer({
 	isLoading,
@@ -73,7 +80,7 @@ BreadCrumbItem.defaultProps = {
 function AlertDetails(): JSX.Element {
 	const { pathname } = useLocation();
 	const { routes } = useRouteTabUtils();
-	const { t } = useTranslation(['alerts']);
+	const params = useUrlQuery();
 
 	const {
 		isLoading,
@@ -84,10 +91,27 @@ function AlertDetails(): JSX.Element {
 		alertDetailsResponse,
 	} = useGetAlertRuleDetails();
 
+	const isTestAlert = useMemo(() => {
+		return params.get(QueryParams.isTestAlert) === 'true';
+	}, [params]);
+
+	const getDocumentTitle = useMemo(() => {
+		const alertTitle = alertDetailsResponse?.payload?.data?.alert;
+		if (alertTitle) {
+			return alertTitle;
+		}
+		if (isTestAlert) {
+			return 'Test Alert';
+		}
+		if (isLoading) {
+			return document.title;
+		}
+		return 'Alert Not Found';
+	}, [alertDetailsResponse?.payload?.data?.alert, isTestAlert, isLoading]);
+
 	useEffect(() => {
-		const alertTitle = alertDetailsResponse?.payload?.data.alert;
-		document.title = alertTitle || document.title;
-	}, [alertDetailsResponse?.payload?.data.alert, isRefetching]);
+		document.title = getDocumentTitle;
+	}, [getDocumentTitle]);
 
 	const alertRuleDetails = useMemo(
 		() => alertDetailsResponse?.payload?.data as PostableAlertRuleV2 | undefined,
@@ -102,13 +126,10 @@ function AlertDetails(): JSX.Element {
 	if (
 		isError ||
 		!isValidRuleId ||
-		(alertDetailsResponse && alertDetailsResponse.statusCode !== 200)
+		(alertDetailsResponse && alertDetailsResponse.statusCode !== 200) ||
+		(!isLoading && !alertRuleDetails)
 	) {
-		return (
-			<div className="alert-empty-card">
-				<Empty description={t('alert_rule_not_found')} />
-			</div>
-		);
+		return <AlertNotFound isTestAlert={isTestAlert} />;
 	}
 
 	const handleTabChange = (route: string): void => {
@@ -116,6 +137,8 @@ function AlertDetails(): JSX.Element {
 			logEvent('Alert History tab: Visited', { ruleId });
 		}
 	};
+
+	const isV2Alert = alertRuleDetails?.schemaVersion === NEW_ALERT_SCHEMA_VERSION;
 
 	// Show spinner until we have alert data loaded
 	if (isLoading && !alertRuleDetails) {
@@ -129,7 +152,9 @@ function AlertDetails(): JSX.Element {
 			initialAlertType={alertRuleDetails?.alertType as AlertTypes}
 			initialAlertState={initialAlertState}
 		>
-			<div className="alert-details">
+			<div
+				className={classNames('alert-details', { 'alert-details-v2': isV2Alert })}
+			>
 				<Breadcrumb
 					className="alert-details__breadcrumb"
 					items={[

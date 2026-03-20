@@ -1,23 +1,21 @@
+import { useMemo } from 'react';
+import { useQuery, UseQueryOptions, UseQueryResult } from 'react-query';
 import { isAxiosError } from 'axios';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
 import { updateBarStepInterval } from 'container/GridCardLayout/utils';
+import { useDashboardVariablesByType } from 'hooks/dashboard/useDashboardVariablesByType';
 import {
 	GetMetricQueryRange,
 	GetQueryResultsProps,
 } from 'lib/dashboard/getQueryResults';
 import getStartEndRangeTime from 'lib/getStartEndRangeTime';
-import { useDashboard } from 'providers/Dashboard/Dashboard';
-import { useMemo } from 'react';
-import { useQuery, UseQueryOptions, UseQueryResult } from 'react-query';
-import { SuccessResponse, Warning } from 'types/api';
-import { IDashboardVariable } from 'types/api/dashboard/getAll';
 import APIError from 'types/api/error';
-import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
+import { MetricQueryRangeSuccessResponse } from 'types/api/metrics/getQueryRange';
 import { DataSource } from 'types/common/queryBuilder';
 
 type UseGetQueryRangeOptions = UseQueryOptions<
-	SuccessResponse<MetricRangePayloadProps> & { warning?: Warning },
+	MetricQueryRangeSuccessResponse,
 	APIError | Error
 >;
 
@@ -26,25 +24,23 @@ type UseGetQueryRange = (
 	version: string,
 	options?: UseGetQueryRangeOptions,
 	headers?: Record<string, string>,
-) => UseQueryResult<
-	SuccessResponse<MetricRangePayloadProps> & { warning?: Warning },
-	Error
->;
+	publicQueryMeta?: {
+		isPublic: boolean;
+		widgetIndex: number;
+		publicDashboardId: string;
+	},
+) => UseQueryResult<MetricQueryRangeSuccessResponse, Error>;
 
 export const useGetQueryRange: UseGetQueryRange = (
 	requestData,
 	version,
 	options,
 	headers,
+	publicQueryMeta,
 ) => {
-	const { selectedDashboard } = useDashboard();
-
-	const dynamicVariables = useMemo(
-		() =>
-			Object.values(selectedDashboard?.data?.variables || {})?.filter(
-				(variable: IDashboardVariable) => variable.type === 'DYNAMIC',
-			),
-		[selectedDashboard],
+	const dashboardDynamicVariables = useDashboardVariablesByType(
+		'DYNAMIC',
+		'values',
 	);
 
 	const newRequestData: GetQueryResultsProps = useMemo(() => {
@@ -145,17 +141,16 @@ export const useGetQueryRange: UseGetQueryRange = (
 		};
 	}, [options?.retry]);
 
-	return useQuery<
-		SuccessResponse<MetricRangePayloadProps> & { warning?: Warning },
-		APIError | Error
-	>({
+	return useQuery<MetricQueryRangeSuccessResponse, APIError | Error>({
 		queryFn: async ({ signal }) =>
 			GetMetricQueryRange(
 				modifiedRequestData,
 				version,
-				dynamicVariables,
+				dashboardDynamicVariables,
 				signal,
 				headers,
+				undefined,
+				publicQueryMeta,
 			),
 		...options,
 		retry,

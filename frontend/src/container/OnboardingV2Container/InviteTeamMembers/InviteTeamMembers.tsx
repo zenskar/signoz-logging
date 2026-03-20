@@ -1,5 +1,5 @@
-import './InviteTeamMembers.styles.scss';
-
+import { useCallback, useEffect, useState } from 'react';
+import { useMutation } from 'react-query';
 import { Color } from '@signozhq/design-tokens';
 import { Button, Input, Select, Typography } from 'antd';
 import logEvent from 'api/common/logEvent';
@@ -7,10 +7,10 @@ import inviteUsers from 'api/v1/invite/bulk/create';
 import { useNotifications } from 'hooks/useNotifications';
 import { cloneDeep, debounce, isEmpty } from 'lodash-es';
 import { ArrowRight, CheckCircle, Plus, TriangleAlert, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { useMutation } from 'react-query';
 import APIError from 'types/api/error';
 import { v4 as uuid } from 'uuid';
+
+import './InviteTeamMembers.styles.scss';
 
 interface TeamMember {
 	email: string;
@@ -211,7 +211,6 @@ function InviteTeamMembers({
 										handleEmailChange(e, member)
 									}
 									addonAfter={
-										// eslint-disable-next-line no-nested-ternary
 										emailValidity[member.id!] === undefined ? null : emailValidity[
 												member.id!
 										  ] ? (

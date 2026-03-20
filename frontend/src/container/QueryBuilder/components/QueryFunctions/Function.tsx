@@ -1,6 +1,7 @@
-/* eslint-disable react/jsx-props-no-spreading */
-import { Button, Flex, Input, Select } from 'antd';
+import { useMemo, useState } from 'react';
+import { Button, Flex, Select } from 'antd';
 import cx from 'classnames';
+import OverflowInputToolTip from 'components/OverflowInputToolTip';
 import {
 	logsQueryFunctionOptions,
 	metricQueryFunctionOptions,
@@ -43,13 +44,16 @@ export default function Function({
 	const hasValue = !isNil(funcData.args?.[0]?.value);
 
 	if (hasValue) {
-		// eslint-disable-next-line prefer-destructuring
 		functionValue = funcData.args?.[0]?.value;
 	}
 
-	const debouncedhandleUpdateFunctionArgs = debounce(
-		handleUpdateFunctionArgs,
-		500,
+	const [value, setValue] = useState<string>(
+		functionValue !== undefined ? String(functionValue) : '',
+	);
+
+	const debouncedhandleUpdateFunctionArgs = useMemo(
+		() => debounce(handleUpdateFunctionArgs, 500),
+		[handleUpdateFunctionArgs],
 	);
 
 	// update the logic when we start supporting functions for traces
@@ -62,7 +66,6 @@ export default function Function({
 		normalizedFunctionName === QueryFunctionsTypes.ANOMALY;
 
 	if (normalizedFunctionName === QueryFunctionsTypes.ANOMALY) {
-		// eslint-disable-next-line react/jsx-no-useless-fragment
 		return <></>;
 	}
 
@@ -89,13 +92,18 @@ export default function Function({
 			/>
 
 			{showInput && (
-				<Input
-					className="query-function-value"
+				<OverflowInputToolTip
 					autoFocus
-					defaultValue={functionValue}
+					value={value}
 					onChange={(event): void => {
+						const newVal = event.target.value;
+						setValue(newVal);
 						debouncedhandleUpdateFunctionArgs(funcData, index, event.target.value);
 					}}
+					tooltipPlacement="top"
+					minAutoWidth={70}
+					maxAutoWidth={150}
+					className="query-function-value"
 				/>
 			)}
 

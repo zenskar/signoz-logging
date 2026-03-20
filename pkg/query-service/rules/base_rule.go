@@ -4,19 +4,22 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"sync"
 	"time"
 
 	"github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/query-service/constants"
 	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
 	"github.com/SigNoz/signoz/pkg/query-service/model"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"github.com/SigNoz/signoz/pkg/query-service/utils/labels"
 	qslabels "github.com/SigNoz/signoz/pkg/query-service/utils/labels"
+	"github.com/SigNoz/signoz/pkg/queryparser"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
-	ruletypes "github.com/SigNoz/signoz/pkg/types/ruletypes"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
+	"github.com/SigNoz/signoz/pkg/types/ruletypes"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
-	"go.uber.org/zap"
 )
 
 // BaseRule contains common fields and methods for all rule types
@@ -34,15 +37,15 @@ type BaseRule struct {
 
 	Threshold ruletypes.RuleThreshold
 	// evalWindow is the time window used for evaluating the rule
-	// i.e each time we lookback from the current time, we look at data for the last
+	// i.e. each time we lookback from the current time, we look at data for the last
 	// evalWindow duration
-	evalWindow time.Duration
+	evalWindow valuer.TextDuration
 	// holdDuration is the duration for which the alert waits before firing
-	holdDuration time.Duration
+	holdDuration valuer.TextDuration
 
 	// evalDelay is the delay in evaluation of the rule
 	// this is useful in cases where the data is not available immediately
-	evalDelay time.Duration
+	evalDelay valuer.TextDuration
 
 	// holds the static set of labels and annotations for the rule
 	// these are the same for all alerts created for this rule
@@ -61,33 +64,38 @@ type BaseRule struct {
 	lastError error
 	Active    map[uint64]*ruletypes.Alert
 
-	// lastTimestampWithDatapoints is the timestamp of the last datapoint we observed
-	// for this rule
-	// this is used for missing data alerts
+	// lastTimestampWithDatapoints is the timestamp of the last datapoint we
+	// observed for this rule.
+	// This is used for missing data alerts.
 	lastTimestampWithDatapoints time.Time
 
 	reader interfaces.Reader
 
 	logger *slog.Logger
 
-	// sendUnmatched sends observed metric values
-	// even if they dont match the rule condition. this is
-	// useful in testing the rule
+	// sendUnmatched sends observed metric values even if they don't match the
+	// rule condition. This is useful in testing the rule.
 	sendUnmatched bool
 
-	// sendAlways will send alert irresepective of resendDelay
-	// or other params
+	// sendAlways will send alert irrespective of resendDelay or other params
 	sendAlways bool
 
-	// TemporalityMap is a map of metric name to temporality
-	// to avoid fetching temporality for the same metric multiple times
-	// querying the v4 table on low cardinal temporality column
-	// should be fast but we can still avoid the query if we have the data in memory
+	// TemporalityMap is a map of metric name to temporality to avoid fetching
+	// temporality for the same metric multiple times.
+	// Querying the v4 table on low cardinal temporality column should be fast,
+	// but we can still avoid the query if we have the data in memory.
 	TemporalityMap map[string]map[v3.Temporality]bool
 
 	sqlstore sqlstore.SQLStore
 
+	metadataStore telemetrytypes.MetadataStore
+
 	evaluation ruletypes.Evaluation
+
+	// newGroupEvalDelay is the grace period for new alert groups
+	newGroupEvalDelay valuer.TextDuration
+
+	queryParser queryparser.QueryParser
 }
 
 type RuleOption func(*BaseRule)
@@ -104,7 +112,7 @@ func WithSendUnmatched() RuleOption {
 	}
 }
 
-func WithEvalDelay(dur time.Duration) RuleOption {
+func WithEvalDelay(dur valuer.TextDuration) RuleOption {
 	return func(r *BaseRule) {
 		r.evalDelay = dur
 	}
@@ -119,6 +127,18 @@ func WithLogger(logger *slog.Logger) RuleOption {
 func WithSQLStore(sqlstore sqlstore.SQLStore) RuleOption {
 	return func(r *BaseRule) {
 		r.sqlstore = sqlstore
+	}
+}
+
+func WithQueryParser(queryParser queryparser.QueryParser) RuleOption {
+	return func(r *BaseRule) {
+		r.queryParser = queryParser
+	}
+}
+
+func WithMetadataStore(metadataStore telemetrytypes.MetadataStore) RuleOption {
+	return func(r *BaseRule) {
+		r.metadataStore = metadataStore
 	}
 }
 
@@ -142,7 +162,7 @@ func NewBaseRule(id string, orgID valuer.UUID, p *ruletypes.PostableRule, reader
 		source:            p.Source,
 		typ:               p.AlertType,
 		ruleCondition:     p.RuleCondition,
-		evalWindow:        time.Duration(p.EvalWindow),
+		evalWindow:        p.EvalWindow,
 		labels:            qslabels.FromMap(p.Labels),
 		annotations:       qslabels.FromMap(p.Annotations),
 		preferredChannels: p.PreferredChannels,
@@ -154,8 +174,13 @@ func NewBaseRule(id string, orgID valuer.UUID, p *ruletypes.PostableRule, reader
 		evaluation:        evaluation,
 	}
 
-	if baseRule.evalWindow == 0 {
-		baseRule.evalWindow = 5 * time.Minute
+	// Store newGroupEvalDelay and groupBy keys from NotificationSettings
+	if p.NotificationSettings != nil {
+		baseRule.newGroupEvalDelay = p.NotificationSettings.NewGroupEvalDelay
+	}
+
+	if baseRule.evalWindow.IsZero() {
+		baseRule.evalWindow = valuer.MustParseTextDuration("5m")
 	}
 
 	for _, opt := range opts {
@@ -191,27 +216,43 @@ func (r *BaseRule) currentAlerts() []*ruletypes.Alert {
 	return alerts
 }
 
-func (r *BaseRule) EvalDelay() time.Duration {
+// ShouldSendUnmatched returns true if the rule should send unmatched samples
+// during alert evaluation, even if they don't match the rule condition.
+// This is useful in testing the rule.
+func (r *BaseRule) ShouldSendUnmatched() bool {
+	return r.sendUnmatched
+}
+
+// ActiveAlertsLabelFP returns a map of active alert labels fingerprint and
+// the fingerprint is computed using the QueryResultLables.Hash() method.
+// We use the QueryResultLables instead of labels as these labels are raw labels
+// that we get from the sample.
+// This is useful in cases where we want to check if an alert is still active
+// based on the labels we have.
+func (r *BaseRule) ActiveAlertsLabelFP() map[uint64]struct{} {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	activeAlerts := make(map[uint64]struct{}, len(r.Active))
+	for _, alert := range r.Active {
+		if alert == nil || alert.QueryResultLables == nil {
+			continue
+		}
+		activeAlerts[alert.QueryResultLables.Hash()] = struct{}{}
+	}
+	return activeAlerts
+}
+
+func (r *BaseRule) EvalDelay() valuer.TextDuration {
 	return r.evalDelay
 }
 
-func (r *BaseRule) EvalWindow() time.Duration {
+func (r *BaseRule) EvalWindow() valuer.TextDuration {
 	return r.evalWindow
 }
 
-func (r *BaseRule) HoldDuration() time.Duration {
+func (r *BaseRule) HoldDuration() valuer.TextDuration {
 	return r.holdDuration
-}
-
-func (r *ThresholdRule) hostFromSource() string {
-	parsedUrl, err := url.Parse(r.source)
-	if err != nil {
-		return ""
-	}
-	if parsedUrl.Port() != "" {
-		return fmt.Sprintf("%s://%s:%s", parsedUrl.Scheme, parsedUrl.Hostname(), parsedUrl.Port())
-	}
-	return fmt.Sprintf("%s://%s", parsedUrl.Scheme, parsedUrl.Hostname())
 }
 
 func (r *BaseRule) ID() string                          { return r.id }
@@ -234,14 +275,13 @@ func (r *BaseRule) Unit() string {
 }
 
 func (r *BaseRule) Timestamps(ts time.Time) (time.Time, time.Time) {
-
 	st, en := r.evaluation.NextWindowFor(ts)
 	start := st.UnixMilli()
 	end := en.UnixMilli()
 
-	if r.evalDelay > 0 {
-		start = start - int64(r.evalDelay.Milliseconds())
-		end = end - int64(r.evalDelay.Milliseconds())
+	if r.evalDelay.IsPositive() {
+		start = start - r.evalDelay.Milliseconds()
+		end = end - r.evalDelay.Milliseconds()
 	}
 	// round to minute otherwise we could potentially miss data
 	start = start - (start % (60 * 1000))
@@ -359,7 +399,7 @@ func (r *BaseRule) ForEachActiveAlert(f func(*ruletypes.Alert)) {
 }
 
 func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, currentState model.AlertState, itemsToAdd []model.RuleStateHistory) error {
-	zap.L().Debug("recording rule state history", zap.String("ruleid", r.ID()), zap.Any("prevState", prevState), zap.Any("currentState", currentState), zap.Any("itemsToAdd", itemsToAdd))
+	r.logger.DebugContext(ctx, "recording rule state history", "ruleid", r.ID(), "prevState", prevState, "currentState", currentState, "itemsToAdd", itemsToAdd)
 	revisedItemsToAdd := map[uint64]model.RuleStateHistory{}
 
 	lastSavedState, err := r.reader.GetLastSavedRuleStateHistory(ctx, r.ID())
@@ -369,7 +409,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 	// if the query-service has been restarted, or the rule has been modified (which re-initializes the rule),
 	// the state would reset so we need to add the corresponding state changes to previously saved states
 	if !r.handledRestart && len(lastSavedState) > 0 {
-		zap.L().Debug("handling restart", zap.String("ruleid", r.ID()), zap.Any("lastSavedState", lastSavedState))
+		r.logger.DebugContext(ctx, "handling restart", "ruleid", r.ID(), "lastSavedState", lastSavedState)
 		l := map[uint64]model.RuleStateHistory{}
 		for _, item := range itemsToAdd {
 			l[item.Fingerprint] = item
@@ -401,7 +441,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 			// do not add this item to revisedItemsToAdd as it is already processed
 			shouldSkip[item.Fingerprint] = true
 		}
-		zap.L().Debug("after lastSavedState loop", zap.String("ruleid", r.ID()), zap.Any("revisedItemsToAdd", revisedItemsToAdd))
+		r.logger.DebugContext(ctx, "after lastSavedState loop", "ruleid", r.ID(), "revisedItemsToAdd", revisedItemsToAdd)
 
 		// if there are any new state changes that were not saved, add them to the revised items
 		for _, item := range itemsToAdd {
@@ -409,7 +449,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 				revisedItemsToAdd[item.Fingerprint] = item
 			}
 		}
-		zap.L().Debug("after itemsToAdd loop", zap.String("ruleid", r.ID()), zap.Any("revisedItemsToAdd", revisedItemsToAdd))
+		r.logger.DebugContext(ctx, "after itemsToAdd loop", "ruleid", r.ID(), "revisedItemsToAdd", revisedItemsToAdd)
 
 		newState := model.StateInactive
 		for _, item := range revisedItemsToAdd {
@@ -418,7 +458,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 				break
 			}
 		}
-		zap.L().Debug("newState", zap.String("ruleid", r.ID()), zap.Any("newState", newState))
+		r.logger.DebugContext(ctx, "newState", "ruleid", r.ID(), "newState", newState)
 
 		// if there is a change in the overall state, update the overall state
 		if lastSavedState[0].OverallState != newState {
@@ -428,7 +468,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 				revisedItemsToAdd[fingerprint] = item
 			}
 		}
-		zap.L().Debug("revisedItemsToAdd after newState", zap.String("ruleid", r.ID()), zap.Any("revisedItemsToAdd", revisedItemsToAdd))
+		r.logger.DebugContext(ctx, "revisedItemsToAdd after newState", "ruleid", r.ID(), "revisedItemsToAdd", revisedItemsToAdd)
 
 	} else {
 		for _, item := range itemsToAdd {
@@ -437,7 +477,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 	}
 
 	if len(revisedItemsToAdd) > 0 && r.reader != nil {
-		zap.L().Debug("writing rule state history", zap.String("ruleid", r.ID()), zap.Any("revisedItemsToAdd", revisedItemsToAdd))
+		r.logger.DebugContext(ctx, "writing rule state history", "ruleid", r.ID(), "revisedItemsToAdd", revisedItemsToAdd)
 
 		entries := make([]model.RuleStateHistory, 0, len(revisedItemsToAdd))
 		for _, item := range revisedItemsToAdd {
@@ -445,7 +485,7 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 		}
 		err := r.reader.AddRuleStateHistory(ctx, entries)
 		if err != nil {
-			zap.L().Error("error while inserting rule state history", zap.Error(err), zap.Any("itemsToAdd", itemsToAdd))
+			r.logger.ErrorContext(ctx, "error while inserting rule state history", "error", err, "itemsToAdd", itemsToAdd)
 		}
 	}
 	r.handledRestart = true
@@ -454,7 +494,6 @@ func (r *BaseRule) RecordRuleStateHistory(ctx context.Context, prevState, curren
 }
 
 func (r *BaseRule) PopulateTemporality(ctx context.Context, orgID valuer.UUID, qp *v3.QueryRangeParamsV3) error {
-
 	missingTemporality := make([]string, 0)
 	metricNameToTemporality := make(map[string]map[v3.Temporality]bool)
 	if qp.CompositeQuery != nil && len(qp.CompositeQuery.BuilderQueries) > 0 {
@@ -507,4 +546,221 @@ func (r *BaseRule) PopulateTemporality(ctx context.Context, orgID valuer.UUID, q
 		}
 	}
 	return nil
+}
+
+// ShouldSkipNewGroups returns true if new group filtering should be applied
+func (r *BaseRule) ShouldSkipNewGroups() bool {
+	return r.newGroupEvalDelay.IsPositive()
+}
+
+// isFilterNewSeriesSupported checks if the query is supported for new series filtering
+func (r *BaseRule) isFilterNewSeriesSupported() bool {
+	if r.ruleCondition.CompositeQuery.QueryType == v3.QueryTypeBuilder {
+		for _, query := range r.ruleCondition.CompositeQuery.Queries {
+			if query.Type != qbtypes.QueryTypeBuilder {
+				continue
+			}
+			switch query.Spec.(type) {
+			// query spec is for Logs or Traces, return with blank metric names and group by fields
+			case qbtypes.QueryBuilderQuery[qbtypes.LogAggregation], qbtypes.QueryBuilderQuery[qbtypes.TraceAggregation]:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// extractMetricAndGroupBys extracts metric names and groupBy keys from the rule's query.
+// Returns a map where key is the metric name and value is the list of groupBy keys associated with it.
+// TODO: implement caching for query parsing results to avoid re-parsing the query + cache invalidation
+func (r *BaseRule) extractMetricAndGroupBys(ctx context.Context) (map[string][]string, error) {
+	metricToGroupedFields := make(map[string][]string)
+
+	// check to avoid processing the query for Logs and Traces
+	// as excluding new series is not supported for Logs and Traces for now
+	if !r.isFilterNewSeriesSupported() {
+		return metricToGroupedFields, nil
+	}
+
+	results, err := r.queryParser.AnalyzeQueryEnvelopes(ctx, r.ruleCondition.CompositeQuery.Queries)
+	if err != nil {
+		return nil, err
+	}
+
+	// temp map to avoid duplicates group by fields for the same metric
+	// map[metricName]map[groupKey]struct{}
+	tempMap := make(map[string]map[string]struct{})
+
+	// Aggregate results from all queries
+	for _, result := range results {
+		if len(result.MetricNames) == 0 {
+			continue
+		}
+		// Collect unique groupBy columns for this query result
+		uniqueGroups := make(map[string]struct{})
+		for _, col := range result.GroupByColumns {
+			uniqueGroups[col.GroupName()] = struct{}{}
+		}
+		// walk through the metric names and group by fields for this query result and add them to the temp map
+		for _, metricName := range result.MetricNames {
+			if _, ok := tempMap[metricName]; !ok {
+				tempMap[metricName] = make(map[string]struct{})
+			}
+			for groupKey := range uniqueGroups {
+				tempMap[metricName][groupKey] = struct{}{}
+			}
+		}
+	}
+
+	// Convert to final map
+	for metricName, groups := range tempMap {
+		for groupKey := range groups {
+			metricToGroupedFields[metricName] = append(metricToGroupedFields[metricName], groupKey)
+		}
+	}
+
+	return metricToGroupedFields, nil
+}
+
+// FilterNewSeries filters out items that are too new based on metadata first_seen timestamps.
+// Returns the filtered series (old ones) excluding new series that are still within the grace period.
+func (r *BaseRule) FilterNewSeries(ctx context.Context, ts time.Time, series []*v3.Series) ([]*v3.Series, error) {
+	// Extract metric names and groupBy keys
+	metricToGroupedFields, err := r.extractMetricAndGroupBys(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(metricToGroupedFields) == 0 {
+		// No metrics or groupBy keys, nothing to filter (non-ideal case, return all series)
+		return series, nil
+	}
+
+	// Build lookup keys from series which will be used to query metadata from CH
+	lookupKeys := make([]telemetrytypes.MetricMetadataLookupKey, 0)
+	seriesIdxToLookupKeys := make(map[int][]telemetrytypes.MetricMetadataLookupKey) // series index -> lookup keys
+
+	for i := 0; i < len(series); i++ {
+		metricLabelMap := series[i].Labels
+
+		// Collect groupBy attribute-value pairs for this series
+		seriesKeys := make([]telemetrytypes.MetricMetadataLookupKey, 0)
+
+		for metricName, groupedFields := range metricToGroupedFields {
+			for _, groupByKey := range groupedFields {
+				if attrValue, ok := metricLabelMap[groupByKey]; ok {
+					lookupKey := telemetrytypes.MetricMetadataLookupKey{
+						MetricName:     metricName,
+						AttributeName:  groupByKey,
+						AttributeValue: attrValue,
+					}
+					lookupKeys = append(lookupKeys, lookupKey)
+					seriesKeys = append(seriesKeys, lookupKey)
+				}
+			}
+		}
+
+		if len(seriesKeys) > 0 {
+			seriesIdxToLookupKeys[i] = seriesKeys
+		}
+	}
+
+	if len(lookupKeys) == 0 {
+		// No lookup keys to query, return all series
+		// this can happen when the series has no labels at all
+		// in that case, we include all series as we don't know if it is new or old series
+		return series, nil
+	}
+
+	// unique lookup keys
+	uniqueLookupKeysMap := make(map[telemetrytypes.MetricMetadataLookupKey]struct{})
+	uniqueLookupKeys := make([]telemetrytypes.MetricMetadataLookupKey, 0)
+	for _, key := range lookupKeys {
+		if _, ok := uniqueLookupKeysMap[key]; !ok {
+			uniqueLookupKeysMap[key] = struct{}{}
+			uniqueLookupKeys = append(uniqueLookupKeys, key)
+		}
+	}
+	// Query metadata for first_seen timestamps
+	firstSeenMap, err := r.metadataStore.GetFirstSeenFromMetricMetadata(ctx, uniqueLookupKeys)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter series based on first_seen + delay
+	filteredSeries := make([]*v3.Series, 0, len(series))
+	evalTimeMs := ts.UnixMilli()
+	newGroupEvalDelayMs := r.newGroupEvalDelay.Milliseconds()
+
+	for i := 0; i < len(series); i++ {
+		seriesKeys, ok := seriesIdxToLookupKeys[i]
+		if !ok {
+			// No matching labels used in groupBy from this series, include it
+			// as we can't decide if it is new or old series
+			filteredSeries = append(filteredSeries, series[i])
+			continue
+		}
+
+		// Find the maximum first_seen across all groupBy attributes for this series
+		// if the latest is old enough we're good, if latest is new we need to skip it
+		maxFirstSeen := int64(0)
+		// metadataFound tracks if we have metadata for any of the lookup keys
+		metadataFound := false
+
+		for _, lookupKey := range seriesKeys {
+			if firstSeen, exists := firstSeenMap[lookupKey]; exists {
+				metadataFound = true
+				if firstSeen > maxFirstSeen {
+					maxFirstSeen = firstSeen
+				}
+			}
+		}
+
+		// if we don't have metadata for any of the lookup keys, we can't decide if it is new or old series
+		// in that case, we include it
+		if !metadataFound {
+			filteredSeries = append(filteredSeries, series[i])
+			continue
+		}
+
+		// Check if first_seen + delay has passed
+		if maxFirstSeen+newGroupEvalDelayMs > evalTimeMs {
+			// Still within grace period, skip this series
+			r.logger.InfoContext(ctx, "Skipping new series", "rule_name", r.Name(), "series_idx", i, "max_first_seen", maxFirstSeen, "eval_time_ms", evalTimeMs, "delay_ms", newGroupEvalDelayMs, "labels", series[i].Labels)
+			continue
+		}
+
+		// Old enough, include this series
+		filteredSeries = append(filteredSeries, series[i])
+	}
+
+	skippedCount := len(series) - len(filteredSeries)
+	if skippedCount > 0 {
+		r.logger.InfoContext(ctx, "Filtered new series", "rule_name", r.Name(), "skipped_count", skippedCount, "total_count", len(series), "delay_ms", newGroupEvalDelayMs)
+	}
+
+	return filteredSeries, nil
+}
+
+// HandleMissingDataAlert handles missing data alert logic by tracking the last timestamp
+// with data points and checking if a missing data alert should be sent based on the
+// [ruletypes.RuleCondition.AlertOnAbsent] and [ruletypes.RuleCondition.AbsentFor] conditions.
+//
+// Returns a pointer to the missing data alert if conditions are met, nil otherwise.
+func (r *BaseRule) HandleMissingDataAlert(ctx context.Context, ts time.Time, hasData bool) *ruletypes.Sample {
+	// Track the last timestamp with data points for missing data alerts
+	if hasData {
+		r.lastTimestampWithDatapoints = ts
+	}
+
+	if !r.ruleCondition.AlertOnAbsent || ts.Before(r.lastTimestampWithDatapoints.Add(time.Duration(r.ruleCondition.AbsentFor)*time.Minute)) {
+		return nil
+	}
+
+	r.logger.InfoContext(ctx, "no data found for rule condition", "rule_id", r.ID())
+	lbls := labels.NewBuilder(labels.Labels{})
+	if !r.lastTimestampWithDatapoints.IsZero() {
+		lbls.Set(ruletypes.LabelLastSeen, r.lastTimestampWithDatapoints.Format(constants.AlertTimeFormat))
+	}
+	return &ruletypes.Sample{Metric: lbls.Labels(), IsMissing: true}
 }

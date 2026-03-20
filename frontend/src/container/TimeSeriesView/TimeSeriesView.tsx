@@ -1,5 +1,15 @@
-import './TimeSeriesView.styles.scss';
-
+import {
+	Dispatch,
+	SetStateAction,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useDispatch, useSelector } from 'react-redux';
+import { useLocation } from 'react-router-dom';
 import logEvent from 'api/common/logEvent';
 import ErrorInPlace from 'components/ErrorInPlace/ErrorInPlace';
 import Uplot from 'components/Uplot';
@@ -11,7 +21,7 @@ import { LogsLoading } from 'container/LogsLoading/LogsLoading';
 import EmptyMetricsSearch from 'container/MetricsExplorer/Explorer/EmptyMetricsSearch';
 import { MetricsLoading } from 'container/MetricsExplorer/MetricsLoading/MetricsLoading';
 import NoLogs from 'container/NoLogs/NoLogs';
-import { CustomTimeType } from 'container/TopNav/DateTimeSelectionV2/config';
+import { CustomTimeType } from 'container/TopNav/DateTimeSelectionV2/types';
 import { TracesLoading } from 'container/TracesExplorer/TraceLoading/TraceLoading';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { useIsDarkMode } from 'hooks/useDarkMode';
@@ -24,17 +34,6 @@ import { getUPlotChartOptions } from 'lib/uPlotLib/getUplotChartOptions';
 import { getUPlotChartData } from 'lib/uPlotLib/utils/getUplotChartData';
 import { isEmpty } from 'lodash-es';
 import { useTimezone } from 'providers/Timezone';
-import {
-	Dispatch,
-	SetStateAction,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useLocation } from 'react-router-dom';
 import { UpdateTimeInterval } from 'store/actions';
 import { AppState } from 'store/reducers';
 import { SuccessResponse, Warning } from 'types/api';
@@ -45,6 +44,8 @@ import { DataSource } from 'types/common/queryBuilder';
 import { GlobalReducer } from 'types/reducer/globalTime';
 import uPlot from 'uplot';
 import { getTimeRange } from 'utils/getTimeRange';
+
+import './TimeSeriesView.styles.scss';
 
 function TimeSeriesView({
 	data,
@@ -81,6 +82,7 @@ function TimeSeriesView({
 	const [minTimeScale, setMinTimeScale] = useState<number>();
 	const [maxTimeScale, setMaxTimeScale] = useState<number>();
 	const [graphVisibility, setGraphVisibility] = useState<boolean[]>([]);
+
 	const legendScrollPositionRef = useRef<{
 		scrollTop: number;
 		scrollLeft: number;
@@ -255,7 +257,9 @@ function TimeSeriesView({
 					chartData[0]?.length === 0 &&
 					!isLoading &&
 					!isError &&
-					dataSource === DataSource.METRICS && <EmptyMetricsSearch />}
+					dataSource === DataSource.METRICS && (
+						<EmptyMetricsSearch hasQueryResult={data !== undefined} />
+					)}
 
 				{!isLoading &&
 					!isError &&

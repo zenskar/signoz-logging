@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Callable, List
+from typing import Callable, List, Tuple
 
 import pytest
 import requests
@@ -19,6 +19,10 @@ logger = setup_logger(__name__)
 USER_ADMIN_NAME = "admin"
 USER_ADMIN_EMAIL = "admin@integration.test"
 USER_ADMIN_PASSWORD = "password123Z$"
+
+USER_EDITOR_NAME = "editor"
+USER_EDITOR_EMAIL = "editor@integration.test"
+USER_EDITOR_PASSWORD = "password123Z$"
 
 
 @pytest.fixture(name="create_user_admin", scope="package")
@@ -105,6 +109,39 @@ def get_token(signoz: types.SigNoz) -> Callable[[str, str], str]:
         return response.json()["data"]["accessToken"]
 
     return _get_token
+
+
+@pytest.fixture(name="get_tokens", scope="function")
+def get_tokens(signoz: types.SigNoz) -> Callable[[str, str], Tuple[str, str]]:
+    def _get_tokens(email: str, password: str) -> str:
+        response = requests.get(
+            signoz.self.host_configs["8080"].get("/api/v2/sessions/context"),
+            params={
+                "email": email,
+                "ref": f"{signoz.self.host_configs['8080'].base()}",
+            },
+            timeout=5,
+        )
+
+        assert response.status_code == HTTPStatus.OK
+        org_id = response.json()["data"]["orgs"][0]["id"]
+
+        response = requests.post(
+            signoz.self.host_configs["8080"].get("/api/v2/sessions/email_password"),
+            json={
+                "email": email,
+                "password": password,
+                "orgId": org_id,
+            },
+            timeout=5,
+        )
+
+        assert response.status_code == HTTPStatus.OK
+        access_token = response.json()["data"]["accessToken"]
+        refresh_token = response.json()["data"]["refreshToken"]
+        return access_token, refresh_token
+
+    return _get_tokens
 
 
 # This is not a fixture purposefully, we just want to add a license to the signoz instance.

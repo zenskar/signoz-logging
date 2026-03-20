@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { getToolTipValue, PrecisionOption } from 'components/Graph/yAxisConfig';
+import { PrecisionOption } from 'components/Graph/types';
+import { getToolTipValue } from 'components/Graph/yAxisConfig';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 
 import { uPlotXAxisValuesFormat } from './constants';
@@ -12,7 +12,6 @@ const PANEL_TYPES_WITH_X_AXIS_DATETIME_FORMAT = [
 	PANEL_TYPES.PIE,
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getAxes = ({
 	isDarkMode,
 	yAxisUnit,
@@ -71,7 +70,9 @@ const getAxes = ({
 			const axis = self.axes[axisIdx];
 
 			// bail out, force convergence
-			if (cycleNum > 1) return axis._size;
+			if (cycleNum > 1) {
+				return axis._size;
+			}
 
 			let axisSize = axis.ticks.size + axis.gap;
 
@@ -82,7 +83,6 @@ const getAxes = ({
 			);
 
 			if (longestVal !== '' && self) {
-				// eslint-disable-next-line prefer-destructuring, no-param-reassign
 				self.ctx.font = axis.font[0];
 				axisSize += self.ctx.measureText(longestVal).width / devicePixelRatio;
 			}

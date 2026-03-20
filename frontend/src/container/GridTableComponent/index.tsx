@@ -1,9 +1,8 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-import './GridTableComponent.styles.scss';
-
+import { memo, ReactNode, useCallback, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ExclamationCircleFilled } from '@ant-design/icons';
 import { Space, Tooltip } from 'antd';
-import { ColumnType } from 'antd/es/table';
+import { TableColumnType as ColumnType } from 'antd';
 import { getYAxisFormattedValue } from 'components/Graph/yAxisConfig';
 import { Events } from 'constants/events';
 import { QueryTable } from 'container/QueryTable';
@@ -11,8 +10,6 @@ import { getColumnUnit, RowData } from 'lib/query/createTableColumnsFromQuery';
 import { cloneDeep, get, isEmpty } from 'lodash-es';
 import { Compass } from 'lucide-react';
 import LineClampedText from 'periscope/components/LineClampedText/LineClampedText';
-import { memo, ReactNode, useCallback, useEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import styled from 'styled-components';
 import { eventEmitter } from 'utils/getEventEmitter';
 
@@ -23,6 +20,8 @@ import {
 	findMatchingThreshold,
 	TableData,
 } from './utils';
+
+import './GridTableComponent.styles.scss';
 
 const ButtonWrapper = styled.div`
 	position: absolute;
@@ -46,18 +45,32 @@ function GridTableComponent({
 	onOpenTraceBtnClick,
 	customOnRowClick,
 	widgetId,
+	columnWidths,
+	onColumnWidthsChange,
 	panelType,
 	queryRangeRequest,
 	decimalPrecision,
+	hiddenColumns = [],
 	...props
 }: GridTableComponentProps): JSX.Element {
 	const { t } = useTranslation(['valueGraph']);
 
 	// create columns and dataSource in the ui friendly structure
 	// use the query from the widget here to extract the legend information
-	const { columns, dataSource: originalDataSource } = useMemo(
+	const { columns: allColumns, dataSource: originalDataSource } = useMemo(
 		() => createColumnsAndDataSource((data as unknown) as TableData, query),
 		[query, data],
+	);
+
+	// Filter out hidden columns from being displayed
+	const columns = useMemo(
+		() =>
+			allColumns.filter(
+				(column) =>
+					!('dataIndex' in column) ||
+					!hiddenColumns.includes(column.dataIndex as string),
+			),
+		[allColumns, hiddenColumns],
 	);
 
 	const createDataInCorrectFormat = useCallback(
@@ -119,7 +132,6 @@ function GridTableComponent({
 
 	useEffect(() => {
 		if (tableProcessedDataRef) {
-			// eslint-disable-next-line no-param-reassign
 			tableProcessedDataRef.current = createDataInCorrectFormat(dataSource);
 		}
 	}, [createDataInCorrectFormat, dataSource, tableProcessedDataRef]);
@@ -274,6 +286,8 @@ function GridTableComponent({
 				dataSource={dataSource}
 				sticky={sticky}
 				widgetId={widgetId}
+				columnWidths={columnWidths}
+				onColumnWidthsChange={onColumnWidthsChange}
 				panelType={panelType}
 				queryRangeRequest={queryRangeRequest}
 				onRow={
@@ -288,7 +302,6 @@ function GridTableComponent({
 						  })
 						: undefined
 				}
-				// eslint-disable-next-line react/jsx-props-no-spreading
 				{...props}
 			/>
 		</WrapperStyled>

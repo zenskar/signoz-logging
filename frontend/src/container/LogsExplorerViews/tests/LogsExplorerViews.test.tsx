@@ -1,3 +1,4 @@
+import { VirtuosoMockContext } from 'react-virtuoso';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import ROUTES from 'constants/routes';
 import { useCopyLogLink } from 'hooks/logs/useCopyLogLink';
@@ -7,7 +8,6 @@ import { server } from 'mocks-server/server';
 import { rest } from 'msw';
 import { PreferenceContextProvider } from 'providers/preferences/context/PreferenceContextProvider';
 import { QueryBuilderContext } from 'providers/QueryBuilder';
-import { VirtuosoMockContext } from 'react-virtuoso';
 import { fireEvent, render, RenderResult, waitFor } from 'tests/test-utils';
 import { TagFilterItem } from 'types/api/queryBuilder/queryBuilderData';
 import { LogsAggregatorOperator } from 'types/common/queryBuilder';
@@ -38,16 +38,16 @@ const lodsQueryServerRequest = (): void =>
 jest.mock(
 	'container/TimeSeriesView/TimeSeriesView',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
-		function () {
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+		function TimeSeriesView() {
 			return <div>Time Series Chart</div>;
 		},
 );
 jest.mock(
 	'container/LogsExplorerChart',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
-		function () {
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+		function LogsExplorerChart() {
 			return <div>Histogram Chart</div>;
 		},
 );
@@ -119,7 +119,7 @@ jest.mock('providers/preferences/sync/usePreferenceSync', () => ({
 		preferences: {
 			columns: [],
 			formatting: {
-				maxLines: 2,
+				maxLines: 1,
 				format: 'table',
 				fontSize: 'small',
 				version: 1,

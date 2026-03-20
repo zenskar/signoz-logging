@@ -1,6 +1,14 @@
-/* eslint-disable react/no-unstable-nested-components */
-import './QueryBuilderSearch.styles.scss';
-
+import {
+	KeyboardEvent,
+	ReactElement,
+	ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
+import { useLocation } from 'react-router-dom';
 import { Button, Select, Spin, Tag, Tooltip, Typography } from 'antd';
 import cx from 'classnames';
 import { OPERATORS } from 'constants/queryBuilder';
@@ -27,17 +35,6 @@ import {
 	Slash,
 } from 'lucide-react';
 import type { BaseSelectRef } from 'rc-select';
-import {
-	KeyboardEvent,
-	ReactElement,
-	ReactNode,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
-import { useLocation } from 'react-router-dom';
 import {
 	BaseAutocompleteData,
 	DataTypes,
@@ -67,6 +64,8 @@ import {
 	isExistsNotExistsOperator,
 	isInNInOperator,
 } from './utils';
+
+import './QueryBuilderSearch.styles.scss';
 
 function QueryBuilderSearch({
 	query,
@@ -192,7 +191,9 @@ function QueryBuilderSearch({
 						disabled={isDisabled}
 						$isEnabled={!!searchValue}
 						onClick={(): void => {
-							if (!isDisabled) tagEditHandler(value);
+							if (!isDisabled) {
+								tagEditHandler(value);
+							}
 						}}
 					>
 						{chipValue}
@@ -203,12 +204,18 @@ function QueryBuilderSearch({
 	};
 
 	const onChangeHandler = (value: string[]): void => {
-		if (!isMulti) handleSearch(value[value.length - 1]);
+		if (!isMulti) {
+			handleSearch(value[value.length - 1]);
+		}
 	};
 
 	const onInputKeyDownHandler = (event: KeyboardEvent<Element>): void => {
-		if (isMulti || event.key === 'Backspace') handleKeyDown(event);
-		if (isExistsNotExistsOperator(searchValue)) handleKeyDown(event);
+		if (isMulti || event.key === 'Backspace') {
+			handleKeyDown(event);
+		}
+		if (isExistsNotExistsOperator(searchValue)) {
+			handleKeyDown(event);
+		}
 
 		// Editing is done after enter key press
 		if (event.key === 'Enter') {
@@ -262,7 +269,9 @@ function QueryBuilderSearch({
 	};
 
 	const queryTags = useMemo(() => {
-		if (!query.aggregateAttribute?.key && isMetricsDataSource) return [];
+		if (!query.aggregateAttribute?.key && isMetricsDataSource) {
+			return [];
+		}
 		return tags;
 	}, [isMetricsDataSource, query.aggregateAttribute?.key, tags]);
 
@@ -346,7 +355,10 @@ function QueryBuilderSearch({
 
 	// conditional changes here to use a seperate component to render the example queries based on the option group label
 	const customRendererForLogsExplorer = options.map((option) => (
-		<Select.Option key={option.label} value={option.value}>
+		<Select.Option
+			key={`${option.label}-${option.type || ''}-${option.dataType || ''}`}
+			value={option.value}
+		>
 			<OptionRendererForLogs
 				label={option.label}
 				value={option.value}
@@ -361,6 +373,7 @@ function QueryBuilderSearch({
 	return (
 		<div className="query-builder-search-container">
 			<Select
+				data-testid={'qb-search-select'}
 				ref={selectRef}
 				getPopupContainer={popupContainer}
 				transitionName=""
@@ -391,7 +404,6 @@ function QueryBuilderSearch({
 				onInputKeyDown={onInputKeyDownHandler}
 				notFoundContent={isFetching ? <Spin size="small" /> : null}
 				suffixIcon={
-					// eslint-disable-next-line no-nested-ternary
 					!isUndefined(suffixIcon) ? (
 						suffixIcon
 					) : isOpen ? (
@@ -478,7 +490,10 @@ function QueryBuilderSearch({
 				{isLogsExplorerPage
 					? customRendererForLogsExplorer
 					: options.map((option) => (
-							<Select.Option key={option.label} value={option.value}>
+							<Select.Option
+								key={`${option.label}-${option.type || ''}-${option.dataType || ''}`}
+								value={option.value}
+							>
 								<OptionRenderer
 									label={option.label}
 									value={option.value}

@@ -1,10 +1,15 @@
-import { PrecisionOption } from 'components/Graph/yAxisConfig';
+import { ReactNode } from 'react';
+import { Layout } from 'react-grid-layout';
+import { PrecisionOption } from 'components/Graph/types';
 import { PANEL_GROUP_TYPES, PANEL_TYPES } from 'constants/queryBuilder';
 import { ThresholdProps } from 'container/NewWidget/RightContainer/Threshold/types';
 import { timePreferenceType } from 'container/NewWidget/RightContainer/timeItems';
 import { QueryTableProps } from 'container/QueryTable/QueryTable.intefaces';
-import { ReactNode } from 'react';
-import { Layout } from 'react-grid-layout';
+import {
+	FillMode,
+	LineInterpolation,
+	LineStyle,
+} from 'lib/uPlotV2/config/types';
 import { Query } from 'types/api/queryBuilder/queryBuilderData';
 
 import { IField } from '../logs/fields';
@@ -37,6 +42,7 @@ export interface IDashboardVariable {
 	// Custom
 	customValue?: string;
 	// Textbox
+	// special case of variable where defaultValue is same as this. Otherwise, defaultValue is a single field
 	textboxValue?: string;
 
 	sort: TSortVariableValuesType;
@@ -131,11 +137,17 @@ export interface IBaseWidget {
 	legendPosition?: LegendPosition;
 	customLegendColors?: Record<string, string>;
 	contextLinks?: ContextLinksData;
+	lineInterpolation?: LineInterpolation;
+	showPoints?: boolean;
+	lineStyle?: LineStyle;
+	fillMode?: FillMode;
+	spanGaps?: boolean | number;
 }
 export interface Widgets extends IBaseWidget {
 	query: Query;
 	renderColumnCell?: QueryTableProps['renderColumnCell'];
 	customColTitles?: Record<string, string>;
+	hiddenColumns?: string[];
 }
 
 export interface PromQLWidgets extends IBaseWidget {

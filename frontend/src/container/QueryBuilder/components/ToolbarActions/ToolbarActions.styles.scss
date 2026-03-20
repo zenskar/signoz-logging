@@ -7,7 +7,7 @@
 		align-items: center;
 		justify-content: center;
 		box-shadow: none;
-		width: 32px;
+		width: 40px;
 		height: 32px;
 		margin-right: 12px;
 		border: 1px solid var(--bg-slate-400);
@@ -116,12 +116,11 @@
 		flex: 1 0 0;
 		border-radius: 2px;
 		background: var(--bg-cherry-500);
-		border-color: none;
+		border: none;
 	}
 	.cancel-run:hover {
 		background-color: #ff7875 !important;
 		color: var(--bg-vanilla-100) !important;
-		border: none;
 	}
 }
 

@@ -1,10 +1,5 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-/* eslint-disable no-param-reassign */
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 /* eslint-disable sonarjs/cognitive-complexity */
-import './uPlotLib.styles.scss';
-
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import { FullViewProps } from 'container/GridCardLayout/GridCard/FullView/types';
 import { saveLegendEntriesToLocalStorage } from 'container/GridCardLayout/GridCard/FullView/utils';
@@ -31,6 +26,8 @@ import getAxes from './utils/getAxes';
 import getSeries from './utils/getSeriesData';
 import { getXAxisScale } from './utils/getXAxisScale';
 import { getYAxisScale } from './utils/getYAxisScale';
+
+import './uPlotLib.styles.scss';
 
 // Extended uPlot interface with custom properties
 interface ExtendedUPlot extends uPlot {
@@ -451,6 +448,12 @@ export const getUPlotChartOptions = ({
 				(self): void => {
 					const selection = self.select;
 					if (selection) {
+						// Cleanup any visible "View Traces" buttons when drag selection occurs
+						const activeButtons = document.querySelectorAll(
+							'.view-onclick-show-button',
+						);
+						activeButtons.forEach((btn) => btn.remove());
+
 						const startTime = self.posToVal(selection.left, 'x');
 						const endTime = self.posToVal(selection.left + selection.width, 'x');
 
@@ -604,7 +607,9 @@ export const getUPlotChartOptions = ({
 
 									// Small delay to ensure cleanup is complete and DOM is ready
 									setTimeout(() => {
-										if (!isHovering) return; // Don't show if mouse already left
+										if (!isHovering) {
+											return;
+										} // Don't show if mouse already left
 
 										// Double-check no tooltip exists
 										if (document.querySelector('.legend-tooltip')) {

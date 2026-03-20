@@ -7,14 +7,25 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
+	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/query-service/model"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
 	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/opamptypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
+)
+
+var (
+	CodeConfigVersionNotFound          = errors.MustNewCode("config_version_not_found")
+	CodeElementTypeRequired            = errors.MustNewCode("element_type_required")
+	CodeConfigElementsRequired         = errors.MustNewCode("config_elements_required")
+	CodeConfigVersionInsertFailed      = errors.MustNewCode("config_version_insert_failed")
+	CodeConfigElementInsertFailed      = errors.MustNewCode("config_element_insert_failed")
+	CodeConfigDeployStatusUpdateFailed = errors.MustNewCode("config_deploy_status_update_failed")
+	CodeConfigHistoryGetFailed         = errors.MustNewCode("config_history_get_failed")
 )
 
 // Repo handles DDL and DML ops on ingestion rules
@@ -24,7 +35,7 @@ type Repo struct {
 
 func (r *Repo) GetConfigHistory(
 	ctx context.Context, orgId valuer.UUID, typ opamptypes.ElementType, limit int,
-) ([]opamptypes.AgentConfigVersion, *model.ApiError) {
+) ([]opamptypes.AgentConfigVersion, error) {
 	var c []opamptypes.AgentConfigVersion
 	err := r.store.BunDB().NewSelect().
 		Model(&c).
@@ -39,7 +50,7 @@ func (r *Repo) GetConfigHistory(
 		Scan(ctx)
 
 	if err != nil {
-		return nil, model.InternalError(err)
+		return nil, errors.WrapInternalf(err, CodeConfigHistoryGetFailed, "failed to get config history")
 	}
 
 	incompleteStatuses := []opamptypes.DeployStatus{opamptypes.DeployInitiated, opamptypes.Deploying}
@@ -54,7 +65,7 @@ func (r *Repo) GetConfigHistory(
 
 func (r *Repo) GetConfigVersion(
 	ctx context.Context, orgId valuer.UUID, typ opamptypes.ElementType, v int,
-) (*opamptypes.AgentConfigVersion, *model.ApiError) {
+) (*opamptypes.AgentConfigVersion, error) {
 	var c opamptypes.AgentConfigVersion
 	err := r.store.BunDB().NewSelect().
 		Model(&c).
@@ -69,9 +80,9 @@ func (r *Repo) GetConfigVersion(
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, model.NotFoundError(err)
+			return nil, errors.WrapNotFoundf(err, CodeConfigVersionNotFound, "config version not found")
 		}
-		return nil, model.InternalError(err)
+		return nil, errors.WrapInternalf(err, errors.CodeInternal, "failed to get config version")
 	}
 
 	return &c, nil
@@ -79,7 +90,7 @@ func (r *Repo) GetConfigVersion(
 
 func (r *Repo) GetLatestVersion(
 	ctx context.Context, orgId valuer.UUID, typ opamptypes.ElementType,
-) (*opamptypes.AgentConfigVersion, *model.ApiError) {
+) (*opamptypes.AgentConfigVersion, error) {
 	var c opamptypes.AgentConfigVersion
 	err := r.store.BunDB().NewSelect().
 		Model(&c).
@@ -93,9 +104,9 @@ func (r *Repo) GetLatestVersion(
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, model.NotFoundError(err)
+			return nil, errors.WrapNotFoundf(err, CodeConfigVersionNotFound, "config latest version not found")
 		}
-		return nil, model.InternalError(err)
+		return nil, errors.WrapInternalf(err, errors.CodeInternal, "failed to get latest config version")
 	}
 
 	return &c, nil
@@ -103,34 +114,29 @@ func (r *Repo) GetLatestVersion(
 
 func (r *Repo) insertConfig(
 	ctx context.Context, orgId valuer.UUID, userId valuer.UUID, c *opamptypes.AgentConfigVersion, elements []string,
-) (fnerr *model.ApiError) {
-
+) error {
 	if c.ElementType.StringValue() == "" {
-		return model.BadRequest(fmt.Errorf(
-			"element type is required for creating agent config version",
-		))
+		return errors.NewInvalidInputf(CodeElementTypeRequired, "element type is required for creating agent config version")
 	}
 
 	// allowing empty elements for logs - use case is deleting all pipelines
 	if len(elements) == 0 && c.ElementType != opamptypes.ElementTypeLogPipelines {
-		zap.L().Error("insert config called with no elements ", zap.String("ElementType", c.ElementType.StringValue()))
-		return model.BadRequest(fmt.Errorf("config must have atleast one element"))
+		slog.ErrorContext(ctx, "insert config called with no elements", "element_type", c.ElementType.StringValue())
+		return errors.NewInvalidInputf(CodeConfigElementsRequired, "config must have atleast one element")
 	}
 
 	if c.Version != 0 {
 		// the version can not be set by the user, we want to auto-assign the versions
 		// in a monotonically increasing order starting with 1. hence, we reject insert
 		// requests with version anything other than 0. here, 0 indicates un-assigned
-		zap.L().Error("invalid version assignment while inserting agent config", zap.Int("version", c.Version), zap.String("ElementType", c.ElementType.StringValue()))
-		return model.BadRequest(fmt.Errorf(
-			"user defined versions are not supported in the agent config",
-		))
+		slog.ErrorContext(ctx, "invalid version assignment while inserting agent config", "version", c.Version, "element_type", c.ElementType.StringValue())
+		return errors.NewInvalidInputf(errors.CodeInvalidInput, "user defined versions are not supported in the agent config")
 	}
 
 	configVersion, err := r.GetLatestVersion(ctx, orgId, c.ElementType)
-	if err != nil && err.Type() != model.ErrorNotFound {
-		zap.L().Error("failed to fetch latest config version", zap.Error(err))
-		return model.InternalError(fmt.Errorf("failed to fetch latest config version"))
+	if err != nil && !errors.Ast(err, errors.TypeNotFound) {
+		slog.ErrorContext(ctx, "failed to fetch latest config version", "error", err)
+		return err
 	}
 
 	if configVersion != nil {
@@ -140,11 +146,21 @@ func (r *Repo) insertConfig(
 		c.Version = 1
 	}
 
+	// Track whether we've successfully finished the insert operation
+	success := false
+
 	defer func() {
-		if fnerr != nil {
+		if !success {
 			// remove all the damage (invalid rows from db)
-			r.store.BunDB().NewDelete().Model(new(opamptypes.AgentConfigVersion)).Where("id = ?", c.ID).Where("org_id = ?", orgId).Exec(ctx)
-			r.store.BunDB().NewDelete().Model(new(opamptypes.AgentConfigElement)).Where("version_id = ?", c.ID).Exec(ctx)
+			// Delete elements first, then version (to respect potential foreign key constraints)
+			_, delErr := r.store.BunDB().NewDelete().Model(new(opamptypes.AgentConfigElement)).Where("version_id = ?", c.ID).Exec(ctx)
+			if delErr != nil {
+				slog.ErrorContext(ctx, "failed to delete config elements during cleanup", "error", delErr, "version_id", c.ID.String())
+			}
+			_, delErr = r.store.BunDB().NewDelete().Model(new(opamptypes.AgentConfigVersion)).Where("id = ?", c.ID).Where("org_id = ?", orgId).Exec(ctx)
+			if delErr != nil {
+				slog.ErrorContext(ctx, "failed to delete config version during cleanup", "error", delErr, "version_id", c.ID.String())
+			}
 		}
 	}()
 
@@ -153,10 +169,9 @@ func (r *Repo) insertConfig(
 		NewInsert().
 		Model(c).
 		Exec(ctx)
-
 	if dbErr != nil {
-		zap.L().Error("error in inserting config version: ", zap.Error(dbErr))
-		return model.InternalError(errors.Wrap(dbErr, "failed to insert ingestion rule"))
+		slog.ErrorContext(ctx, "error in inserting config version", "error", dbErr)
+		return errors.WrapInternalf(dbErr, CodeConfigVersionInsertFailed, "failed to insert config version")
 	}
 
 	for _, e := range elements {
@@ -172,10 +187,11 @@ func (r *Repo) insertConfig(
 		}
 		_, dbErr = r.store.BunDB().NewInsert().Model(agentConfigElement).Exec(ctx)
 		if dbErr != nil {
-			return model.InternalError(dbErr)
+			return errors.WrapInternalf(dbErr, CodeConfigElementInsertFailed, "failed to insert config element")
 		}
 	}
 
+	success = true
 	return nil
 }
 
@@ -205,17 +221,35 @@ func (r *Repo) updateDeployStatus(ctx context.Context,
 		Where("org_id = ?", orgId).
 		Exec(ctx)
 	if err != nil {
-		zap.L().Error("failed to update deploy status", zap.Error(err))
+		slog.ErrorContext(ctx, "failed to update deploy status", "error", err)
 		return model.BadRequest(fmt.Errorf("failed to update deploy status"))
 	}
 
 	return nil
 }
 
+// GetDeployStatusByHash returns the DeployStatus for the given config hash
+// (stored with orgId prefix). Returns DeployStatusUnknown when no matching row exists.
+func (r *Repo) GetDeployStatusByHash(ctx context.Context, orgId valuer.UUID, configHash string) (opamptypes.DeployStatus, error) {
+	var version opamptypes.AgentConfigVersion
+	err := r.store.BunDB().NewSelect().
+		Model(&version).
+		ColumnExpr("deploy_status").
+		Where("hash = ?", configHash).
+		Where("org_id = ?", orgId).
+		Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return opamptypes.DeployStatusUnknown, nil
+		}
+		return opamptypes.DeployStatusUnknown, errors.WrapInternalf(err, errors.CodeInternal, "failed to query deploy status by hash")
+	}
+	return version.DeployStatus, nil
+}
+
 func (r *Repo) updateDeployStatusByHash(
 	ctx context.Context, orgId valuer.UUID, confighash string, status string, result string,
-) *model.ApiError {
-
+) error {
 	_, err := r.store.BunDB().NewUpdate().
 		Model(new(opamptypes.AgentConfigVersion)).
 		Set("deploy_status = ?", status).
@@ -224,8 +258,8 @@ func (r *Repo) updateDeployStatusByHash(
 		Where("org_id = ?", orgId).
 		Exec(ctx)
 	if err != nil {
-		zap.L().Error("failed to update deploy status", zap.Error(err))
-		return model.InternalError(errors.Wrap(err, "failed to update deploy status"))
+		slog.ErrorContext(ctx, "failed to update deploy status", "error", err)
+		return errors.WrapInternalf(err, CodeConfigDeployStatusUpdateFailed, "failed to update deploy status")
 	}
 
 	return nil

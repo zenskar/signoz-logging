@@ -15,7 +15,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/query-service/common"
 	"github.com/SigNoz/signoz/pkg/query-service/model"
 	"github.com/SigNoz/signoz/pkg/transition"
-	ruletypes "github.com/SigNoz/signoz/pkg/types/ruletypes"
+	"github.com/SigNoz/signoz/pkg/types/ruletypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
 
 	querierV2 "github.com/SigNoz/signoz/pkg/query-service/app/querier/v2"
@@ -26,7 +26,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/query-service/utils/times"
 	"github.com/SigNoz/signoz/pkg/query-service/utils/timestamp"
 
-	"github.com/SigNoz/signoz/pkg/query-service/formatter"
+	"github.com/SigNoz/signoz/pkg/units"
 
 	baserules "github.com/SigNoz/signoz/pkg/query-service/rules"
 
@@ -62,6 +62,8 @@ type AnomalyRule struct {
 
 	seasonality anomaly.Seasonality
 }
+
+var _ baserules.Rule = (*AnomalyRule)(nil)
 
 func NewAnomalyRule(
 	id string,
@@ -234,19 +236,25 @@ func (r *AnomalyRule) buildAndRunQuery(ctx context.Context, orgID valuer.UUID, t
 		}
 	}
 
+	hasData := len(queryResult.AnomalyScores) > 0
+	if missingDataAlert := r.HandleMissingDataAlert(ctx, ts, hasData); missingDataAlert != nil {
+		return ruletypes.Vector{*missingDataAlert}, nil
+	}
+
 	var resultVector ruletypes.Vector
 
 	scoresJSON, _ := json.Marshal(queryResult.AnomalyScores)
 	r.logger.InfoContext(ctx, "anomaly scores", "scores", string(scoresJSON))
 
 	for _, series := range queryResult.AnomalyScores {
-		if r.Condition() != nil && r.Condition().RequireMinPoints {
-			if len(series.Points) < r.Condition().RequiredNumPoints {
-				r.logger.InfoContext(ctx, "not enough data points to evaluate series, skipping", "ruleid", r.ID(), "numPoints", len(series.Points), "requiredPoints", r.Condition().RequiredNumPoints)
-				continue
-			}
+		if !r.Condition().ShouldEval(series) {
+			r.logger.InfoContext(ctx, "not enough data points to evaluate series, skipping", "ruleid", r.ID(), "numPoints", len(series.Points), "requiredPoints", r.Condition().RequiredNumPoints)
+			continue
 		}
-		results, err := r.Threshold.ShouldAlert(*series, r.Unit())
+		results, err := r.Threshold.Eval(*series, r.Unit(), ruletypes.EvalData{
+			ActiveAlerts:  r.ActiveAlertsLabelFP(),
+			SendUnmatched: r.ShouldSendUnmatched(),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -284,19 +292,37 @@ func (r *AnomalyRule) buildAndRunQueryV5(ctx context.Context, orgID valuer.UUID,
 
 	queryResult := transition.ConvertV5TimeSeriesDataToV4Result(qbResult)
 
+	hasData := len(queryResult.AnomalyScores) > 0
+	if missingDataAlert := r.HandleMissingDataAlert(ctx, ts, hasData); missingDataAlert != nil {
+		return ruletypes.Vector{*missingDataAlert}, nil
+	}
+
 	var resultVector ruletypes.Vector
 
 	scoresJSON, _ := json.Marshal(queryResult.AnomalyScores)
 	r.logger.InfoContext(ctx, "anomaly scores", "scores", string(scoresJSON))
 
-	for _, series := range queryResult.AnomalyScores {
-		if r.Condition().RequireMinPoints {
-			if len(series.Points) < r.Condition().RequiredNumPoints {
-				r.logger.InfoContext(ctx, "not enough data points to evaluate series, skipping", "ruleid", r.ID(), "numPoints", len(series.Points), "requiredPoints", r.Condition().RequiredNumPoints)
-				continue
-			}
+	// Filter out new series if newGroupEvalDelay is configured
+	seriesToProcess := queryResult.AnomalyScores
+	if r.ShouldSkipNewGroups() {
+		filteredSeries, filterErr := r.BaseRule.FilterNewSeries(ctx, ts, seriesToProcess)
+		// In case of error we log the error and continue with the original series
+		if filterErr != nil {
+			r.logger.ErrorContext(ctx, "Error filtering new series, ", "error", filterErr, "rule_name", r.Name())
+		} else {
+			seriesToProcess = filteredSeries
 		}
-		results, err := r.Threshold.ShouldAlert(*series, r.Unit())
+	}
+
+	for _, series := range seriesToProcess {
+		if !r.Condition().ShouldEval(series) {
+			r.logger.InfoContext(ctx, "not enough data points to evaluate series, skipping", "ruleid", r.ID(), "numPoints", len(series.Points), "requiredPoints", r.Condition().RequiredNumPoints)
+			continue
+		}
+		results, err := r.Threshold.Eval(*series, r.Unit(), ruletypes.EvalData{
+			ActiveAlerts:  r.ActiveAlertsLabelFP(),
+			SendUnmatched: r.ShouldSendUnmatched(),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -305,11 +331,11 @@ func (r *AnomalyRule) buildAndRunQueryV5(ctx context.Context, orgID valuer.UUID,
 	return resultVector, nil
 }
 
-func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) {
+func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (int, error) {
 
 	prevState := r.State()
 
-	valueFormatter := formatter.FromUnit(r.Unit())
+	valueFormatter := units.FormatterFromUnit(r.Unit())
 
 	var res ruletypes.Vector
 	var err error
@@ -322,7 +348,7 @@ func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (interface{}, erro
 		res, err = r.buildAndRunQuery(ctx, r.OrgID(), ts)
 	}
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
 	r.mtx.Lock()
@@ -397,7 +423,7 @@ func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (interface{}, erro
 		if _, ok := alerts[h]; ok {
 			r.logger.ErrorContext(ctx, "the alert query returns duplicate records", "rule_id", r.ID(), "alert", alerts[h])
 			err = fmt.Errorf("duplicate alert found, vector contains metrics with the same labelset after applying alert labels")
-			return nil, err
+			return 0, err
 		}
 
 		alerts[h] = &ruletypes.Alert{
@@ -410,6 +436,7 @@ func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (interface{}, erro
 			GeneratorURL:      r.GeneratorURL(),
 			Receivers:         ruleReceiverMap[lbs.Map()[ruletypes.LabelThresholdName]],
 			Missing:           smpl.IsMissing,
+			IsRecovering:      smpl.IsRecovering,
 		}
 	}
 
@@ -422,6 +449,9 @@ func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (interface{}, erro
 
 			alert.Value = a.Value
 			alert.Annotations = a.Annotations
+			// Update the recovering and missing state of existing alert
+			alert.IsRecovering = a.IsRecovering
+			alert.Missing = a.Missing
 			if v, ok := alert.Labels.Map()[ruletypes.LabelThresholdName]; ok {
 				alert.Receivers = ruleReceiverMap[v]
 			}
@@ -462,13 +492,37 @@ func (r *AnomalyRule) Eval(ctx context.Context, ts time.Time) (interface{}, erro
 			continue
 		}
 
-		if a.State == model.StatePending && ts.Sub(a.ActiveAt) >= r.HoldDuration() {
+		if a.State == model.StatePending && ts.Sub(a.ActiveAt) >= r.HoldDuration().Duration() {
 			a.State = model.StateFiring
 			a.FiredAt = ts
 			state := model.StateFiring
 			if a.Missing {
 				state = model.StateNoData
 			}
+			itemsToAdd = append(itemsToAdd, model.RuleStateHistory{
+				RuleID:       r.ID(),
+				RuleName:     r.Name(),
+				State:        state,
+				StateChanged: true,
+				UnixMilli:    ts.UnixMilli(),
+				Labels:       model.LabelsString(labelsJSON),
+				Fingerprint:  a.QueryResultLables.Hash(),
+				Value:        a.Value,
+			})
+		}
+
+		// We need to change firing alert to recovering if the returned sample meets recovery threshold
+		changeFiringToRecovering := a.State == model.StateFiring && a.IsRecovering
+		// We need to change recovering alerts to firing if the returned sample meets target threshold
+		changeRecoveringToFiring := a.State == model.StateRecovering && !a.IsRecovering && !a.Missing
+		// in any of the above case we need to update the status of alert
+		if changeFiringToRecovering || changeRecoveringToFiring {
+			state := model.StateRecovering
+			if changeRecoveringToFiring {
+				state = model.StateFiring
+			}
+			a.State = state
+			r.logger.DebugContext(ctx, "converting alert state", "name", r.Name(), "state", state)
 			itemsToAdd = append(itemsToAdd, model.RuleStateHistory{
 				RuleID:       r.ID(),
 				RuleName:     r.Name(),
@@ -501,7 +555,7 @@ func (r *AnomalyRule) String() string {
 	ar := ruletypes.PostableRule{
 		AlertName:         r.Name(),
 		RuleCondition:     r.Condition(),
-		EvalWindow:        ruletypes.Duration(r.EvalWindow()),
+		EvalWindow:        r.EvalWindow(),
 		Labels:            r.Labels().Map(),
 		Annotations:       r.Annotations().Map(),
 		PreferredChannels: r.PreferredChannels(),

@@ -1,5 +1,15 @@
-import './ListView.styles.scss';
-
+import {
+	Dispatch,
+	memo,
+	MutableRefObject,
+	SetStateAction,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
 import logEvent from 'api/common/logEvent';
 import ErrorInPlace from 'components/ErrorInPlace/ErrorInPlace';
 import ListViewOrderBy from 'components/OrderBy/ListViewOrderBy';
@@ -12,8 +22,9 @@ import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
 import EmptyLogsSearch from 'container/EmptyLogsSearch/EmptyLogsSearch';
 import NoLogs from 'container/NoLogs/NoLogs';
 import { useOptionsMenu } from 'container/OptionsMenu';
-import { CustomTimeType } from 'container/TopNav/DateTimeSelectionV2/config';
+import { CustomTimeType } from 'container/TopNav/DateTimeSelectionV2/types';
 import TraceExplorerControls from 'container/TracesExplorer/Controls';
+import { getListViewQuery } from 'container/TracesExplorer/explorerUtils';
 import { useGetQueryRange } from 'hooks/queryBuilder/useGetQueryRange';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { Pagination } from 'hooks/queryPagination';
@@ -22,19 +33,8 @@ import useDragColumns from 'hooks/useDragColumns';
 import { getDraggedColumns } from 'hooks/useDragColumns/utils';
 import useUrlQueryData from 'hooks/useUrlQueryData';
 import { RowData } from 'lib/query/createTableColumnsFromQuery';
-import { cloneDeep } from 'lodash-es';
 import { ArrowUp10, Minus } from 'lucide-react';
 import { useTimezone } from 'providers/Timezone';
-import {
-	Dispatch,
-	memo,
-	SetStateAction,
-	useCallback,
-	useEffect,
-	useMemo,
-	useState,
-} from 'react';
-import { useSelector } from 'react-redux';
 import { AppState } from 'store/reducers';
 import { Warning } from 'types/api';
 import APIError from 'types/api/error';
@@ -46,16 +46,20 @@ import { defaultSelectedColumns, PER_PAGE_OPTIONS } from './configs';
 import { Container, tableStyles } from './styles';
 import { getListColumns, transformDataWithDate } from './utils';
 
+import './ListView.styles.scss';
+
 interface ListViewProps {
 	isFilterApplied: boolean;
 	setWarning: Dispatch<SetStateAction<Warning | undefined>>;
 	setIsLoadingQueries: Dispatch<SetStateAction<boolean>>;
+	queryKeyRef?: MutableRefObject<any>;
 }
 
 function ListView({
 	isFilterApplied,
 	setWarning,
 	setIsLoadingQueries,
+	queryKeyRef,
 }: ListViewProps): JSX.Element {
 	const {
 		stagedQuery,
@@ -92,35 +96,10 @@ function ListView({
 	const paginationConfig =
 		paginationQueryData ?? getDefaultPaginationConfig(PER_PAGE_OPTIONS);
 
-	const requestQuery = useMemo(() => {
-		const query = stagedQuery
-			? cloneDeep(stagedQuery)
-			: cloneDeep(initialQueriesMap.traces);
-
-		if (query.builder.queryData[0]) {
-			query.builder.queryData[0].orderBy = [
-				{
-					columnName: orderBy.split(':')[0],
-					order: orderBy.split(':')[1] as 'asc' | 'desc',
-				},
-			];
-		}
-
-		// add order by to trace operator
-		if (
-			query.builder.queryTraceOperator &&
-			query.builder.queryTraceOperator.length > 0
-		) {
-			query.builder.queryTraceOperator[0].orderBy = [
-				{
-					columnName: orderBy.split(':')[0],
-					order: orderBy.split(':')[1] as 'asc' | 'desc',
-				},
-			];
-		}
-
-		return query;
-	}, [stagedQuery, orderBy]);
+	const requestQuery = useMemo(
+		() => getListViewQuery(stagedQuery || initialQueriesMap.traces, orderBy),
+		[stagedQuery, orderBy],
+	);
 
 	const queryKey = useMemo(
 		() => [
@@ -145,6 +124,10 @@ function ListView({
 			orderBy,
 		],
 	);
+
+	if (queryKeyRef) {
+		queryKeyRef.current = queryKey;
+	}
 
 	const { data, isFetching, isLoading, isError, error } = useGetQueryRange(
 		{
@@ -292,5 +275,9 @@ function ListView({
 		</Container>
 	);
 }
+
+ListView.defaultProps = {
+	queryKeyRef: undefined,
+};
 
 export default memo(ListView);

@@ -1,5 +1,5 @@
-import './CeleryOverviewConfigOptions.styles.scss';
-
+import { useCallback, useMemo, useState } from 'react';
+import { useHistory, useLocation } from 'react-router-dom';
 import { Row, Select, Spin } from 'antd';
 import {
 	getValuesFromQueryParams,
@@ -9,8 +9,8 @@ import { useCeleryFilterOptions } from 'components/CeleryTask/useCeleryFilterOpt
 import { SelectMaxTagPlaceholder } from 'components/MessagingQueues/MQCommon/MQCommon';
 import { QueryParams } from 'constants/query';
 import useUrlQuery from 'hooks/useUrlQuery';
-import { useCallback, useMemo, useState } from 'react';
-import { useHistory, useLocation } from 'react-router-dom';
+
+import './CeleryOverviewConfigOptions.styles.scss';
 
 export interface SelectOptionConfig {
 	placeholder: string;
@@ -96,7 +96,6 @@ export function FilterSelect({
 			key={filterType.toString()}
 			placeholder={placeholder}
 			showSearch
-			// eslint-disable-next-line react/jsx-props-no-spreading
 			{...(isMultiple ? { mode: 'multiple' } : {})}
 			options={mergedOptions}
 			loading={isFetching}

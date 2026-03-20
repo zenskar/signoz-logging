@@ -1,6 +1,3 @@
-/* eslint-disable no-nested-ternary */
-import './QueryBuilderSearchV2.styles.scss';
-
 import { Typography } from 'antd';
 import cx from 'classnames';
 import {
@@ -17,6 +14,8 @@ import { getUserOperatingSystem, UserOperatingSystem } from 'utils/getUserOS';
 import ExampleQueriesRendererForLogs from '../QueryBuilderSearch/ExampleQueriesRendererForLogs';
 import { convertExampleQueriesToOptions } from '../QueryBuilderSearch/utils';
 import { ITag, Option } from './QueryBuilderSearchV2';
+
+import './QueryBuilderSearchV2.styles.scss';
 
 interface ICustomDropdownProps {
 	menu: React.ReactElement;

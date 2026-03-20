@@ -1,7 +1,16 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { ENVIRONMENT } from 'constants/env';
+import { server } from 'mocks-server/server';
+import { rest } from 'msw';
 import { PreferenceContextProvider } from 'providers/preferences/context/PreferenceContextProvider';
-import { findByText, fireEvent, render, waitFor } from 'tests/test-utils';
+import {
+	findByText,
+	fireEvent,
+	render,
+	userEvent,
+	waitFor,
+} from 'tests/test-utils';
+import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 
 import { pipelineApiResponseMockData } from '../mocks/pipeline';
 import PipelineListsView from '../PipelineListsView';
@@ -62,7 +71,7 @@ jest.mock('providers/preferences/sync/usePreferenceSync', () => ({
 		preferences: {
 			columns: [],
 			formatting: {
-				maxLines: 2,
+				maxLines: 1,
 				format: 'table',
 				fontSize: 'small',
 				version: 1,
@@ -75,7 +84,20 @@ jest.mock('providers/preferences/sync/usePreferenceSync', () => ({
 	}),
 }));
 
+const BASE_URL = ENVIRONMENT.baseURL;
+const attributeKeysURL = `${BASE_URL}/api/v3/filter_suggestions`;
+
 describe('PipelinePage container test', () => {
+	beforeAll(() => {
+		server.listen();
+	});
+	afterEach(() => {
+		server.resetHandlers();
+		jest.clearAllMocks();
+	});
+	afterAll(() => {
+		server.close();
+	});
 	it('should render PipelineListsView section', () => {
 		const { getByText, container } = render(
 			<PreferenceContextProvider>
@@ -272,6 +294,7 @@ describe('PipelinePage container test', () => {
 	});
 
 	it('should have populated form fields when edit pipeline is clicked', async () => {
+		const user = userEvent.setup({ pointerEventsCheck: 0 });
 		render(
 			<PreferenceContextProvider>
 				<PipelineListsView
@@ -301,5 +324,60 @@ describe('PipelinePage container test', () => {
 
 		// to have length 2
 		expect(screen.queryAllByText('source = nginx').length).toBe(2);
+
+		server.use(
+			rest.get(attributeKeysURL, (_req, res, ctx) =>
+				res(
+					ctx.status(200),
+					ctx.json({
+						status: 'success',
+						data: {
+							attributes: [
+								{
+									key: 'otelServiceName',
+									dataType: DataTypes.String,
+									type: 'tag',
+									isColumn: false,
+									isJSON: false,
+								},
+								{
+									key: 'service.name',
+									dataType: DataTypes.String,
+									type: 'resource',
+									isColumn: false,
+									isJSON: false,
+								},
+								{
+									key: 'service.instance.id',
+									dataType: DataTypes.String,
+									type: 'resource',
+									isColumn: false,
+									isJSON: false,
+								},
+								{
+									key: 'service.name',
+									dataType: DataTypes.String,
+									type: 'tag',
+									isColumn: false,
+									isJSON: false,
+								},
+							],
+						},
+					}),
+				),
+			),
+		);
+
+		// Open Filter input and type to trigger suggestions
+		const filterSelect = screen.getByTestId('qb-search-select');
+		const input = within(filterSelect).getByRole('combobox') as HTMLInputElement;
+
+		await user.click(input);
+		await waitFor(() =>
+			expect(screen.getByText('otelServiceName')).toBeInTheDocument(),
+		);
+
+		const serviceNameOccurences = await screen.findAllByText('service.name');
+		expect(serviceNameOccurences.length).toBeGreaterThanOrEqual(2);
 	});
 });

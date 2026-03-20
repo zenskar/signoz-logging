@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/SigNoz/signoz/pkg/errors"
-	"github.com/SigNoz/signoz/pkg/query-service/converter"
+	"github.com/SigNoz/signoz/pkg/units"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 	"github.com/SigNoz/signoz/pkg/query-service/utils/labels"
 	"github.com/SigNoz/signoz/pkg/valuer"
@@ -57,8 +57,33 @@ type RuleReceivers struct {
 	Name     string   `json:"name"`
 }
 
+// EvalData are other dependent values used to evaluate the threshold rules.
+type EvalData struct {
+	// ActiveAlerts is a map of active alert fingerprints
+	// used to check if a sample is part of an active alert
+	// when evaluating the recovery threshold.
+	ActiveAlerts map[uint64]struct{}
+
+	// SendUnmatched is a flag to return samples
+	// even if they don't match the rule condition.
+	// This is useful in testing the rule.
+	SendUnmatched bool
+}
+
+// HasActiveAlert checks if the given sample figerprint is active
+// as an alert.
+func (eval EvalData) HasActiveAlert(sampleLabelFp uint64) bool {
+	if len(eval.ActiveAlerts) == 0 {
+		return false
+	}
+	_, ok := eval.ActiveAlerts[sampleLabelFp]
+	return ok
+}
+
 type RuleThreshold interface {
-	ShouldAlert(series v3.Series, unit string) (Vector, error)
+	// Eval runs the given series through the threshold rules
+	// using the given EvalData and returns the matching series
+	Eval(series v3.Series, unit string, evalData EvalData) (Vector, error)
 	GetRuleReceivers() []RuleReceivers
 }
 
@@ -97,7 +122,7 @@ func (r BasicRuleThresholds) Validate() error {
 	return errors.Join(errs...)
 }
 
-func (r BasicRuleThresholds) ShouldAlert(series v3.Series, unit string) (Vector, error) {
+func (r BasicRuleThresholds) Eval(series v3.Series, unit string, evalData EvalData) (Vector, error) {
 	var resultVector Vector
 	thresholds := []BasicRuleThreshold(r)
 	sortThresholds(thresholds)
@@ -105,8 +130,49 @@ func (r BasicRuleThresholds) ShouldAlert(series v3.Series, unit string) (Vector,
 		smpl, shouldAlert := threshold.shouldAlert(series, unit)
 		if shouldAlert {
 			smpl.Target = *threshold.TargetValue
+			if threshold.RecoveryTarget != nil {
+				smpl.RecoveryTarget = threshold.RecoveryTarget
+			}
 			smpl.TargetUnit = threshold.TargetUnit
 			resultVector = append(resultVector, smpl)
+			continue
+		} else if evalData.SendUnmatched {
+			// Sanitise the series points to remove any NaN or Inf values
+			series.Points = removeGroupinSetPoints(series)
+			if len(series.Points) == 0 {
+				continue
+			}
+			// prepare the sample with the first point of the series
+			smpl := Sample{
+				Point:      Point{T: series.Points[0].Timestamp, V: series.Points[0].Value},
+				Metric:     PrepareSampleLabelsForRule(series.Labels, threshold.Name),
+				Target:     *threshold.TargetValue,
+				TargetUnit: threshold.TargetUnit,
+			}
+			if threshold.RecoveryTarget != nil {
+				smpl.RecoveryTarget = threshold.RecoveryTarget
+			}
+			resultVector = append(resultVector, smpl)
+			continue
+		}
+
+		// Prepare alert hash from series labels and threshold name if recovery target option was provided
+		if threshold.RecoveryTarget == nil {
+			continue
+		}
+		sampleLabels := PrepareSampleLabelsForRule(series.Labels, threshold.Name)
+		alertHash := sampleLabels.Hash()
+		// check if alert is active and then check if recovery threshold matches
+		if evalData.HasActiveAlert(alertHash) {
+			smpl, matchesRecoveryThreshold := threshold.matchesRecoveryThreshold(series, unit)
+			if matchesRecoveryThreshold {
+				smpl.Target = *threshold.TargetValue
+				smpl.RecoveryTarget = threshold.RecoveryTarget
+				smpl.TargetUnit = threshold.TargetUnit
+				// IsRecovering to notify that metrics is in recovery stage
+				smpl.IsRecovering = true
+				resultVector = append(resultVector, smpl)
+			}
 		}
 	}
 	return resultVector, nil
@@ -133,14 +199,25 @@ func sortThresholds(thresholds []BasicRuleThreshold) {
 	})
 }
 
-func (b BasicRuleThreshold) target(ruleUnit string) float64 {
-	unitConverter := converter.FromUnit(converter.Unit(b.TargetUnit))
+// convertToRuleUnit converts the given value from the target unit to the rule unit
+func (b BasicRuleThreshold) convertToRuleUnit(val float64, ruleUnit string) float64 {
+	unitConverter := units.ConverterFromUnit(units.Unit(b.TargetUnit))
 	// convert the target value to the y-axis unit
-	value := unitConverter.Convert(converter.Value{
-		F: *b.TargetValue,
-		U: converter.Unit(b.TargetUnit),
-	}, converter.Unit(ruleUnit))
+	value := unitConverter.Convert(units.Value{
+		F: val,
+		U: units.Unit(b.TargetUnit),
+	}, units.Unit(ruleUnit))
 	return value.F
+}
+
+// target returns the target value in the rule unit
+func (b BasicRuleThreshold) target(ruleUnit string) float64 {
+	return b.convertToRuleUnit(*b.TargetValue, ruleUnit)
+}
+
+// recoveryTarget returns the recovery target value in the rule unit
+func (b BasicRuleThreshold) recoveryTarget(ruleUnit string) float64 {
+	return b.convertToRuleUnit(*b.RecoveryTarget, ruleUnit)
 }
 
 func (b BasicRuleThreshold) getCompareOp() CompareOp {
@@ -178,6 +255,13 @@ func (b BasicRuleThreshold) Validate() error {
 	return errors.Join(errs...)
 }
 
+func (b BasicRuleThreshold) matchesRecoveryThreshold(series v3.Series, ruleUnit string) (Sample, bool) {
+	return b.shouldAlertWithTarget(series, b.recoveryTarget(ruleUnit))
+}
+func (b BasicRuleThreshold) shouldAlert(series v3.Series, ruleUnit string) (Sample, bool) {
+	return b.shouldAlertWithTarget(series, b.target(ruleUnit))
+}
+
 func removeGroupinSetPoints(series v3.Series) []v3.Point {
 	var result []v3.Point
 	for _, s := range series.Points {
@@ -188,21 +272,22 @@ func removeGroupinSetPoints(series v3.Series) []v3.Point {
 	return result
 }
 
-func (b BasicRuleThreshold) shouldAlert(series v3.Series, ruleUnit string) (Sample, bool) {
+// PrepareSampleLabelsForRule prepares the labels for the sample to be used in the alerting.
+// It accepts seriesLabels and thresholdName as input and returns the labels with the threshold name label added.
+func PrepareSampleLabelsForRule(seriesLabels map[string]string, thresholdName string) (lbls labels.Labels) {
+	lb := labels.NewBuilder(labels.Labels{})
+	for name, value := range seriesLabels {
+		lb.Set(name, value)
+	}
+	lb.Set(LabelThresholdName, thresholdName)
+	lb.Set(LabelSeverityName, strings.ToLower(thresholdName))
+	return lb.Labels()
+}
+
+func (b BasicRuleThreshold) shouldAlertWithTarget(series v3.Series, target float64) (Sample, bool) {
 	var shouldAlert bool
 	var alertSmpl Sample
-	var lbls labels.Labels
-
-	for name, value := range series.Labels {
-		lbls = append(lbls, labels.Label{Name: name, Value: value})
-	}
-
-	target := b.target(ruleUnit)
-
-	// TODO(srikanthccv): is it better to move the logic to notifier instead of
-	// adding two labels?
-	lbls = append(lbls, labels.Label{Name: LabelThresholdName, Value: b.Name})
-	lbls = append(lbls, labels.Label{Name: LabelSeverityName, Value: strings.ToLower(b.Name)})
+	lbls := PrepareSampleLabelsForRule(series.Labels, b.Name)
 
 	series.Points = removeGroupinSetPoints(series)
 

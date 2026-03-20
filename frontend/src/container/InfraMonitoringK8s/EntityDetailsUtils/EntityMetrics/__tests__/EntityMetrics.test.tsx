@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable sonarjs/no-duplicate-string */
 import { render, screen } from '@testing-library/react';
 import { K8sCategory } from 'container/InfraMonitoringK8s/constants';
-import { Time } from 'container/TopNav/DateTimeSelectionV2/config';
+import { Time } from 'container/TopNav/DateTimeSelectionV2/types';
 import * as appContextHooks from 'providers/App/App';
 import { LicenseEvent } from 'types/api/licensesV3/getActive';
 

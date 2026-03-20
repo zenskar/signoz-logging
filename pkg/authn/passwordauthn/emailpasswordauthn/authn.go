@@ -21,14 +21,14 @@ func New(store authtypes.AuthNStore) *AuthN {
 }
 
 func (a *AuthN) Authenticate(ctx context.Context, email string, password string, orgID valuer.UUID) (*authtypes.Identity, error) {
-	user, factorPassword, err := a.store.GetUserAndFactorPasswordByEmailAndOrgID(ctx, email, orgID)
+	user, factorPassword, err := a.store.GetActiveUserAndFactorPasswordByEmailAndOrgID(ctx, email, orgID)
 	if err != nil {
 		return nil, err
 	}
 
 	if !factorPassword.Equals(password) {
-		return nil, errors.New(errors.TypeUnauthenticated, types.ErrCodeIncorrectPassword, "invalid email orpassword")
+		return nil, errors.New(errors.TypeUnauthenticated, types.ErrCodeIncorrectPassword, "invalid email or password")
 	}
 
-	return authtypes.NewIdentity(user.ID, orgID, user.Email, user.Role), nil
+	return authtypes.NewIdentity(user.ID, orgID, user.Email, user.Role, authtypes.IdentNProviderTokenizer), nil
 }

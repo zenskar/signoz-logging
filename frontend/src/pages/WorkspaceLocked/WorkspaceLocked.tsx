@@ -1,6 +1,6 @@
-/* eslint-disable react/no-unescaped-entities */
-import './WorkspaceLocked.styles.scss';
-
+import { useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useMutation } from 'react-query';
 import type { TabsProps } from 'antd';
 import {
 	Alert,
@@ -24,9 +24,6 @@ import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
 import { CircleArrowRight } from 'lucide-react';
 import { useAppContext } from 'providers/App/App';
-import { useCallback, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useMutation } from 'react-query';
 import APIError from 'types/api/error';
 import { LicensePlatform } from 'types/api/licensesV3/getActive';
 import { getFormattedDate } from 'utils/timeUtils';
@@ -39,6 +36,8 @@ import {
 	faqData,
 	infoData,
 } from './workspaceLocked.data';
+
+import './WorkspaceLocked.styles.scss';
 
 export default function WorkspaceBlocked(): JSX.Element {
 	const {
@@ -114,7 +113,6 @@ export default function WorkspaceBlocked(): JSX.Element {
 		updateCreditCard({
 			url: window.location.origin,
 		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [updateCreditCard]);
 
 	const handleExtendTrial = (): void => {

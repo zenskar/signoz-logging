@@ -1,14 +1,13 @@
-/* eslint-disable react/jsx-props-no-spreading */
-import './WarningPopover.styles.scss';
-
+import { ReactNode, useMemo } from 'react';
 import { Color } from '@signozhq/design-tokens';
 import { Button, Popover, PopoverProps } from 'antd';
 import ErrorIcon from 'assets/Error';
 import OverlayScrollbar from 'components/OverlayScrollbar/OverlayScrollbar';
 import { BookOpenText, ChevronsDown, TriangleAlert } from 'lucide-react';
 import KeyValueLabel from 'periscope/components/KeyValueLabel';
-import { ReactNode } from 'react';
 import { Warning } from 'types/api';
+
+import './WarningPopover.styles.scss';
 
 interface WarningContentProps {
 	warning: Warning;
@@ -106,19 +105,51 @@ export function WarningContent({ warning }: WarningContentProps): JSX.Element {
 	);
 }
 
+function PopoverMessage({
+	message,
+}: {
+	message: string | ReactNode;
+}): JSX.Element {
+	return (
+		<section className="warning-content">
+			<section className="warning-content__summary-section">
+				<header className="warning-content__summary">
+					<div className="warning-content__summary-left">
+						<div className="warning-content__summary-text">
+							<p className="warning-content__warning-message">{message}</p>
+						</div>
+					</div>
+				</header>
+			</section>
+		</section>
+	);
+}
+
 interface WarningPopoverProps extends PopoverProps {
 	children?: ReactNode;
-	warningData: Warning;
+	warningData?: Warning;
+	message?: string | ReactNode;
 }
 
 function WarningPopover({
 	children,
 	warningData,
+	message = '',
 	...popoverProps
 }: WarningPopoverProps): JSX.Element {
+	const content = useMemo(() => {
+		if (message) {
+			return <PopoverMessage message={message} />;
+		}
+		if (warningData) {
+			return <WarningContent warning={warningData} />;
+		}
+		return null;
+	}, [message, warningData]);
+
 	return (
 		<Popover
-			content={<WarningContent warning={warningData} />}
+			content={content}
 			overlayStyle={{ padding: 0, maxWidth: '600px' }}
 			overlayInnerStyle={{ padding: 0 }}
 			autoAdjustOverflow
@@ -137,6 +168,8 @@ function WarningPopover({
 
 WarningPopover.defaultProps = {
 	children: undefined,
+	warningData: null,
+	message: null,
 };
 
 export default WarningPopover;

@@ -1,8 +1,8 @@
+import { useState } from 'react';
 import { Button, Popover, Tooltip } from 'antd';
 import cx from 'classnames';
 import { Ellipsis, PencilLine, Trash2 } from 'lucide-react';
 import { useAppContext } from 'providers/App/App';
-import { useState } from 'react';
 import { FunnelStepData } from 'types/api/traceFunnels';
 
 import AddFunnelStepDetailsModal from './AddFunnelStepDetailsModal';
@@ -55,7 +55,6 @@ function FunnelStepActions({
 
 			<Tooltip
 				title={
-					// eslint-disable-next-line no-nested-ternary
 					!hasEditPermission
 						? 'You need editor or admin access to delete steps'
 						: stepsCount <= 2
@@ -114,7 +113,6 @@ function FunnelStepPopover({
 	}
 
 	return (
-		// eslint-disable-next-line jsx-a11y/click-events-have-key-events
 		<div onClick={preventDefault} role="button" tabIndex={0}>
 			<Popover
 				trigger="click"

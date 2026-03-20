@@ -30,15 +30,17 @@ type Module interface {
 	// Updates password of user to the new password. It also deletes all reset password tokens for the user.
 	UpdatePassword(ctx context.Context, userID valuer.UUID, oldPassword string, password string) error
 
+	// Initiate forgot password flow for a user
+	ForgotPassword(ctx context.Context, orgID valuer.UUID, email valuer.Email, frontendBaseURL string) error
+
 	UpdateUser(ctx context.Context, orgID valuer.UUID, id string, user *types.User, updatedBy string) (*types.User, error)
+
+	// UpdateAnyUser updates a user and persists the changes to the database along with the analytics and identity deletion.
+	UpdateAnyUser(ctx context.Context, orgID valuer.UUID, user *types.User) error
 	DeleteUser(ctx context.Context, orgID valuer.UUID, id string, deletedBy string) error
 
 	// invite
 	CreateBulkInvite(ctx context.Context, orgID valuer.UUID, userID valuer.UUID, bulkInvites *types.PostableBulkInviteRequest) ([]*types.Invite, error)
-	ListInvite(ctx context.Context, orgID string) ([]*types.Invite, error)
-	DeleteInvite(ctx context.Context, orgID string, id valuer.UUID) error
-	AcceptInvite(ctx context.Context, token string, password string) (*types.User, error)
-	GetInviteByToken(ctx context.Context, token string) (*types.Invite, error)
 
 	// API KEY
 	CreateAPIKey(ctx context.Context, apiKey *types.StorableAPIKey) error
@@ -47,10 +49,15 @@ type Module interface {
 	RevokeAPIKey(ctx context.Context, id, removedByUserID valuer.UUID) error
 	GetAPIKey(ctx context.Context, orgID valuer.UUID, id valuer.UUID) (*types.StorableAPIKeyUser, error)
 
+	GetNonDeletedUserByEmailAndOrgID(ctx context.Context, email valuer.Email, orgID valuer.UUID) (*types.User, error)
+
 	statsreporter.StatsCollector
 }
 
 type Getter interface {
+	// Get root user by org id.
+	GetRootUserByOrgID(context.Context, valuer.UUID) (*types.User, error)
+
 	// Get gets the users based on the given id
 	ListByOrgID(context.Context, valuer.UUID) ([]*types.User, error)
 
@@ -69,6 +76,9 @@ type Getter interface {
 	// Count users by org id.
 	CountByOrgID(context.Context, valuer.UUID) (int64, error)
 
+	// Count of users by org id and grouped by status.
+	CountByOrgIDAndStatuses(context.Context, valuer.UUID, []string) (map[valuer.String]int64, error)
+
 	// Get factor password by user id.
 	GetFactorPasswordByUserID(context.Context, valuer.UUID) (*types.FactorPassword, error)
 }
@@ -76,10 +86,6 @@ type Getter interface {
 type Handler interface {
 	// invite
 	CreateInvite(http.ResponseWriter, *http.Request)
-	AcceptInvite(http.ResponseWriter, *http.Request)
-	GetInvite(http.ResponseWriter, *http.Request) // public function
-	ListInvite(http.ResponseWriter, *http.Request)
-	DeleteInvite(http.ResponseWriter, *http.Request)
 	CreateBulkInvite(http.ResponseWriter, *http.Request)
 
 	ListUsers(http.ResponseWriter, *http.Request)
@@ -92,6 +98,7 @@ type Handler interface {
 	GetResetPasswordToken(http.ResponseWriter, *http.Request)
 	ResetPassword(http.ResponseWriter, *http.Request)
 	ChangePassword(http.ResponseWriter, *http.Request)
+	ForgotPassword(http.ResponseWriter, *http.Request)
 
 	// API KEY
 	CreateAPIKey(http.ResponseWriter, *http.Request)

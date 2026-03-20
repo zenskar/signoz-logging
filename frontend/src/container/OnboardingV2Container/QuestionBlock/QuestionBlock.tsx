@@ -1,6 +1,6 @@
+import React, { useState } from 'react';
 import { SearchOutlined } from '@ant-design/icons';
 import { Avatar, Button, Flex, Input, Typography } from 'antd';
-import React, { useState } from 'react';
 
 import { Question } from '../AddDataSource/AddDataSource'; // Adjust the import path as necessary
 
@@ -31,7 +31,6 @@ function QuestionBlock({
 }: QuestionBlockProps): JSX.Element {
 	const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-	// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 	const handleCategoryClick = (category: string): void => {
 		setSelectedCategory(category);
 	};
@@ -47,7 +46,6 @@ function QuestionBlock({
 				index <= currentQuestion ? 'setup-flow__question-block--active' : ''
 			}`}
 			ref={(el): void => {
-				// eslint-disable-next-line no-param-reassign
 				questionRefs.current[index] = el;
 			}}
 		>
@@ -73,7 +71,9 @@ function QuestionBlock({
 							const filteredOptions = group.items.filter((option) =>
 								option.toLowerCase().includes(searchQuery),
 							);
-							if (filteredOptions.length === 0) return null;
+							if (filteredOptions.length === 0) {
+								return null;
+							}
 							return (
 								<Flex gap={8} vertical key={group.id}>
 									{group.category && (

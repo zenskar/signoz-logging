@@ -1,4 +1,5 @@
-import { getToolTipValue, PrecisionOption } from 'components/Graph/yAxisConfig';
+import { PrecisionOption } from 'components/Graph/types';
+import { getToolTipValue } from 'components/Graph/yAxisConfig';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import { themeColors } from 'constants/theme';
 import dayjs from 'dayjs';
@@ -181,7 +182,6 @@ const generateTooltipContent = (
 						show: item.show || false,
 						color,
 						label,
-						// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 						// @ts-ignore
 						focus: item?._focus || false,
 						value,
@@ -279,8 +279,7 @@ const tooltipPlugin = ({
 	colorMapping,
 	query,
 	decimalPrecision,
-}: // eslint-disable-next-line sonarjs/cognitive-complexity
-ToolTipPluginProps): any => {
+}: ToolTipPluginProps): any => {
 	let over: HTMLElement;
 	let bound: HTMLElement;
 	// Cache bounding box to avoid recalculating on every cursor move

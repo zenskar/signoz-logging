@@ -1,5 +1,5 @@
-import { MenuProps } from 'antd';
 import { ReactNode } from 'react';
+import { MenuProps } from 'antd';
 
 export type MenuItem = Required<MenuProps>['items'][number];
 
@@ -23,6 +23,13 @@ export interface SidebarItem {
 }
 
 export const CHANGELOG_LABEL = 'Full Changelog';
+
+export interface SettingsNavSection {
+	title?: string;
+	items: SidebarItem[];
+	key: string;
+	hasDivider?: boolean;
+}
 
 export interface DropdownSeparator {
 	type: 'divider' | 'group';

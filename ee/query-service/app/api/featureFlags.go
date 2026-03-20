@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/SigNoz/signoz/ee/query-service/constants"
-	pkgError "github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/flagger"
 	"github.com/SigNoz/signoz/pkg/http/render"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
+	"github.com/SigNoz/signoz/pkg/types/featuretypes"
 	"github.com/SigNoz/signoz/pkg/types/licensetypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 func (ah *APIHandler) getFeatureFlags(w http.ResponseWriter, r *http.Request) {
@@ -25,11 +26,7 @@ func (ah *APIHandler) getFeatureFlags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID, err := valuer.NewUUID(claims.OrgID)
-	if err != nil {
-		render.Error(w, pkgError.Newf(pkgError.TypeInvalidInput, pkgError.CodeInvalidInput, "orgId is invalid"))
-		return
-	}
+	orgID := valuer.MustNewUUID(claims.OrgID)
 
 	featureSet, err := ah.Signoz.Licensing.GetFeatureFlags(r.Context(), orgID)
 	if err != nil {
@@ -38,34 +35,37 @@ func (ah *APIHandler) getFeatureFlags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if constants.FetchFeatures == "true" {
-		zap.L().Debug("fetching license")
+		slog.DebugContext(ctx, "fetching license")
 		license, err := ah.Signoz.Licensing.GetActive(ctx, orgID)
 		if err != nil {
-			zap.L().Error("failed to fetch license", zap.Error(err))
+			slog.ErrorContext(ctx, "failed to fetch license", "error", err)
 		} else if license == nil {
-			zap.L().Debug("no active license found")
+			slog.DebugContext(ctx, "no active license found")
 		} else {
 			licenseKey := license.Key
 
-			zap.L().Debug("fetching zeus features")
+			slog.DebugContext(ctx, "fetching zeus features")
 			zeusFeatures, err := fetchZeusFeatures(constants.ZeusFeaturesURL, licenseKey)
 			if err == nil {
-				zap.L().Debug("fetched zeus features", zap.Any("features", zeusFeatures))
+				slog.DebugContext(ctx, "fetched zeus features", "features", zeusFeatures)
 				// merge featureSet and zeusFeatures in featureSet with higher priority to zeusFeatures
 				featureSet = MergeFeatureSets(zeusFeatures, featureSet)
 			} else {
-				zap.L().Error("failed to fetch zeus features", zap.Error(err))
+				slog.ErrorContext(ctx, "failed to fetch zeus features", "error", err)
 			}
 		}
 	}
 
-	if constants.IsPreferSpanMetrics {
-		for idx, feature := range featureSet {
-			if feature.Name == licensetypes.UseSpanMetrics {
-				featureSet[idx].Active = true
-			}
-		}
-	}
+	evalCtx := featuretypes.NewFlaggerEvaluationContext(orgID)
+	useSpanMetrics := ah.Signoz.Flagger.BooleanOrEmpty(ctx, flagger.FeatureUseSpanMetrics, evalCtx)
+
+	featureSet = append(featureSet, &licensetypes.Feature{
+		Name:       valuer.NewString(flagger.FeatureUseSpanMetrics.String()),
+		Active:     useSpanMetrics,
+		Usage:      0,
+		UsageLimit: -1,
+		Route:      "",
+	})
 
 	if constants.IsDotMetricsEnabled {
 		for idx, feature := range featureSet {

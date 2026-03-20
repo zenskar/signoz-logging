@@ -108,6 +108,7 @@ func TestParseIntoRule(t *testing.T) {
 				"ruleType": "threshold_rule",
 				"evalWindow": "5m",
 				"frequency": "1m",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -150,6 +151,7 @@ func TestParseIntoRule(t *testing.T) {
 			content: []byte(`{
 				"alert": "DefaultsRule",
 				"ruleType": "threshold_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -171,10 +173,10 @@ func TestParseIntoRule(t *testing.T) {
 			kind:        RuleDataKindJson,
 			expectError: false,
 			validate: func(t *testing.T, rule *PostableRule) {
-				if rule.EvalWindow != Duration(5*time.Minute) {
+				if rule.EvalWindow.Duration() != 5*time.Minute {
 					t.Errorf("Expected default eval window '5m', got '%v'", rule.EvalWindow)
 				}
-				if rule.Frequency != Duration(1*time.Minute) {
+				if rule.Frequency.Duration() != time.Minute {
 					t.Errorf("Expected default frequency '1m', got '%v'", rule.Frequency)
 				}
 				if rule.RuleCondition.CompositeQuery.BuilderQueries["A"].Expression != "A" {
@@ -187,6 +189,7 @@ func TestParseIntoRule(t *testing.T) {
 			initRule: PostableRule{},
 			content: []byte(`{
 				"alert": "PromQLRule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "promql",
@@ -256,6 +259,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 			content: []byte(`{
 				"alert": "SeverityLabelTest",
 				"schemaVersion": "v1",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -327,10 +331,10 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 
 				// Verify evaluation window matches rule settings
 				if window, ok := rule.Evaluation.Spec.(RollingWindow); ok {
-					if window.EvalWindow != rule.EvalWindow {
+					if !window.EvalWindow.Equal(rule.EvalWindow) {
 						t.Errorf("Expected Evaluation EvalWindow %v, got %v", rule.EvalWindow, window.EvalWindow)
 					}
-					if window.Frequency != rule.Frequency {
+					if !window.Frequency.Equal(rule.Frequency) {
 						t.Errorf("Expected Evaluation Frequency %v, got %v", rule.Frequency, window.Frequency)
 					}
 				} else {
@@ -344,6 +348,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 			content: []byte(`{
 				"alert": "NoLabelsTest",
 				"schemaVersion": "v1",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -384,6 +389,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 			content: []byte(`{
 				"alert": "OverwriteTest",
 				"schemaVersion": "v1",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -457,10 +463,10 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 					t.Fatal("Expected Evaluation to be populated")
 				}
 				if window, ok := rule.Evaluation.Spec.(RollingWindow); ok {
-					if window.EvalWindow != rule.EvalWindow {
+					if !window.EvalWindow.Equal(rule.EvalWindow) {
 						t.Errorf("Expected Evaluation EvalWindow to be overwritten to %v, got %v", rule.EvalWindow, window.EvalWindow)
 					}
-					if window.Frequency != rule.Frequency {
+					if !window.Frequency.Equal(rule.Frequency) {
 						t.Errorf("Expected Evaluation Frequency to be overwritten to %v, got %v", rule.Frequency, window.Frequency)
 					}
 				} else {
@@ -474,6 +480,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 			content: []byte(`{
 				"alert": "V2Test",
 				"schemaVersion": "v2",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -504,7 +511,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 					t.Error("Expected Evaluation to be nil for v2")
 				}
 
-				if rule.EvalWindow != Duration(5*time.Minute) {
+				if rule.EvalWindow.Duration() != 5*time.Minute {
 					t.Error("Expected default EvalWindow to be applied")
 				}
 				if rule.RuleType != RuleTypeThreshold {
@@ -517,6 +524,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 			initRule: PostableRule{},
 			content: []byte(`{
 				"alert": "DefaultSchemaTest",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -569,6 +577,7 @@ func TestParseIntoRuleSchemaVersioning(t *testing.T) {
 func TestParseIntoRuleThresholdGeneration(t *testing.T) {
 	content := []byte(`{
 		"alert": "TestThresholds",
+		"version": "v5",
 		"condition": {
 			"compositeQuery": {
 				"queryType": "builder",
@@ -621,10 +630,10 @@ func TestParseIntoRuleThresholdGeneration(t *testing.T) {
 	}
 
 	// Test that threshold can evaluate properly
-	vector, err := threshold.ShouldAlert(v3.Series{
+	vector, err := threshold.Eval(v3.Series{
 		Points: []v3.Point{{Value: 0.15, Timestamp: 1000}}, // 150ms in seconds
 		Labels: map[string]string{"test": "label"},
-	}, "")
+	}, "", EvalData{})
 	if err != nil {
 		t.Fatalf("Unexpected error in shouldAlert: %v", err)
 	}
@@ -639,6 +648,7 @@ func TestParseIntoRuleMultipleThresholds(t *testing.T) {
 		"schemaVersion": "v2",
 		"alert": "MultiThresholdAlert",
 		"ruleType": "threshold_rule",
+		"version": "v5",
 		"condition": {
 			"compositeQuery": {
 				"queryType": "builder",
@@ -698,20 +708,20 @@ func TestParseIntoRuleMultipleThresholds(t *testing.T) {
 	}
 
 	// Test with a value that should trigger both WARNING and CRITICAL thresholds
-	vector, err := threshold.ShouldAlert(v3.Series{
+	vector, err := threshold.Eval(v3.Series{
 		Points: []v3.Point{{Value: 95.0, Timestamp: 1000}}, // 95% CPU usage
 		Labels: map[string]string{"service": "test"},
-	}, "")
+	}, "", EvalData{})
 	if err != nil {
 		t.Fatalf("Unexpected error in shouldAlert: %v", err)
 	}
 
 	assert.Equal(t, 2, len(vector))
 
-	vector, err = threshold.ShouldAlert(v3.Series{
+	vector, err = threshold.Eval(v3.Series{
 		Points: []v3.Point{{Value: 75.0, Timestamp: 1000}}, // 75% CPU usage
 		Labels: map[string]string{"service": "test"},
-	}, "")
+	}, "", EvalData{})
 	if err != nil {
 		t.Fatalf("Unexpected error in shouldAlert: %v", err)
 	}
@@ -719,7 +729,7 @@ func TestParseIntoRuleMultipleThresholds(t *testing.T) {
 	assert.Equal(t, 1, len(vector))
 }
 
-func TestAnomalyNegationShouldAlert(t *testing.T) {
+func TestAnomalyNegationEval(t *testing.T) {
 	tests := []struct {
 		name          string
 		ruleJSON      []byte
@@ -732,6 +742,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyBelowTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -766,6 +777,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyBelowTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -799,6 +811,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyAboveTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -833,6 +846,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyAboveTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -866,6 +880,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyBelowAllTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -901,6 +916,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyBelowAllTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -935,6 +951,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "AnomalyOutOfBoundsTest",
 				"ruleType": "anomaly_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -969,6 +986,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "ThresholdTest",
 				"ruleType": "threshold_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -1003,6 +1021,7 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 			ruleJSON: []byte(`{
 				"alert": "ThresholdTest",
 				"ruleType": "threshold_rule",
+				"version": "v5",
 				"condition": {
 					"compositeQuery": {
 						"queryType": "builder",
@@ -1046,9 +1065,9 @@ func TestAnomalyNegationShouldAlert(t *testing.T) {
 				t.Fatalf("unexpected error from GetRuleThreshold: %v", err)
 			}
 
-			resultVector, err := ruleThreshold.ShouldAlert(tt.series, "")
+			resultVector, err := ruleThreshold.Eval(tt.series, "", EvalData{})
 			if err != nil {
-				t.Fatalf("unexpected error from ShouldAlert: %v", err)
+				t.Fatalf("unexpected error from Eval: %v", err)
 			}
 
 			shouldAlert := len(resultVector) > 0

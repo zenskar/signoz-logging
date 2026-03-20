@@ -1,7 +1,6 @@
-import '../DomainDetails.styles.scss';
-
-import { Table, TablePaginationConfig, Typography } from 'antd';
-import Skeleton from 'antd/lib/skeleton';
+import { useMemo, useState } from 'react';
+import { UseQueryResult } from 'react-query';
+import { Skeleton, Table, TablePaginationConfig, Typography } from 'antd';
 import { QueryParams } from 'constants/query';
 import {
 	dependentServicesColumns,
@@ -9,11 +8,11 @@ import {
 	getFormattedDependentServicesData,
 } from 'container/ApiMonitoring/utils';
 import { UnfoldVertical } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { UseQueryResult } from 'react-query';
 import { SuccessResponse } from 'types/api';
 
 import ErrorState from './ErrorState';
+
+import '../DomainDetails.styles.scss';
 
 interface DependentServicesProps {
 	dependentServicesQuery: UseQueryResult<SuccessResponse<any>, unknown>;

@@ -1,11 +1,10 @@
-import { Button, DatePicker, Select, Typography } from 'antd';
-import TextArea from 'antd/lib/input/TextArea';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, DatePicker, Input, Select, Typography } from 'antd';
 import classNames from 'classnames';
 import { useCreateAlertState } from 'container/CreateAlertV2/context';
 import { AdvancedOptionsState } from 'container/CreateAlertV2/context/types';
 import dayjs from 'dayjs';
 import { Code, Edit3Icon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
 
 import {
 	EVALUATION_CADENCE_REPEAT_EVERY_MONTH_OPTIONS,
@@ -206,7 +205,7 @@ function EvaluationCadenceDetails({
 					}
 				/>
 			</div>
-			<TextArea
+			<Input.TextArea
 				value={evaluationCadence.rrule.rrule}
 				placeholder="Enter RRule"
 				onChange={(value): void =>

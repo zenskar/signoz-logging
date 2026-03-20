@@ -1,15 +1,15 @@
-/* eslint-disable react/jsx-props-no-spreading */
-import './DynamicColumnTable.syles.scss';
-
+import { memo, useEffect, useState } from 'react';
+import type {
+	TableColumnGroupType as ColumnGroupType,
+	TableColumnsType as ColumnsType,
+	TableColumnType as ColumnType,
+} from 'antd';
 import { Button, Dropdown, Flex, MenuProps, Switch } from 'antd';
-import { ColumnGroupType, ColumnType } from 'antd/es/table';
-import { ColumnsType } from 'antd/lib/table';
 import logEvent from 'api/common/logEvent';
 import LaunchChatSupport from 'components/LaunchChatSupport/LaunchChatSupport';
 import { useSafeNavigate } from 'hooks/useSafeNavigate';
 import useUrlQuery from 'hooks/useUrlQuery';
 import { SlidersHorizontal } from 'lucide-react';
-import { memo, useEffect, useState } from 'react';
 import { popupContainer } from 'utils/selectPopupContainer';
 
 import ResizeTable from './ResizeTable';
@@ -19,6 +19,8 @@ import {
 	getVisibleColumns,
 	setVisibleColumns,
 } from './utils';
+
+import './DynamicColumnTable.syles.scss';
 
 function DynamicColumnTable({
 	tablesource,

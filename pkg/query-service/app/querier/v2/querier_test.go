@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -238,8 +239,8 @@ func TestV2FindMissingTimeRangesZeroFreshNess(t *testing.T) {
 	}
 
 	opts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: opts})
 	require.NoError(t, err)
@@ -458,8 +459,8 @@ func TestV2FindMissingTimeRangesWithFluxInterval(t *testing.T) {
 	}
 
 	opts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: opts})
 	require.NoError(t, err)
@@ -638,8 +639,8 @@ func TestV2QueryRangePanelGraph(t *testing.T) {
 		},
 	}
 	cacheOpts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: cacheOpts})
 	require.NoError(t, err)
@@ -793,8 +794,8 @@ func TestV2QueryRangeValueType(t *testing.T) {
 		},
 	}
 	cacheOpts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: cacheOpts})
 	require.NoError(t, err)
@@ -960,8 +961,8 @@ func TestV2QueryRangeTimeShiftWithCache(t *testing.T) {
 		},
 	}
 	cacheOpts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: cacheOpts})
 	require.NoError(t, err)
@@ -1068,8 +1069,8 @@ func TestV2QueryRangeTimeShiftWithLimitAndCache(t *testing.T) {
 		},
 	}
 	cacheOpts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: cacheOpts})
 	require.NoError(t, err)
@@ -1147,8 +1148,8 @@ func TestV2QueryRangeValueTypePromQL(t *testing.T) {
 		},
 	}
 	cacheOpts := cache.Memory{
-		TTL:             5 * time.Minute,
-		CleanupInterval: 10 * time.Minute,
+		NumCounters: 10 * 1000,
+		MaxCost:     1 << 26,
 	}
 	c, err := cachetest.New(cache.Config{Provider: "memory", Memory: cacheOpts})
 	require.NoError(t, err)
@@ -1454,14 +1455,16 @@ func Test_querier_Traces_runWindowBasedListQueryDesc(t *testing.T) {
 			}
 
 			// Create reader and querier
-			reader := clickhouseReader.NewReaderFromClickhouseConnection(
-				options,
+			reader := clickhouseReader.NewReader(
+				slog.Default(),
 				nil,
 				telemetryStore,
-				prometheustest.New(instrumentationtest.New().Logger(), prometheus.Config{}),
+				prometheustest.New(context.Background(), instrumentationtest.New().ToProviderSettings(), prometheus.Config{}, telemetryStore),
 				"",
 				time.Duration(time.Second),
 				nil,
+				nil,
+				options,
 			)
 
 			q := &querier{
@@ -1678,14 +1681,16 @@ func Test_querier_Traces_runWindowBasedListQueryAsc(t *testing.T) {
 			}
 
 			// Create reader and querier
-			reader := clickhouseReader.NewReaderFromClickhouseConnection(
-				options,
+			reader := clickhouseReader.NewReader(
+				slog.Default(),
 				nil,
 				telemetryStore,
-				prometheustest.New(instrumentationtest.New().Logger(), prometheus.Config{}),
+				prometheustest.New(context.Background(), instrumentationtest.New().ToProviderSettings(), prometheus.Config{}, telemetryStore),
 				"",
 				time.Duration(time.Second),
 				nil,
+				nil,
+				options,
 			)
 
 			q := &querier{
@@ -1976,14 +1981,16 @@ func Test_querier_Logs_runWindowBasedListQueryDesc(t *testing.T) {
 			}
 
 			// Create reader and querier
-			reader := clickhouseReader.NewReaderFromClickhouseConnection(
-				options,
+			reader := clickhouseReader.NewReader(
+				slog.Default(),
 				nil,
 				telemetryStore,
-				prometheustest.New(instrumentationtest.New().Logger(), prometheus.Config{}),
+				prometheustest.New(context.Background(), instrumentationtest.New().ToProviderSettings(), prometheus.Config{}, telemetryStore),
 				"",
 				time.Duration(time.Second),
 				nil,
+				nil,
+				options,
 			)
 
 			q := &querier{
@@ -2202,14 +2209,16 @@ func Test_querier_Logs_runWindowBasedListQueryAsc(t *testing.T) {
 			}
 
 			// Create reader and querier
-			reader := clickhouseReader.NewReaderFromClickhouseConnection(
-				options,
+			reader := clickhouseReader.NewReader(
+				slog.Default(),
 				nil,
 				telemetryStore,
-				prometheustest.New(instrumentationtest.New().Logger(), prometheus.Config{}),
+				prometheustest.New(context.Background(), instrumentationtest.New().ToProviderSettings(), prometheus.Config{}, telemetryStore),
 				"",
 				time.Duration(time.Second),
 				nil,
+				nil,
+				options,
 			)
 
 			q := &querier{

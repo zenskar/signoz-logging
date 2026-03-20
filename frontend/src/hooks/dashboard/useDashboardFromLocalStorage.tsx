@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react';
 import getLocalStorageKey from 'api/browser/localstorage/get';
 import setLocalStorageKey from 'api/browser/localstorage/set';
 import { LOCALSTORAGE } from 'constants/localStorage';
 import { defaultTo } from 'lodash-es';
-import { useEffect, useState } from 'react';
 import { IDashboardVariable } from 'types/api/dashboard/getAll';
 
 interface LocalStoreDashboardVariables {
@@ -15,7 +15,7 @@ interface DashboardLocalStorageVariables {
 	[id: string]: LocalStoreDashboardVariables;
 }
 
-interface UseDashboardVariablesFromLocalStorageReturn {
+export interface UseDashboardVariablesFromLocalStorageReturn {
 	currentDashboard: LocalStoreDashboardVariables;
 	updateLocalStorageDashboardVariables: (
 		id: string,

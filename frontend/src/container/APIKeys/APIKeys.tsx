@@ -1,11 +1,14 @@
-import './APIKeys.styles.scss';
-
+import { ChangeEvent, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useMutation } from 'react-query';
+import { useCopyToClipboard } from 'react-use';
 import { Color } from '@signozhq/design-tokens';
 import {
 	Avatar,
 	Button,
 	Col,
 	Collapse,
+	CollapseProps,
 	Flex,
 	Form,
 	Input,
@@ -18,8 +21,7 @@ import {
 	Tooltip,
 	Typography,
 } from 'antd';
-import { NotificationInstance } from 'antd/es/notification/interface';
-import { CollapseProps } from 'antd/lib';
+import type { NotificationInstance } from 'antd/es/notification/interface';
 import createAPIKeyApi from 'api/v1/pats/create';
 import deleteAPIKeyApi from 'api/v1/pats/delete';
 import updateAPIKeyApi from 'api/v1/pats/update';
@@ -44,13 +46,11 @@ import {
 	X,
 } from 'lucide-react';
 import { useAppContext } from 'providers/App/App';
-import { ChangeEvent, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useMutation } from 'react-query';
-import { useCopyToClipboard } from 'react-use';
 import APIError from 'types/api/error';
 import { APIKeyProps } from 'types/api/pat/types';
 import { USER_ROLES } from 'types/roles';
+
+import './APIKeys.styles.scss';
 
 dayjs.extend(relativeTime);
 

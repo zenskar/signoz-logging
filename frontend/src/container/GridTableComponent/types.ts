@@ -1,5 +1,5 @@
 import { TableProps } from 'antd';
-import { PrecisionOption } from 'components/Graph/yAxisConfig';
+import { PrecisionOption } from 'components/Graph/types';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import { LogsExplorerTableProps } from 'container/LogsExplorerTable/LogsExplorerTable.interfaces';
 import {
@@ -24,12 +24,15 @@ export type GridTableComponentProps = {
 	onOpenTraceBtnClick?: (record: RowData) => void;
 	customOnRowClick?: (record: RowData) => void;
 	widgetId?: string;
+	columnWidths?: Record<string, number>;
+	onColumnWidthsChange?: (widths: Record<string, number>) => void;
 	renderColumnCell?: QueryTableProps['renderColumnCell'];
 	customColTitles?: Record<string, string>;
 	enableDrillDown?: boolean;
 	contextLinks?: ContextLinksData;
 	panelType?: PANEL_TYPES;
 	queryRangeRequest?: QueryRangeRequestV5;
+	hiddenColumns?: string[];
 } & Pick<LogsExplorerTableProps, 'data'> &
 	Omit<TableProps<RowData>, 'columns' | 'dataSource'>;
 

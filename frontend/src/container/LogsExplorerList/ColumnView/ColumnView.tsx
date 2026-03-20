@@ -1,5 +1,4 @@
-/* eslint-disable sonarjs/cognitive-complexity */
-/* eslint-disable react-hooks/exhaustive-deps */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ColumnDef, DataTable, Row } from '@signozhq/table';
 import LogDetail from 'components/LogDetail';
 import { VIEW_TYPES } from 'components/LogDetail/constants';
@@ -16,7 +15,6 @@ import { getDraggedColumns } from 'hooks/useDragColumns/utils';
 import useUrlQueryData from 'hooks/useUrlQueryData';
 import { isEmpty, isEqual } from 'lodash-es';
 import { useTimezone } from 'providers/Timezone';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ILog } from 'types/api/logs/log';
 
 interface ColumnViewProps {
@@ -47,7 +45,6 @@ function ColumnView({
 		onSetActiveLog: handleSetActiveLog,
 		onClearActiveLog: handleClearActiveLog,
 		onAddToQuery: handleAddToQuery,
-		onGroupByAttribute: handleGroupByAttribute,
 	} = useActiveLog();
 
 	const [showActiveLog, setShowActiveLog] = useState<boolean>(false);
@@ -152,14 +149,12 @@ function ColumnView({
 				accessorFn: (row: Record<string, string>): string =>
 					row[field.key as string] as string,
 				header: field.title as string,
-				// eslint-disable-next-line sonarjs/no-duplicate-string
 				size: field.key === 'state-indicator' ? 4 : 180,
 				minSize: field.key === 'state-indicator' ? 4 : 120,
 				maxSize: field.key === 'state-indicator' ? 4 : Number.MAX_SAFE_INTEGER,
 				disableReorder: field.key === 'state-indicator',
 				disableDropBefore: field.key === 'state-indicator',
 				disableResizing: field.key === 'state-indicator',
-				// eslint-disable-next-line react/no-unstable-nested-components
 				cell: ({
 					row,
 					getValue,
@@ -208,7 +203,9 @@ function ColumnView({
 	);
 
 	const handleColumnOrderChange = (newColumns: ColumnDef<any>[]): void => {
-		if (isEmpty(newColumns) || isEqual(newColumns, selectedColumns)) return;
+		if (isEmpty(newColumns) || isEqual(newColumns, selectedColumns)) {
+			return;
+		}
 
 		const formattedColumns = newColumns.map((column) => ({
 			id: column.id,
@@ -252,7 +249,6 @@ function ColumnView({
 			data-font-size={options.fontSize}
 		>
 			<DataTable
-				// eslint-disable-next-line react/jsx-props-no-spreading
 				{...args}
 				columns={selectedColumns as ColumnDef<Record<string, string>, unknown>[]}
 				data={dataSource}
@@ -271,7 +267,6 @@ function ColumnView({
 					onClose={handleLogDetailClose}
 					onAddToQuery={handleAddToQuery}
 					onClickActionItem={handleAddToQuery}
-					onGroupByAttribute={handleGroupByAttribute}
 				/>
 			)}
 		</div>

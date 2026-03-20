@@ -1,6 +1,6 @@
+import { Link, RouteComponentProps, withRouter } from 'react-router-dom';
 import { Breadcrumb } from 'antd';
 import ROUTES from 'constants/routes';
-import { Link, RouteComponentProps, withRouter } from 'react-router-dom';
 
 const breadcrumbNameMap: Record<string, string> = {
 	[ROUTES.APPLICATION]: 'Services',
@@ -19,7 +19,6 @@ const breadcrumbNameMap: Record<string, string> = {
 	[ROUTES.ORG_SETTINGS]: 'Organization Settings',
 	[ROUTES.INGESTION_SETTINGS]: 'Ingestion Settings',
 	[ROUTES.MY_SETTINGS]: 'My Settings',
-	[ROUTES.CUSTOM_DOMAIN_SETTINGS]: 'Custom Domain Settings',
 	[ROUTES.ERROR_DETAIL]: 'Exceptions',
 	[ROUTES.LIST_ALL_ALERT]: 'Alerts',
 	[ROUTES.ALL_DASHBOARD]: 'Dashboard',

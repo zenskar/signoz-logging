@@ -1,13 +1,14 @@
+import { ChangeEvent, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
 	CloseCircleFilled,
 	ExclamationCircleOutlined,
 } from '@ant-design/icons';
+// eslint-disable-next-line no-restricted-imports
 import { useMachine } from '@xstate/react';
 import { Button, Input, message, Modal } from 'antd';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import { map } from 'lodash-es';
-import { ChangeEvent, useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Labels } from 'types/api/alerts/def';
 import { v4 as uuid } from 'uuid';
 
@@ -114,9 +115,12 @@ function LabelSelect({
 		});
 	};
 	const renderPlaceholder = useCallback((): string => {
-		if (state.value === 'LabelKey') return 'Enter a label key then press ENTER.';
-		if (state.value === 'LabelValue')
+		if (state.value === 'LabelKey') {
+			return 'Enter a label key then press ENTER.';
+		}
+		if (state.value === 'LabelValue') {
 			return `Enter a value for label key(${staging[0]}) then press ENTER.`;
+		}
 		return t('placeholder_label_key_pair');
 	}, [t, state, staging]);
 	return (

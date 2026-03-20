@@ -25,17 +25,20 @@ var (
 type AuthNProvider struct{ valuer.String }
 
 type Identity struct {
-	UserID valuer.UUID  `json:"userId"`
-	OrgID  valuer.UUID  `json:"orgId"`
-	Email  valuer.Email `json:"email"`
-	Role   types.Role   `json:"role"`
+	UserID        valuer.UUID    `json:"userId"`
+	OrgID         valuer.UUID    `json:"orgId"`
+	IdenNProvider IdentNProvider `json:"identNProvider"`
+	Email         valuer.Email   `json:"email"`
+	Role          types.Role     `json:"role"`
 }
 
 type CallbackIdentity struct {
-	Name  string       `json:"name"`
-	Email valuer.Email `json:"email"`
-	OrgID valuer.UUID  `json:"orgId"`
-	State State        `json:"state"`
+	Name   string       `json:"name"`
+	Email  valuer.Email `json:"email"`
+	OrgID  valuer.UUID  `json:"orgId"`
+	State  State        `json:"state"`
+	Groups []string     `json:"groups,omitempty"`
+	Role   string       `json:"role,omitempty"`
 }
 
 type State struct {
@@ -76,21 +79,24 @@ func NewStateFromString(state string) (State, error) {
 	}, nil
 }
 
-func NewIdentity(userID valuer.UUID, orgID valuer.UUID, email valuer.Email, role types.Role) *Identity {
+func NewIdentity(userID valuer.UUID, orgID valuer.UUID, email valuer.Email, role types.Role, identNProvider IdentNProvider) *Identity {
 	return &Identity{
-		UserID: userID,
-		OrgID:  orgID,
-		Email:  email,
-		Role:   role,
+		UserID:        userID,
+		OrgID:         orgID,
+		Email:         email,
+		Role:          role,
+		IdenNProvider: identNProvider,
 	}
 }
 
-func NewCallbackIdentity(name string, email valuer.Email, orgID valuer.UUID, state State) *CallbackIdentity {
+func NewCallbackIdentity(name string, email valuer.Email, orgID valuer.UUID, state State, groups []string, role string) *CallbackIdentity {
 	return &CallbackIdentity{
-		Name:  name,
-		Email: email,
-		OrgID: orgID,
-		State: state,
+		Name:   name,
+		Email:  email,
+		OrgID:  orgID,
+		State:  state,
+		Groups: groups,
+		Role:   role,
 	}
 }
 
@@ -112,16 +118,17 @@ func (typ *Identity) UnmarshalBinary(data []byte) error {
 
 func (typ *Identity) ToClaims() Claims {
 	return Claims{
-		UserID: typ.UserID.String(),
-		Email:  typ.Email.String(),
-		Role:   typ.Role,
-		OrgID:  typ.OrgID.String(),
+		UserID:         typ.UserID.String(),
+		Email:          typ.Email.String(),
+		Role:           typ.Role,
+		OrgID:          typ.OrgID.String(),
+		IdentNProvider: typ.IdenNProvider.StringValue(),
 	}
 }
 
 type AuthNStore interface {
 	// Get user and factor password by email and orgID.
-	GetUserAndFactorPasswordByEmailAndOrgID(ctx context.Context, email string, orgID valuer.UUID) (*types.User, *types.FactorPassword, error)
+	GetActiveUserAndFactorPasswordByEmailAndOrgID(ctx context.Context, email string, orgID valuer.UUID) (*types.User, *types.FactorPassword, error)
 
 	// Get org domain from id.
 	GetAuthDomainFromID(ctx context.Context, domainID valuer.UUID) (*AuthDomain, error)

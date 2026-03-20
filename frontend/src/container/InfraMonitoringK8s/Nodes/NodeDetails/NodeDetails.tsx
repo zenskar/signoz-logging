@@ -1,9 +1,11 @@
 /* eslint-disable sonarjs/no-identical-functions */
-import '../../EntityDetailsUtils/entityDetails.styles.scss';
-
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { Color, Spacing } from '@signozhq/design-tokens';
 import { Button, Divider, Drawer, Radio, Tooltip, Typography } from 'antd';
-import { RadioChangeEvent } from 'antd/lib';
+import type { RadioChangeEvent } from 'antd/lib';
 import logEvent from 'api/common/logEvent';
 import { K8sNodesData } from 'api/infraMonitoring/getK8sNodesList';
 import { VIEW_TYPES, VIEWS } from 'components/HostMetricsDetail/constants';
@@ -26,7 +28,7 @@ import NodeEvents from 'container/InfraMonitoringK8s/EntityDetailsUtils/EntityEv
 import {
 	CustomTimeType,
 	Time,
-} from 'container/TopNav/DateTimeSelectionV2/config';
+} from 'container/TopNav/DateTimeSelectionV2/types';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import useUrlQuery from 'hooks/useUrlQuery';
 import GetMinMax from 'lib/getMinMax';
@@ -38,9 +40,6 @@ import {
 	ScrollText,
 	X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom-v5-compat';
 import { AppState } from 'store/reducers';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import {
@@ -60,6 +59,8 @@ import NodeTraces from '../../EntityDetailsUtils/EntityTraces';
 import { QUERY_KEYS } from '../../EntityDetailsUtils/utils';
 import { getNodeMetricsQueryPayload, nodeWidgetInfo } from './constants';
 import { NodeDetailsProps } from './NodeDetails.interfaces';
+
+import '../../EntityDetailsUtils/entityDetails.styles.scss';
 
 function NodeDetails({
 	node,
@@ -184,7 +185,6 @@ function NodeDetails({
 				category: InfraMonitoringEvents.Node,
 			});
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [node]);
 
 	useEffect(() => {
@@ -543,7 +543,6 @@ function NodeDetails({
 						>
 							<Radio.Button
 								className={
-									// eslint-disable-next-line sonarjs/no-duplicate-string
 									selectedView === VIEW_TYPES.METRICS ? 'selected_view tab' : 'tab'
 								}
 								value={VIEW_TYPES.METRICS}

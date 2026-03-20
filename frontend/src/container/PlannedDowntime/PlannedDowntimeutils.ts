@@ -1,5 +1,6 @@
-import { NotificationInstance } from 'antd/es/notification/interface';
-import { DefaultOptionType } from 'antd/es/select';
+import { UseMutateAsyncFunction } from 'react-query';
+import type { NotificationInstance } from 'antd/es/notification/interface';
+import type { DefaultOptionType } from 'antd/es/select';
 import createDowntimeSchedule from 'api/plannedDowntime/createDowntimeSchedule';
 import { DeleteSchedulePayloadProps } from 'api/plannedDowntime/deleteDowntimeSchedule';
 import {
@@ -14,7 +15,6 @@ import { showErrorNotification } from 'components/ExplorerCard/utils';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import dayjs from 'dayjs';
 import { isEmpty, isEqual } from 'lodash-es';
-import { UseMutateAsyncFunction } from 'react-query';
 import { ErrorResponse, SuccessResponse } from 'types/api';
 
 type DateTimeString = string | null | undefined;
@@ -137,7 +137,10 @@ export const deleteDowntimeHandler = ({
 
 export const createEditDowntimeSchedule = async (
 	props: DowntimeScheduleUpdatePayload,
-): Promise<SuccessResponse<PayloadProps> | ErrorResponse> => {
+): Promise<
+	| SuccessResponse<PayloadProps>
+	| ErrorResponse<{ code: string; message: string } | string>
+> => {
 	if (props.id) {
 		return updateDowntimeSchedule({ ...props });
 	}

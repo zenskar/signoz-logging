@@ -66,7 +66,7 @@ describe('useInitialQuery - Priority-Based Resource Filtering', () => {
 					queryName: 'A',
 					expression: 'A',
 					disabled: false,
-					reduceTo: 'avg' as ReduceOperators,
+					reduceTo: ReduceOperators.AVG,
 					legend: '',
 				},
 			],
@@ -160,7 +160,6 @@ describe('useInitialQuery - Priority-Based Resource Filtering', () => {
 				expect.objectContaining({
 					items: expect.arrayContaining([
 						expect.objectContaining({
-							// eslint-disable-next-line sonarjs/no-duplicate-string
 							key: expect.objectContaining({ key: 'service.name' }),
 							value: 'frontend-service',
 						}),

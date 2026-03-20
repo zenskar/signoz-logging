@@ -1,8 +1,16 @@
-import './TopOperationsTable.styles.scss';
-
+import { useRef } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
+import { useParams } from 'react-router-dom';
 import { SearchOutlined } from '@ant-design/icons';
-import { InputRef, Switch, Tooltip, Typography } from 'antd';
-import { ColumnsType, ColumnType } from 'antd/lib/table';
+import {
+	InputRef,
+	Switch,
+	TableColumnsType as ColumnsType,
+	TableColumnType as ColumnType,
+	Tooltip,
+	Typography,
+} from 'antd';
 import { ResizeTable } from 'components/ResizeTable';
 import TextToolTip from 'components/TextToolTip';
 import Download from 'container/Download/Download';
@@ -10,9 +18,6 @@ import { filterDropdown } from 'container/ServiceApplication/Filter/FilterDropdo
 import useResourceAttribute from 'hooks/useResourceAttribute';
 import { convertRawQueriesToTraceSelectedTags } from 'hooks/useResourceAttribute/utils';
 import { useSafeNavigate } from 'hooks/useSafeNavigate';
-import { useRef } from 'react';
-import { useSelector } from 'react-redux';
-import { useParams } from 'react-router-dom';
 import { AppState } from 'store/reducers';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import { Query, TagFilterItem } from 'types/api/queryBuilder/queryBuilderData';
@@ -26,6 +31,8 @@ import {
 	getErrorRate,
 	navigateToTrace,
 } from './utils';
+
+import './TopOperationsTable.styles.scss';
 
 function TopOperationsTable({
 	data,

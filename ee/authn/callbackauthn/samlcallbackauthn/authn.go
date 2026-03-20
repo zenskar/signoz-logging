@@ -96,7 +96,34 @@ func (a *AuthN) HandleCallback(ctx context.Context, formValues url.Values) (*aut
 		return nil, errors.New(errors.TypeInvalidInput, errors.CodeInvalidInput, "saml: invalid email").WithAdditional("The nameID assertion is used to retrieve the email address, please check your IDP configuration and try again.")
 	}
 
-	return authtypes.NewCallbackIdentity("", email, authDomain.StorableAuthDomain().OrgID, state), nil
+	name := ""
+	if nameAttribute := authDomain.AuthDomainConfig().SAML.AttributeMapping.Name; nameAttribute != "" {
+		if val := assertionInfo.Values.Get(nameAttribute); val != "" {
+			name = val
+		}
+	}
+
+	var groups []string
+	if groupAttribute := authDomain.AuthDomainConfig().SAML.AttributeMapping.Groups; groupAttribute != "" {
+		groups = assertionInfo.Values.GetAll(groupAttribute)
+	}
+
+	role := ""
+	if roleAttribute := authDomain.AuthDomainConfig().SAML.AttributeMapping.Role; roleAttribute != "" {
+		if val := assertionInfo.Values.Get(roleAttribute); val != "" {
+			role = val
+		}
+	}
+
+	return authtypes.NewCallbackIdentity(name, email, authDomain.StorableAuthDomain().OrgID, state, groups, role), nil
+}
+
+func (a *AuthN) ProviderInfo(ctx context.Context, authDomain *authtypes.AuthDomain) *authtypes.AuthNProviderInfo {
+	state := authtypes.NewState(&url.URL{Path: "login"}, authDomain.StorableAuthDomain().ID).URL.String()
+
+	return &authtypes.AuthNProviderInfo{
+		RelayStatePath: &state,
+	}
 }
 
 func (a *AuthN) serviceProvider(siteURL *url.URL, authDomain *authtypes.AuthDomain) (*saml2.SAMLServiceProvider, error) {

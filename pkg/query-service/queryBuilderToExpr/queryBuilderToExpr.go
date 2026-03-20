@@ -5,9 +5,15 @@ import (
 	"reflect"
 	"strings"
 
+	"log/slog"
+
+	"github.com/SigNoz/signoz/pkg/errors"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 	expr "github.com/antonmedv/expr"
-	"go.uber.org/zap"
+)
+
+var (
+	CodeExprCompilationFailed = errors.MustNewCode("expr_compilation_failed")
 )
 
 var logOperatorsToExpr = map[v3.FilterOperator]string{
@@ -50,7 +56,7 @@ func Parse(filters *v3.FilterSet) (string, error) {
 	var res []string
 	for _, v := range filters.Items {
 		if _, ok := logOperatorsToExpr[v.Operator]; !ok {
-			return "", fmt.Errorf("operator not supported")
+			return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "operator not supported: %s", v.Operator)
 		}
 
 		name := getName(v.Key)
@@ -66,7 +72,18 @@ func Parse(filters *v3.FilterSet) (string, error) {
 			// accustom log filters like `body.log.message EXISTS` into EXPR language
 			// where User is attempting to check for keys present in JSON log body
 			if strings.HasPrefix(v.Key.Key, "body.") {
-				filter = fmt.Sprintf("%s %s %s", exprFormattedValue(strings.TrimPrefix(v.Key.Key, "body.")), logOperatorsToExpr[v.Operator], "fromJSON(body)")
+				// if body is a string and is a valid JSON, then check if the key exists in the JSON
+				filter = fmt.Sprintf(`((type(body) == "string" && isJSON(body)) && %s %s %s)`, exprFormattedValue(strings.TrimPrefix(v.Key.Key, "body.")), logOperatorsToExpr[v.Operator], "fromJSON(body)")
+
+				// if body is a map, then check if the key exists in the map
+				operator := v3.FilterOperatorNotEqual
+				if v.Operator == v3.FilterOperatorNotExists {
+					operator = v3.FilterOperatorEqual
+				}
+				nilCheckFilter := fmt.Sprintf("%s %s nil", v.Key.Key, logOperatorsToExpr[operator])
+
+				// join the two filters with OR
+				filter = fmt.Sprintf(`(%s or (type(body) == "map" && (%s)))`, filter, nilCheckFilter)
 			} else if typ := getTypeName(v.Key.Type); typ != "" {
 				filter = fmt.Sprintf("%s %s %s", exprFormattedValue(v.Key.Key), logOperatorsToExpr[v.Operator], typ)
 			} else {
@@ -108,7 +125,7 @@ func Parse(filters *v3.FilterSet) (string, error) {
 	q := strings.Join(res, " "+strings.ToLower(filters.Operator)+" ")
 	_, err := expr.Compile(q)
 	if err != nil {
-		return "", err
+		return "", errors.WrapInternalf(err, CodeExprCompilationFailed, "failed to compile expression: %s", q)
 	}
 
 	return q, nil
@@ -143,11 +160,11 @@ func exprFormattedValue(v interface{}) string {
 		case uint8, uint16, uint32, uint64, int, int8, int16, int32, int64, float32, float64, bool:
 			return strings.Join(strings.Fields(fmt.Sprint(x)), ",")
 		default:
-			zap.L().Error("invalid type for formatted value", zap.Any("type", reflect.TypeOf(x[0])))
+			slog.Error("invalid type for formatted value", "type", reflect.TypeOf(x[0]))
 			return ""
 		}
 	default:
-		zap.L().Error("invalid type for formatted value", zap.Any("type", reflect.TypeOf(x)))
+		slog.Error("invalid type for formatted value", "type", reflect.TypeOf(x))
 		return ""
 	}
 }

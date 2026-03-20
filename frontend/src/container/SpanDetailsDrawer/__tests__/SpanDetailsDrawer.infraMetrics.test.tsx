@@ -109,8 +109,8 @@ jest.mock('lib/uPlotLib/utils/generateColor', () => ({
 jest.mock(
 	'components/OverlayScrollbar/OverlayScrollbar',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
-		function ({ children }: any) {
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+		function OverlayScrollbar({ children }: any) {
 			return <div data-testid="overlay-scrollbar">{children}</div>;
 		},
 );
@@ -132,7 +132,7 @@ jest.mock('react-virtuoso', () => ({
 jest.mock(
 	'container/LogDetailedView/InfraMetrics/InfraMetrics',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 		function MockInfraMetrics({
 			podName,
 			nodeName,
@@ -162,7 +162,7 @@ jest.mock('providers/preferences/context/PreferenceContextProvider', () => ({
 }));
 
 describe('SpanDetailsDrawer - Infra Metrics', () => {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any, sonarjs/no-unused-collection
+	// eslint-disable-next-line sonarjs/no-unused-collection
 	let apiCallHistory: any[] = [];
 
 	beforeEach(() => {
@@ -242,7 +242,6 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 					selectedSpan={mockSpanWithInfraMetadata}
 					traceStartTime={1640995200000} // 2022-01-01 00:00:00
 					traceEndTime={1640995260000} // 2022-01-01 00:01:00
-					// eslint-disable-next-line react/jsx-props-no-spreading
 					{...props}
 				/>
 			</QueryBuilderContext.Provider>,
@@ -253,31 +252,26 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		renderSpanDetailsDrawer();
 
 		// Click on metrics tab
-		const infraMetricsButton = screen.getByRole('radio', { name: /metrics/i });
+		const infraMetricsButton = screen.getByRole('button', { name: /metrics/i });
 		expect(infraMetricsButton).toBeInTheDocument();
 
 		fireEvent.click(infraMetricsButton);
 
 		// Wait for infra metrics to load
 		await waitFor(() => {
-			// eslint-disable-next-line sonarjs/no-duplicate-string
 			expect(screen.getByTestId('infra-metrics')).toBeInTheDocument();
 		});
 
 		// Verify metadata extraction
-		// eslint-disable-next-line sonarjs/no-duplicate-string
 		expect(screen.getByTestId('infra-pod-name')).toHaveTextContent(
 			expectedInfraMetadata.podName,
 		);
-		// eslint-disable-next-line sonarjs/no-duplicate-string
 		expect(screen.getByTestId('infra-node-name')).toHaveTextContent(
 			expectedInfraMetadata.nodeName,
 		);
-		// eslint-disable-next-line sonarjs/no-duplicate-string
 		expect(screen.getByTestId('infra-host-name')).toHaveTextContent(
 			expectedInfraMetadata.hostName,
 		);
-		// eslint-disable-next-line sonarjs/no-duplicate-string
 		expect(screen.getByTestId('infra-cluster-name')).toHaveTextContent(
 			expectedInfraMetadata.clusterName,
 		);
@@ -301,17 +295,17 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 
 		// Should NOT show infra tab, only logs tab
 		expect(
-			screen.queryByRole('radio', { name: /metrics/i }),
+			screen.queryByRole('button', { name: /metrics/i }),
 		).not.toBeInTheDocument();
-		expect(screen.getByRole('radio', { name: /logs/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /logs/i })).toBeInTheDocument();
 	});
 
 	it('should show infra tab when span has infra metadata', async () => {
 		renderSpanDetailsDrawer();
 
 		// Should show both logs and infra tabs
-		expect(screen.getByRole('radio', { name: /metrics/i })).toBeInTheDocument();
-		expect(screen.getByRole('radio', { name: /logs/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /metrics/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /logs/i })).toBeInTheDocument();
 	});
 
 	it('should handle pod-only metadata correctly', async () => {
@@ -328,7 +322,7 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		);
 
 		// Click on infra tab
-		const infraMetricsButton = screen.getByRole('radio', { name: /metrics/i });
+		const infraMetricsButton = screen.getByRole('button', { name: /metrics/i });
 		fireEvent.click(infraMetricsButton);
 
 		await waitFor(() => {
@@ -364,7 +358,7 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		);
 
 		// Click on infra tab
-		const infraMetricsButton = screen.getByRole('radio', { name: /metrics/i });
+		const infraMetricsButton = screen.getByRole('button', { name: /metrics/i });
 		fireEvent.click(infraMetricsButton);
 
 		await waitFor(() => {
@@ -400,7 +394,7 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		);
 
 		// Click on infra tab
-		const infraMetricsButton = screen.getByRole('radio', { name: /metrics/i });
+		const infraMetricsButton = screen.getByRole('button', { name: /metrics/i });
 		fireEvent.click(infraMetricsButton);
 
 		await waitFor(() => {
@@ -426,8 +420,8 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		renderSpanDetailsDrawer();
 
 		// Initially should show logs tab content
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
-		const infraMetricsButton = screen.getByRole('radio', { name: /metrics/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
+		const infraMetricsButton = screen.getByRole('button', { name: /metrics/i });
 
 		expect(logsButton).toBeInTheDocument();
 		expect(infraMetricsButton).toBeInTheDocument();
@@ -436,7 +430,6 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		fireEvent.click(logsButton);
 
 		await waitFor(() => {
-			// eslint-disable-next-line sonarjs/no-duplicate-string
 			expect(screen.getByTestId('open-in-explorer-button')).toBeInTheDocument();
 		});
 
@@ -470,10 +463,10 @@ describe('SpanDetailsDrawer - Infra Metrics', () => {
 		renderSpanDetailsDrawer();
 
 		// Should show infra tab when span has any of: clusterName, podName, nodeName, hostName
-		expect(screen.getByRole('radio', { name: /metrics/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /metrics/i })).toBeInTheDocument();
 
 		// Click on infra tab
-		const infraMetricsButton = screen.getByRole('radio', { name: /metrics/i });
+		const infraMetricsButton = screen.getByRole('button', { name: /metrics/i });
 		fireEvent.click(infraMetricsButton);
 
 		await waitFor(() => {

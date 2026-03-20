@@ -1,14 +1,15 @@
+// eslint-disable-next-line no-restricted-imports
+import { Provider } from 'react-redux';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import ROUTES from 'constants/routes';
 import { AppProvider } from 'providers/App/App';
 import { ErrorModalProvider } from 'providers/ErrorModalProvider';
 import MockQueryClientProvider from 'providers/test/MockQueryClientProvider';
-import { Provider } from 'react-redux';
 import store from 'store';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import { EQueryType } from 'types/common/dashboard';
-import { DataSource } from 'types/common/queryBuilder';
+import { DataSource, ReduceOperators } from 'types/common/queryBuilder';
 
 import {
 	MENUITEM_KEYS_VS_LABELS,
@@ -38,7 +39,7 @@ const mockProps: WidgetGraphComponentProps = {
 		columnUnits: {},
 		description: '',
 		fillSpans: false,
-		id: '17f905f6-d355-46bd-a78e-cbc87e6f58cc',
+		id: 'w-17f905f6-d355-46bd-a78e-cbc87e6f58cc',
 		mergeAllActiveQueries: false,
 		nullZeroValues: 'zero',
 		opacity: '1',
@@ -68,7 +69,7 @@ const mockProps: WidgetGraphComponentProps = {
 						limit: null,
 						orderBy: [],
 						queryName: 'A',
-						reduceTo: 'last',
+						reduceTo: ReduceOperators.LAST,
 						spaceAggregation: 'sum',
 						stepInterval: 60,
 						timeAggregation: 'count_distinct',
@@ -167,6 +168,9 @@ jest.mock('providers/Dashboard/Dashboard', () => ({
 				variables: [],
 			},
 		},
+		setLayouts: jest.fn(),
+		setSelectedDashboard: jest.fn(),
+		setColumnWidths: jest.fn(),
 	}),
 }));
 

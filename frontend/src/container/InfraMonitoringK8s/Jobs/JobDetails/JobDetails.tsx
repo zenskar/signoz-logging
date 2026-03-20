@@ -1,9 +1,11 @@
 /* eslint-disable sonarjs/no-identical-functions */
-import '../../EntityDetailsUtils/entityDetails.styles.scss';
-
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom-v5-compat';
 import { Color, Spacing } from '@signozhq/design-tokens';
 import { Button, Divider, Drawer, Radio, Tooltip, Typography } from 'antd';
-import { RadioChangeEvent } from 'antd/lib';
+import type { RadioChangeEvent } from 'antd/lib';
 import logEvent from 'api/common/logEvent';
 import { VIEW_TYPES, VIEWS } from 'components/HostMetricsDetail/constants';
 import { InfraMonitoringEvents } from 'constants/events';
@@ -21,7 +23,7 @@ import {
 import {
 	CustomTimeType,
 	Time,
-} from 'container/TopNav/DateTimeSelectionV2/config';
+} from 'container/TopNav/DateTimeSelectionV2/types';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import useUrlQuery from 'hooks/useUrlQuery';
 import GetMinMax from 'lib/getMinMax';
@@ -33,9 +35,6 @@ import {
 	ScrollText,
 	X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { useSearchParams } from 'react-router-dom-v5-compat';
 import { AppState } from 'store/reducers';
 import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import {
@@ -56,6 +55,8 @@ import JobTraces from '../../EntityDetailsUtils/EntityTraces';
 import { QUERY_KEYS } from '../../EntityDetailsUtils/utils';
 import { getJobMetricsQueryPayload, jobWidgetInfo } from './constants';
 import { JobDetailsProps } from './JobDetails.interfaces';
+
+import '../../EntityDetailsUtils/entityDetails.styles.scss';
 
 function JobDetails({
 	job,
@@ -191,7 +192,6 @@ function JobDetails({
 				category: InfraMonitoringEvents.Job,
 			});
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [job]);
 
 	useEffect(() => {
@@ -548,7 +548,6 @@ function JobDetails({
 						>
 							<Radio.Button
 								className={
-									// eslint-disable-next-line sonarjs/no-duplicate-string
 									selectedView === VIEW_TYPES.METRICS ? 'selected_view tab' : 'tab'
 								}
 								value={VIEW_TYPES.METRICS}

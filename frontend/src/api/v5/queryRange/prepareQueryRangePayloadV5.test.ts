@@ -1,10 +1,10 @@
-/* eslint-disable sonarjs/no-duplicate-string, simple-import-sort/imports, @typescript-eslint/indent, no-mixed-spaces-and-tabs */
 import { PANEL_TYPES } from 'constants/queryBuilder';
+import { GetQueryResultsProps } from 'lib/dashboard/getQueryResults';
+import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
 import {
 	IBuilderFormula,
 	IBuilderQuery,
 } from 'types/api/queryBuilder/queryBuilderData';
-import { GetQueryResultsProps } from 'lib/dashboard/getQueryResults';
 import {
 	ClickHouseQuery,
 	LogAggregation,
@@ -16,8 +16,7 @@ import {
 	QueryRangePayloadV5,
 } from 'types/api/v5/queryRange';
 import { EQueryType } from 'types/common/dashboard';
-import { DataSource } from 'types/common/queryBuilder';
-import { DataTypes } from 'types/api/queryBuilder/queryAutocompleteResponse';
+import { DataSource, ReduceOperators } from 'types/common/queryBuilder';
 
 import { prepareQueryRangePayloadV5 } from './prepareQueryRangePayloadV5';
 
@@ -41,7 +40,7 @@ describe('prepareQueryRangePayloadV5', () => {
 				temporality: '',
 				timeAggregation: 'sum',
 				spaceAggregation: 'avg',
-				reduceTo: 'avg',
+				reduceTo: ReduceOperators.AVG,
 			},
 		],
 		timeAggregation: 'sum',
@@ -62,7 +61,7 @@ describe('prepareQueryRangePayloadV5', () => {
 		limit: null,
 		stepInterval: 600,
 		orderBy: [],
-		reduceTo: 'avg',
+		reduceTo: ReduceOperators.AVG,
 		legend: 'Legend A',
 		...overrides,
 	});
@@ -416,7 +415,7 @@ describe('prepareQueryRangePayloadV5', () => {
 											metricName: 'cpu_usage',
 											timeAggregation: 'sum',
 											spaceAggregation: 'avg',
-											reduceTo: 'avg',
+											reduceTo: ReduceOperators.AVG,
 											temporality: undefined,
 										}),
 									],
@@ -569,7 +568,7 @@ describe('prepareQueryRangePayloadV5', () => {
 								},
 							],
 							legend: '{{service.name}}',
-							reduceTo: 'avg',
+							reduceTo: ReduceOperators.AVG,
 							offset: 0,
 							pageSize: 100,
 						},

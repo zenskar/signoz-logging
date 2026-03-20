@@ -5,18 +5,25 @@ import (
 	"log/slog"
 
 	"github.com/SigNoz/signoz/cmd"
-	"github.com/SigNoz/signoz/ee/sqlstore/postgressqlstore"
 	"github.com/SigNoz/signoz/pkg/analytics"
 	"github.com/SigNoz/signoz/pkg/authn"
+	"github.com/SigNoz/signoz/pkg/authz"
+	"github.com/SigNoz/signoz/pkg/authz/openfgaauthz"
+	"github.com/SigNoz/signoz/pkg/authz/openfgaschema"
 	"github.com/SigNoz/signoz/pkg/factory"
+	"github.com/SigNoz/signoz/pkg/gateway"
+	"github.com/SigNoz/signoz/pkg/gateway/noopgateway"
 	"github.com/SigNoz/signoz/pkg/licensing"
 	"github.com/SigNoz/signoz/pkg/licensing/nooplicensing"
+	"github.com/SigNoz/signoz/pkg/modules/dashboard"
+	"github.com/SigNoz/signoz/pkg/modules/dashboard/impldashboard"
 	"github.com/SigNoz/signoz/pkg/modules/organization"
+	"github.com/SigNoz/signoz/pkg/querier"
 	"github.com/SigNoz/signoz/pkg/query-service/app"
+	"github.com/SigNoz/signoz/pkg/queryparser"
 	"github.com/SigNoz/signoz/pkg/signoz"
 	"github.com/SigNoz/signoz/pkg/sqlschema"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
-	"github.com/SigNoz/signoz/pkg/sqlstore/sqlstorehook"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
 	"github.com/SigNoz/signoz/pkg/version"
 	"github.com/SigNoz/signoz/pkg/zeus"
@@ -25,14 +32,14 @@ import (
 )
 
 func registerServer(parentCmd *cobra.Command, logger *slog.Logger) {
-	var flags signoz.DeprecatedFlags
+	var configFiles []string
 
 	serverCmd := &cobra.Command{
 		Use:                "server",
 		Short:              "Run the SigNoz server",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		RunE: func(currCmd *cobra.Command, args []string) error {
-			config, err := cmd.NewSigNozConfig(currCmd.Context(), logger, flags)
+			config, err := cmd.NewSigNozConfig(currCmd.Context(), logger, configFiles)
 			if err != nil {
 				return err
 			}
@@ -41,20 +48,13 @@ func registerServer(parentCmd *cobra.Command, logger *slog.Logger) {
 		},
 	}
 
-	flags.RegisterFlags(serverCmd)
+	serverCmd.Flags().StringArrayVar(&configFiles, "config", nil, "path to a YAML configuration file (can be specified multiple times, later files override earlier ones)")
 	parentCmd.AddCommand(serverCmd)
 }
 
 func runServer(ctx context.Context, config signoz.Config, logger *slog.Logger) error {
 	// print the version
 	version.Info.PrettyPrint(config.Version)
-
-	// add enterprise sqlstore factories to the community sqlstore factories
-	sqlstoreFactories := signoz.NewSQLStoreProviderFactories()
-	if err := sqlstoreFactories.Add(postgressqlstore.NewFactory(sqlstorehook.NewLoggingFactory())); err != nil {
-		logger.ErrorContext(ctx, "failed to add postgressqlstore factory", "error", err)
-		return err
-	}
 
 	signoz, err := signoz.New(
 		ctx,
@@ -75,6 +75,18 @@ func runServer(ctx context.Context, config signoz.Config, logger *slog.Logger) e
 		signoz.NewTelemetryStoreProviderFactories(),
 		func(ctx context.Context, providerSettings factory.ProviderSettings, store authtypes.AuthNStore, licensing licensing.Licensing) (map[authtypes.AuthNProvider]authn.AuthN, error) {
 			return signoz.NewAuthNs(ctx, providerSettings, store, licensing)
+		},
+		func(ctx context.Context, sqlstore sqlstore.SQLStore, _ licensing.Licensing, _ dashboard.Module) factory.ProviderFactory[authz.AuthZ, authz.Config] {
+			return openfgaauthz.NewProviderFactory(sqlstore, openfgaschema.NewSchema().Get(ctx))
+		},
+		func(store sqlstore.SQLStore, settings factory.ProviderSettings, analytics analytics.Analytics, orgGetter organization.Getter, queryParser queryparser.QueryParser, _ querier.Querier, _ licensing.Licensing) dashboard.Module {
+			return impldashboard.NewModule(impldashboard.NewStore(store), settings, analytics, orgGetter, queryParser)
+		},
+		func(_ licensing.Licensing) factory.ProviderFactory[gateway.Gateway, gateway.Config] {
+			return noopgateway.NewProviderFactory()
+		},
+		func(ps factory.ProviderSettings, q querier.Querier, a analytics.Analytics) querier.Handler {
+			return querier.NewHandler(ps, q, a)
 		},
 	)
 	if err != nil {

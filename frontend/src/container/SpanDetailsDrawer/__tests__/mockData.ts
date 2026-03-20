@@ -1,3 +1,4 @@
+import { SPAN_ATTRIBUTES } from 'container/ApiMonitoring/Explorer/Domains/DomainDetails/constants';
 import { ILog } from 'types/api/logs/log';
 import { Span } from 'types/api/trace/getTraceV2';
 
@@ -22,7 +23,7 @@ export const mockSpan: Span = {
 	event: [],
 	tagMap: {
 		'http.method': 'GET',
-		'http.url': '/api/test',
+		[SPAN_ATTRIBUTES.HTTP_URL]: '/api/test',
 		'http.status_code': '200',
 	},
 	hasError: false,
@@ -33,6 +34,19 @@ export const mockSpan: Span = {
 	hasSibling: false,
 	subTreeNodeCount: 0,
 	level: 0,
+};
+
+// Mock span with long status message (> 100 characters) for testing truncation
+export const mockSpanWithLongStatusMessage: Span = {
+	...mockSpan,
+	statusMessage:
+		'Error: Connection timeout occurred while trying to reach the database server. The connection pool was exhausted and all retry attempts failed after 30 seconds.',
+};
+
+// Mock span with short status message (<= 100 characters)
+export const mockSpanWithShortStatusMessage: Span = {
+	...mockSpan,
+	statusMessage: 'Connection successful',
 };
 
 // Mock logs with proper relationships

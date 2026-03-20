@@ -16,8 +16,11 @@ import (
 	"github.com/SigNoz/signoz/pkg/query-service/utils"
 	"github.com/SigNoz/signoz/pkg/querybuilder"
 	"github.com/SigNoz/signoz/pkg/telemetrystore"
+	"github.com/SigNoz/signoz/pkg/types/ctxtypes"
+	"github.com/SigNoz/signoz/pkg/types/instrumentationtypes"
 	"github.com/SigNoz/signoz/pkg/types/metrictypes"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/dustin/go-humanize"
 	"golang.org/x/exp/maps"
 
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
@@ -156,7 +159,8 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 	metricNames := make([]string, 0)
 	for idx, query := range req.CompositeQuery.Queries {
 		event.QueryType = query.Type.StringValue()
-		if query.Type == qbtypes.QueryTypeBuilder {
+		switch query.Type {
+		case qbtypes.QueryTypeBuilder:
 			if spec, ok := query.Spec.(qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation]); ok {
 				for _, agg := range spec.Aggregations {
 					if agg.MetricName != "" {
@@ -208,7 +212,16 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 				event.GroupByApplied = len(spec.GroupBy) > 0
 
 				if spec.Source == telemetrytypes.SourceMeter {
-					spec.StepInterval = qbtypes.Step{Duration: time.Second * time.Duration(querybuilder.RecommendedStepIntervalForMeter(req.Start, req.End))}
+					if spec.StepInterval.Seconds() == 0 {
+						spec.StepInterval = qbtypes.Step{Duration: time.Second * time.Duration(querybuilder.RecommendedStepIntervalForMeter(req.Start, req.End))}
+					}
+
+					if spec.StepInterval.Seconds() < float64(querybuilder.MinAllowedStepIntervalForMeter(req.Start, req.End)) {
+						newStep := qbtypes.Step{
+							Duration: time.Second * time.Duration(querybuilder.MinAllowedStepIntervalForMeter(req.Start, req.End)),
+						}
+						spec.StepInterval = newStep
+					}
 				} else {
 					if spec.StepInterval.Seconds() == 0 {
 						spec.StepInterval = qbtypes.Step{
@@ -225,7 +238,7 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 				}
 				req.CompositeQuery.Queries[idx].Spec = spec
 			}
-		} else if query.Type == qbtypes.QueryTypePromQL {
+		case qbtypes.QueryTypePromQL:
 			event.MetricsUsed = true
 			switch spec := query.Spec.(type) {
 			case qbtypes.PromQuery:
@@ -236,7 +249,7 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 				}
 				req.CompositeQuery.Queries[idx].Spec = spec
 			}
-		} else if query.Type == qbtypes.QueryTypeClickHouseSQL {
+		case qbtypes.QueryTypeClickHouseSQL:
 			switch spec := query.Spec.(type) {
 			case qbtypes.ClickHouseQuery:
 				if strings.TrimSpace(spec.Query) != "" {
@@ -245,7 +258,7 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 					event.TracesUsed = strings.Contains(spec.Query, "signoz_traces")
 				}
 			}
-		} else if query.Type == qbtypes.QueryTypeTraceOperator {
+		case qbtypes.QueryTypeTraceOperator:
 			if spec, ok := query.Spec.(qbtypes.QueryBuilderTraceOperator); ok {
 				if spec.StepInterval.Seconds() == 0 {
 					spec.StepInterval = qbtypes.Step{
@@ -265,21 +278,9 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 		}
 	}
 
-	// Fetch temporality for all metrics at once
-	var metricTemporality map[string]metrictypes.Temporality
-	if len(metricNames) > 0 {
-		var err error
-		metricTemporality, err = q.metadataStore.FetchTemporalityMulti(ctx, metricNames...)
-		if err != nil {
-			q.logger.WarnContext(ctx, "failed to fetch metric temporality", "error", err, "metrics", metricNames)
-			// Continue without temporality - statement builder will handle unspecified
-			metricTemporality = make(map[string]metrictypes.Temporality)
-		}
-		q.logger.DebugContext(ctx, "fetched metric temporalities", "metric_temporality", metricTemporality)
-	}
-
 	queries := make(map[string]qbtypes.Query)
 	steps := make(map[string]qbtypes.Step)
+	missingMetrics := []string{}
 
 	for _, query := range req.CompositeQuery.Queries {
 		var queryName string
@@ -361,15 +362,32 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 				queries[spec.Name] = bq
 				steps[spec.Name] = spec.StepInterval
 			case qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation]:
+				var metricTemporality map[string]metrictypes.Temporality
+				var metricTypes map[string]metrictypes.Type
+				if len(metricNames) > 0 {
+					var err error
+					metricTemporality, metricTypes, err = q.metadataStore.FetchTemporalityAndTypeMulti(ctx, req.Start, req.End, metricNames...)
+					if err != nil {
+						q.logger.WarnContext(ctx, "failed to fetch metric temporality", "error", err, "metrics", metricNames)
+						return nil, errors.NewInternalf(errors.CodeInternal, "failed to fetch metrics temporality")
+					}
+					q.logger.DebugContext(ctx, "fetched metric temporalities and types", "metric_temporality", metricTemporality, "metric_types", metricTypes)
+				}
 				for i := range spec.Aggregations {
 					if spec.Aggregations[i].MetricName != "" && spec.Aggregations[i].Temporality == metrictypes.Unknown {
 						if temp, ok := metricTemporality[spec.Aggregations[i].MetricName]; ok && temp != metrictypes.Unknown {
 							spec.Aggregations[i].Temporality = temp
 						}
 					}
-					// TODO(srikanthccv): warn when the metric is missing
 					if spec.Aggregations[i].Temporality == metrictypes.Unknown {
-						spec.Aggregations[i].Temporality = metrictypes.Unspecified
+						missingMetrics = append(missingMetrics, spec.Aggregations[i].MetricName)
+						continue
+					}
+
+					if spec.Aggregations[i].MetricName != "" && spec.Aggregations[i].Type == metrictypes.UnspecifiedType {
+						if foundMetricType, ok := metricTypes[spec.Aggregations[i].MetricName]; ok && foundMetricType != metrictypes.UnspecifiedType {
+							spec.Aggregations[i].Type = foundMetricType
+						}
 					}
 				}
 				spec.ShiftBy = extractShiftFromBuilderQuery(spec)
@@ -389,6 +407,24 @@ func (q *querier) QueryRange(ctx context.Context, orgID valuer.UUID, req *qbtype
 				return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "unsupported builder spec type %T", query.Spec)
 			}
 		}
+	}
+	if len(missingMetrics) > 0 {
+		lastSeenInfo, _ := q.metadataStore.FetchLastSeenInfoMulti(ctx, missingMetrics...)
+		lastSeenStr := func(name string) string {
+			if ts, ok := lastSeenInfo[name]; ok && ts > 0 {
+				ago := humanize.RelTime(time.UnixMilli(ts), time.Now(), "ago", "from now")
+				return fmt.Sprintf("%s (last seen %s)", name, ago)
+			}
+			return name
+		}
+		if len(missingMetrics) == 1 {
+			return nil, errors.NewNotFoundf(errors.CodeNotFound, "no data found for the metric %s in the query time range", lastSeenStr(missingMetrics[0]))
+		}
+		parts := make([]string, len(missingMetrics))
+		for i, m := range missingMetrics {
+			parts[i] = lastSeenStr(m)
+		}
+		return nil, errors.NewNotFoundf(errors.CodeNotFound, "no data found for the following metrics in the query time range: %s", strings.Join(parts, ", "))
 	}
 	qbResp, qbErr := q.run(ctx, orgID, queries, req, steps, event)
 	if qbResp != nil {
@@ -509,6 +545,11 @@ func (q *querier) run(
 	steps map[string]qbtypes.Step,
 	qbEvent *qbtypes.QBEvent,
 ) (*qbtypes.QueryRangeResponse, error) {
+	ctx = ctxtypes.NewContextWithCommentVals(ctx, map[string]string{
+		instrumentationtypes.PanelType: qbEvent.PanelType,
+		instrumentationtypes.QueryType: qbEvent.QueryType,
+	})
+
 	results := make(map[string]any)
 	warnings := make([]string, 0)
 	warningsDocURL := ""
@@ -593,19 +634,31 @@ func (q *querier) run(
 		return nil, err
 	}
 
+	// attach step interval to metadata so client can make informed decisions, ex: width of the bar
+	// or go to related logs/traces from a point in line/bar chart with correct time range
+	stepIntervals := make(map[string]uint64, len(steps))
+	for name, step := range steps {
+		stepIntervals[name] = uint64(step.Duration.Seconds())
+	}
+	for _, query := range req.CompositeQuery.Queries {
+		if query.Type == qbtypes.QueryTypeFormula {
+			if formula, ok := query.Spec.(qbtypes.QueryBuilderFormula); ok {
+				formulaStepMs := q.calculateFormulaStep(formula.Expression, req)
+				stepIntervals[formula.Name] = uint64(formulaStepMs / 1000) // convert ms to seconds
+			}
+		}
+	}
+
 	resp := &qbtypes.QueryRangeResponse{
 		Type: req.RequestType,
 		Data: qbtypes.QueryData{
 			Results: maps.Values(processedResults),
 		},
-		Meta: struct {
-			RowsScanned  uint64 `json:"rowsScanned"`
-			BytesScanned uint64 `json:"bytesScanned"`
-			DurationMS   uint64 `json:"durationMs"`
-		}{
-			RowsScanned:  stats.RowsScanned,
-			BytesScanned: stats.BytesScanned,
-			DurationMS:   stats.DurationMS,
+		Meta: qbtypes.ExecStats{
+			RowsScanned:   stats.RowsScanned,
+			BytesScanned:  stats.BytesScanned,
+			DurationMS:    stats.DurationMS,
+			StepIntervals: stepIntervals,
 		},
 	}
 
@@ -627,7 +680,7 @@ func (q *querier) run(
 }
 
 // executeWithCache executes a query using the bucket cache
-func (q *querier) executeWithCache(ctx context.Context, orgID valuer.UUID, query qbtypes.Query, step qbtypes.Step, noCache bool) (*qbtypes.Result, error) {
+func (q *querier) executeWithCache(ctx context.Context, orgID valuer.UUID, query qbtypes.Query, step qbtypes.Step, _ bool) (*qbtypes.Result, error) {
 	// Get cached data and missing ranges
 	cachedResult, missingRanges := q.bucketCache.GetMissRanges(ctx, orgID, query, step)
 

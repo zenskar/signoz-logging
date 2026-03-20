@@ -9,7 +9,6 @@ import (
 
 	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/prometheus"
-	"github.com/SigNoz/signoz/pkg/query-service/formatter"
 	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
 	"github.com/SigNoz/signoz/pkg/query-service/model"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
@@ -17,8 +16,10 @@ import (
 	"github.com/SigNoz/signoz/pkg/query-service/utils/times"
 	"github.com/SigNoz/signoz/pkg/query-service/utils/timestamp"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
-	ruletypes "github.com/SigNoz/signoz/pkg/types/ruletypes"
+	"github.com/SigNoz/signoz/pkg/types/ruletypes"
+	"github.com/SigNoz/signoz/pkg/units"
 	"github.com/SigNoz/signoz/pkg/valuer"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -27,6 +28,8 @@ type PromRule struct {
 	version    string
 	prometheus prometheus.Prometheus
 }
+
+var _ Rule = (*PromRule)(nil)
 
 func NewPromRule(
 	id string,
@@ -37,7 +40,6 @@ func NewPromRule(
 	prometheus prometheus.Prometheus,
 	opts ...RuleOption,
 ) (*PromRule, error) {
-
 	opts = append(opts, WithLogger(logger))
 
 	baseRule, err := NewBaseRule(id, orgID, postableRule, reader, opts...)
@@ -53,7 +55,6 @@ func NewPromRule(
 	p.logger = logger
 
 	query, err := p.getPqlQuery()
-
 	if err != nil {
 		// can not generate a valid prom QL query
 		return nil, err
@@ -83,7 +84,6 @@ func (r *PromRule) GetSelectedQuery() string {
 }
 
 func (r *PromRule) getPqlQuery() (string, error) {
-
 	if r.version == "v5" {
 		if len(r.ruleCondition.CompositeQuery.Queries) > 0 {
 			selectedQuery := r.GetSelectedQuery()
@@ -119,14 +119,18 @@ func (r *PromRule) getPqlQuery() (string, error) {
 	return "", fmt.Errorf("invalid promql rule query")
 }
 
-func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) {
+func (r *PromRule) matrixToV3Series(res promql.Matrix) []*v3.Series {
+	v3Series := make([]*v3.Series, 0, len(res))
+	for _, series := range res {
+		commonSeries := toCommonSeries(series)
+		v3Series = append(v3Series, &commonSeries)
+	}
+	return v3Series
+}
 
-	prevState := r.State()
-
+func (r *PromRule) buildAndRunQuery(ctx context.Context, ts time.Time) (ruletypes.Vector, error) {
 	start, end := r.Timestamps(ts)
 	interval := 60 * time.Second // TODO(srikanthccv): this should be configurable
-
-	valueFormatter := formatter.FromUnit(r.Unit())
 
 	q, err := r.getPqlQuery()
 	if err != nil {
@@ -140,12 +144,62 @@ func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) 
 		return nil, err
 	}
 
+	matrixToProcess := r.matrixToV3Series(res)
+
+	hasData := len(matrixToProcess) > 0
+	if missingDataAlert := r.HandleMissingDataAlert(ctx, ts, hasData); missingDataAlert != nil {
+		return ruletypes.Vector{*missingDataAlert}, nil
+	}
+
+	// Filter out new series if newGroupEvalDelay is configured
+	if r.ShouldSkipNewGroups() {
+		filteredSeries, filterErr := r.BaseRule.FilterNewSeries(ctx, ts, matrixToProcess)
+		// In case of error we log the error and continue with the original series
+		if filterErr != nil {
+			r.logger.ErrorContext(ctx, "Error filtering new series, ", "error", filterErr, "rule_name", r.Name())
+		} else {
+			matrixToProcess = filteredSeries
+		}
+	}
+
+	var resultVector ruletypes.Vector
+
+	for _, series := range matrixToProcess {
+		if !r.Condition().ShouldEval(series) {
+			r.logger.InfoContext(
+				ctx, "not enough data points to evaluate series, skipping",
+				"rule_id", r.ID(), "num_points", len(series.Points), "required_points", r.Condition().RequiredNumPoints,
+			)
+			continue
+		}
+		resultSeries, err := r.Threshold.Eval(*series, r.Unit(), ruletypes.EvalData{
+			ActiveAlerts:  r.ActiveAlertsLabelFP(),
+			SendUnmatched: r.ShouldSendUnmatched(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		resultVector = append(resultVector, resultSeries...)
+	}
+	return resultVector, nil
+}
+
+func (r *PromRule) Eval(ctx context.Context, ts time.Time) (int, error) {
+	prevState := r.State()
+	valueFormatter := units.FormatterFromUnit(r.Unit())
+
+	// prepare query, run query get data and filter the data based on the threshold
+	results, err := r.buildAndRunQuery(ctx, ts)
+	if err != nil {
+		return 0, err
+	}
+
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
 	resultFPs := map[uint64]struct{}{}
 
-	var alerts = make(map[uint64]*ruletypes.Alert, len(res))
+	alerts := make(map[uint64]*ruletypes.Alert, len(results))
 
 	ruleReceivers := r.Threshold.GetRuleReceivers()
 	ruleReceiverMap := make(map[string][]string)
@@ -153,87 +207,80 @@ func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) 
 		ruleReceiverMap[value.Name] = value.Channels
 	}
 
-	for _, series := range res {
+	for _, result := range results {
+		l := make(map[string]string, len(result.Metric))
+		for _, lbl := range result.Metric {
+			l[lbl.Name] = lbl.Value
+		}
+		r.logger.DebugContext(ctx, "alerting for series", "rule_name", r.Name(), "series", result)
 
-		if len(series.Floats) == 0 {
-			continue
+		threshold := valueFormatter.Format(result.Target, result.TargetUnit)
+
+		tmplData := ruletypes.AlertTemplateData(l, valueFormatter.Format(result.V, r.Unit()), threshold)
+		// Inject some convenience variables that are easier to remember for users
+		// who are not used to Go's templating system.
+		defs := "{{$labels := .Labels}}{{$value := .Value}}{{$threshold := .Threshold}}"
+
+		expand := func(text string) string {
+			tmpl := ruletypes.NewTemplateExpander(
+				ctx,
+				defs+text,
+				"__alert_"+r.Name(),
+				tmplData,
+				times.Time(timestamp.FromTime(ts)),
+				nil,
+			)
+			result, err := tmpl.Expand()
+			if err != nil {
+				result = fmt.Sprintf("<error expanding template: %s>", err)
+				r.logger.WarnContext(ctx, "Expanding alert template failed", "rule_name", r.Name(), "error", err, "data", tmplData)
+			}
+			return result
 		}
 
-		results, err := r.Threshold.ShouldAlert(toCommonSeries(series), r.Unit())
-		if err != nil {
-			return nil, err
+		lb := qslabels.NewBuilder(result.Metric).Del(qslabels.MetricNameLabel)
+		resultLabels := qslabels.NewBuilder(result.Metric).Del(qslabels.MetricNameLabel).Labels()
+
+		for name, value := range r.labels.Map() {
+			lb.Set(name, expand(value))
 		}
 
-		for _, result := range results {
-			l := make(map[string]string, len(series.Metric))
-			for _, lbl := range series.Metric {
-				l[lbl.Name] = lbl.Value
-			}
-			r.logger.DebugContext(ctx, "alerting for series", "rule_name", r.Name(), "series", series)
+		lb.Set(qslabels.AlertNameLabel, r.Name())
+		lb.Set(qslabels.AlertRuleIdLabel, r.ID())
+		lb.Set(qslabels.RuleSourceLabel, r.GeneratorURL())
 
-			threshold := valueFormatter.Format(result.Target, result.TargetUnit)
+		annotations := make(qslabels.Labels, 0, len(r.annotations.Map()))
+		for name, value := range r.annotations.Map() {
+			annotations = append(annotations, qslabels.Label{Name: name, Value: expand(value)})
+		}
+		if result.IsMissing {
+			lb.Set(qslabels.AlertNameLabel, "[No data] "+r.Name())
+			lb.Set(qslabels.NoDataLabel, "true")
+		}
 
-			tmplData := ruletypes.AlertTemplateData(l, valueFormatter.Format(result.V, r.Unit()), threshold)
-			// Inject some convenience variables that are easier to remember for users
-			// who are not used to Go's templating system.
-			defs := "{{$labels := .Labels}}{{$value := .Value}}{{$threshold := .Threshold}}"
+		lbs := lb.Labels()
+		h := lbs.Hash()
+		resultFPs[h] = struct{}{}
 
-			expand := func(text string) string {
-
-				tmpl := ruletypes.NewTemplateExpander(
-					ctx,
-					defs+text,
-					"__alert_"+r.Name(),
-					tmplData,
-					times.Time(timestamp.FromTime(ts)),
-					nil,
-				)
-				result, err := tmpl.Expand()
-				if err != nil {
-					result = fmt.Sprintf("<error expanding template: %s>", err)
-					r.logger.WarnContext(ctx, "Expanding alert template failed", "rule_name", r.Name(), "error", err, "data", tmplData)
-				}
-				return result
-			}
-
-			lb := qslabels.NewBuilder(result.Metric).Del(qslabels.MetricNameLabel)
-			resultLabels := qslabels.NewBuilder(result.Metric).Del(qslabels.MetricNameLabel).Labels()
-
-			for name, value := range r.labels.Map() {
-				lb.Set(name, expand(value))
-			}
-
-			lb.Set(qslabels.AlertNameLabel, r.Name())
-			lb.Set(qslabels.AlertRuleIdLabel, r.ID())
-			lb.Set(qslabels.RuleSourceLabel, r.GeneratorURL())
-
-			annotations := make(qslabels.Labels, 0, len(r.annotations.Map()))
-			for name, value := range r.annotations.Map() {
-				annotations = append(annotations, qslabels.Label{Name: name, Value: expand(value)})
-			}
-
-			lbs := lb.Labels()
-			h := lbs.Hash()
-			resultFPs[h] = struct{}{}
-
-			if _, ok := alerts[h]; ok {
-				err = fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
-				// We have already acquired the lock above hence using SetHealth and
-				// SetLastError will deadlock.
-				r.health = ruletypes.HealthBad
-				r.lastError = err
-				return nil, err
-			}
-			alerts[h] = &ruletypes.Alert{
-				Labels:            lbs,
-				QueryResultLables: resultLabels,
-				Annotations:       annotations,
-				ActiveAt:          ts,
-				State:             model.StatePending,
-				Value:             result.V,
-				GeneratorURL:      r.GeneratorURL(),
-				Receivers:         ruleReceiverMap[lbs.Map()[ruletypes.LabelThresholdName]],
-			}
+		if _, ok := alerts[h]; ok {
+			err = fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+			// We have already acquired the lock above hence using SetHealth and
+			// SetLastError will deadlock.
+			r.health = ruletypes.HealthBad
+			r.lastError = err
+			return 0, err
+		}
+		alerts[h] = &ruletypes.Alert{
+			Labels:            lbs,
+			QueryResultLables: resultLabels,
+			Annotations:       annotations,
+			ActiveAt:          ts,
+			State:             model.StatePending,
+			Value:             result.V,
+			GeneratorURL:      r.GeneratorURL(),
+			Receivers:         ruleReceiverMap[lbs.Map()[ruletypes.LabelThresholdName]],
+			Missing:           result.IsMissing,
+			IsRecovering:      result.IsRecovering,
 		}
 	}
 
@@ -245,6 +292,9 @@ func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) 
 		if alert, ok := r.Active[h]; ok && alert.State != model.StateInactive {
 			alert.Value = a.Value
 			alert.Annotations = a.Annotations
+			// Update the recovering and missing state of existing alert
+			alert.IsRecovering = a.IsRecovering
+			alert.Missing = a.Missing
 			if v, ok := alert.Labels.Map()[ruletypes.LabelThresholdName]; ok {
 				alert.Receivers = ruleReceiverMap[v]
 			}
@@ -285,7 +335,7 @@ func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) 
 			continue
 		}
 
-		if a.State == model.StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
+		if a.State == model.StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration.Duration() {
 			a.State = model.StateFiring
 			a.FiredAt = ts
 			state := model.StateFiring
@@ -304,6 +354,29 @@ func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) 
 			})
 		}
 
+		// We need to change firing alert to recovering if the returned sample meets recovery threshold
+		changeAlertingToRecovering := a.State == model.StateFiring && a.IsRecovering
+		// We need to change recovering alerts to firing if the returned sample meets target threshold
+		changeRecoveringToFiring := a.State == model.StateRecovering && !a.IsRecovering && !a.Missing
+		// in any of the above case we need to update the status of alert
+		if changeAlertingToRecovering || changeRecoveringToFiring {
+			state := model.StateRecovering
+			if changeRecoveringToFiring {
+				state = model.StateFiring
+			}
+			a.State = state
+			r.logger.DebugContext(ctx, "converting alert state", "name", r.Name(), "state", state)
+			itemsToAdd = append(itemsToAdd, model.RuleStateHistory{
+				RuleID:       r.ID(),
+				RuleName:     r.Name(),
+				State:        state,
+				StateChanged: true,
+				UnixMilli:    ts.UnixMilli(),
+				Labels:       model.LabelsString(labelsJSON),
+				Fingerprint:  a.QueryResultLables.Hash(),
+				Value:        a.Value,
+			})
+		}
 	}
 	r.health = ruletypes.HealthGood
 	r.lastError = err
@@ -323,11 +396,10 @@ func (r *PromRule) Eval(ctx context.Context, ts time.Time) (interface{}, error) 
 }
 
 func (r *PromRule) String() string {
-
 	ar := ruletypes.PostableRule{
 		AlertName:         r.name,
 		RuleCondition:     r.ruleCondition,
-		EvalWindow:        ruletypes.Duration(r.evalWindow),
+		EvalWindow:        r.evalWindow,
 		Labels:            r.labels.Map(),
 		Annotations:       r.annotations.Map(),
 		PreferredChannels: r.preferredChannels,
@@ -390,12 +462,12 @@ func toCommonSeries(series promql.Series) v3.Series {
 		Points:      make([]v3.Point, 0),
 	}
 
-	for _, lbl := range series.Metric {
+	series.Metric.Range(func(lbl labels.Label) {
 		commonSeries.Labels[lbl.Name] = lbl.Value
 		commonSeries.LabelsArray = append(commonSeries.LabelsArray, map[string]string{
 			lbl.Name: lbl.Value,
 		})
-	}
+	})
 
 	for _, f := range series.Floats {
 		commonSeries.Points = append(commonSeries.Points, v3.Point{

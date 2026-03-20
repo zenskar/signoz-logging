@@ -112,7 +112,7 @@ func (b *base) WithUrl(u string) *base {
 	}
 }
 
-// WithUrl adds additional messages to the base error and returns a new base error.
+// WithAdditional adds additional messages to the base error and returns a new base error.
 func (b *base) WithAdditional(a ...string) *base {
 	return &base{
 		t: b.t,
@@ -207,4 +207,19 @@ func WrapUnexpectedf(cause error, code Code, format string, args ...any) *base {
 // NewUnexpectedf is a wrapper around Newf with TypeUnexpected.
 func NewUnexpectedf(code Code, format string, args ...any) *base {
 	return Newf(TypeInvalidInput, code, format, args...)
+}
+
+// NewMethodNotAllowedf is a wrapper around Newf with TypeMethodNotAllowed.
+func NewMethodNotAllowedf(code Code, format string, args ...any) *base {
+	return Newf(TypeMethodNotAllowed, code, format, args...)
+}
+
+// WrapTimeoutf is a wrapper around Wrapf with TypeTimeout.
+func WrapTimeoutf(cause error, code Code, format string, args ...any) *base {
+	return Wrapf(cause, TypeTimeout, code, format, args...)
+}
+
+// NewTimeoutf is a wrapper around Newf with TypeTimeout.
+func NewTimeoutf(code Code, format string, args ...any) *base {
+	return Newf(TypeTimeout, code, format, args...)
 }

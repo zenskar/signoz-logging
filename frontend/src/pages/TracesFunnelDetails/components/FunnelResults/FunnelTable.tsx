@@ -1,7 +1,6 @@
-import './FunnelTable.styles.scss';
+import { Empty, Table, TableColumnProps as ColumnProps, Tooltip } from 'antd';
 
-import { Empty, Table, Tooltip } from 'antd';
-import { ColumnProps } from 'antd/es/table';
+import './FunnelTable.styles.scss';
 
 interface FunnelTableProps {
 	loading?: boolean;

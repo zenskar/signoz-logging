@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"time"
 	"unicode"
@@ -35,12 +36,19 @@ type ChangePasswordRequest struct {
 	NewPassword string      `json:"newPassword"`
 }
 
+type PostableForgotPassword struct {
+	OrgID           valuer.UUID  `json:"orgId" required:"true"`
+	Email           valuer.Email `json:"email" required:"true"`
+	FrontendBaseURL string       `json:"frontendBaseURL"`
+}
+
 type ResetPasswordToken struct {
 	bun.BaseModel `bun:"table:reset_password_token"`
 
 	Identifiable
 	Token      string      `bun:"token,type:text,notnull" json:"token"`
 	PasswordID valuer.UUID `bun:"password_id,type:text,notnull,unique" json:"passwordId"`
+	ExpiresAt  time.Time   `bun:"expires_at,type:timestamptz,nullzero" json:"expiresAt"`
 }
 
 type FactorPassword struct {
@@ -136,13 +144,14 @@ func NewHashedPassword(password string) (string, error) {
 	return string(hashedPassword), nil
 }
 
-func NewResetPasswordToken(passwordID valuer.UUID) (*ResetPasswordToken, error) {
+func NewResetPasswordToken(passwordID valuer.UUID, expiresAt time.Time) (*ResetPasswordToken, error) {
 	return &ResetPasswordToken{
 		Identifiable: Identifiable{
 			ID: valuer.GenerateUUID(),
 		},
 		Token:      valuer.GenerateUUID().String(),
 		PasswordID: passwordID,
+		ExpiresAt:  expiresAt,
 	}, nil
 }
 
@@ -207,4 +216,12 @@ func (f *FactorPassword) Equals(password string) bool {
 
 func comparePassword(hashedPassword string, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)) == nil
+}
+
+func (r *ResetPasswordToken) IsExpired() bool {
+	return r.ExpiresAt.Before(time.Now())
+}
+
+func (r *ResetPasswordToken) FactorPasswordResetLink(frontendBaseUrl string) string {
+	return fmt.Sprintf("%s/password-reset?token=%s", frontendBaseUrl, r.Token)
 }

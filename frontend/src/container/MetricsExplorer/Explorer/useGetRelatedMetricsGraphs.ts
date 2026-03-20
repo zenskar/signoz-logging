@@ -1,10 +1,11 @@
+import { useMemo } from 'react';
+import { useQueries } from 'react-query';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
 import { ENTITY_VERSION_V4 } from 'constants/app';
 import { PANEL_TYPES } from 'constants/queryBuilder';
 import { useGetRelatedMetrics } from 'hooks/metricsExplorer/useGetRelatedMetrics';
 import { GetMetricQueryRange } from 'lib/dashboard/getQueryResults';
-import { useMemo } from 'react';
-import { useQueries } from 'react-query';
-import { useSelector } from 'react-redux';
 import { AppState } from 'store/reducers';
 import { SuccessResponse } from 'types/api';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';

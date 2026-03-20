@@ -1,6 +1,5 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-import { isEmpty } from 'lodash-es';
 import { useEffect, useRef, useState } from 'react';
+import { isEmpty } from 'lodash-es';
 
 import { jsonToDataNodes, recursiveParseJSON } from '../utils';
 

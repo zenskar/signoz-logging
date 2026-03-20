@@ -1,3 +1,4 @@
+import { ForwardRefExoticComponent, RefAttributes } from 'react';
 import { Color } from '@signozhq/design-tokens';
 import { MetricType } from 'api/metricsExplorer/getMetricsList';
 import {
@@ -8,10 +9,9 @@ import {
 	Gauge,
 	LucideProps,
 } from 'lucide-react';
-import { ForwardRefExoticComponent, RefAttributes } from 'react';
 
 import {
-	MetricInspectionOptions,
+	MetricInspectionState,
 	SpaceAggregationOptions,
 	TimeAggregationOptions,
 } from './types';
@@ -71,14 +71,26 @@ export const SPACE_AGGREGATION_OPTIONS_FOR_EXPANDED_VIEW: Record<
 	[SpaceAggregationOptions.AVG_BY]: 'Avg',
 };
 
-export const INITIAL_INSPECT_METRICS_OPTIONS: MetricInspectionOptions = {
-	timeAggregationOption: undefined,
-	timeAggregationInterval: undefined,
-	spaceAggregationOption: undefined,
-	spaceAggregationLabels: [],
-	filters: {
-		items: [],
-		op: 'AND',
+export const INITIAL_INSPECT_METRICS_OPTIONS: MetricInspectionState = {
+	currentOptions: {
+		timeAggregationOption: undefined,
+		timeAggregationInterval: undefined,
+		spaceAggregationOption: undefined,
+		spaceAggregationLabels: [],
+		filters: {
+			items: [],
+			op: 'AND',
+		},
+	},
+	appliedOptions: {
+		timeAggregationOption: undefined,
+		timeAggregationInterval: undefined,
+		spaceAggregationOption: undefined,
+		spaceAggregationLabels: [],
+		filters: {
+			items: [],
+			op: 'AND',
+		},
 	},
 };
 

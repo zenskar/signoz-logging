@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Tabs, TabsProps } from 'antd';
 import { MarkdownRenderer } from 'components/MarkdownRenderer/MarkdownRenderer';
 import Spinner from 'components/Spinner';
@@ -7,7 +8,6 @@ import { IServiceStatus } from 'container/CloudIntegrationPage/ServicesSection/t
 import dayjs from 'dayjs';
 import { useServiceDetails } from 'hooks/integration/aws/useServiceDetails';
 import useUrlQuery from 'hooks/useUrlQuery';
-import { useEffect, useMemo, useState } from 'react';
 
 import logEvent from '../../../api/common/logEvent';
 import ConfigureServiceModal from './ConfigureServiceModal';
@@ -98,7 +98,6 @@ function ServiceDetails(): JSX.Element | null {
 		cloudAccountId || undefined,
 	);
 
-	// eslint-disable-next-line @typescript-eslint/naming-convention
 	const { config, supported_signals } = serviceDetailsData ?? {};
 
 	const totalSupportedSignals = Object.entries(supported_signals || {}).filter(

@@ -1,5 +1,5 @@
 import Convert from 'ansi-to-html';
-import { DataNode } from 'antd/es/tree';
+import type { DataNode } from 'antd/es/tree';
 import { MetricsType } from 'container/MetricsApplication/constant';
 import dompurify from 'dompurify';
 import { uniqueId } from 'lodash-es';
@@ -39,10 +39,17 @@ export const computeDataNode = (
 	valueIsArray: boolean,
 	value: unknown,
 	nodeKey: string,
+	parentIsArray: boolean,
 ): DataNode => ({
 	key: uniqueId(),
-	title: `${key} ${valueIsArray ? '[...]' : ''}`,
-	// eslint-disable-next-line @typescript-eslint/no-use-before-define
+	title: (
+		<BodyTitleRenderer
+			title={`${key} ${valueIsArray ? '[...]' : ''}`}
+			nodeKey={nodeKey}
+			value={value}
+			parentIsArray={parentIsArray}
+		/>
+	),
 	children: jsonToDataNodes(
 		value as Record<string, unknown>,
 		valueIsArray ? `${nodeKey}[*]` : nodeKey,
@@ -67,7 +74,7 @@ export function jsonToDataNodes(
 
 		if (parentIsArray) {
 			if (typeof value === 'object' && value !== null) {
-				return computeDataNode(key, valueIsArray, value, nodeKey);
+				return computeDataNode(key, valueIsArray, value, nodeKey, parentIsArray);
 			}
 
 			return {
@@ -85,7 +92,7 @@ export function jsonToDataNodes(
 		}
 
 		if (typeof value === 'object' && value !== null) {
-			return computeDataNode(key, valueIsArray, value, nodeKey);
+			return computeDataNode(key, valueIsArray, value, nodeKey, parentIsArray);
 		}
 		return {
 			key: uniqueId(),
@@ -213,7 +220,6 @@ export const aggregateAttributesResourcesToString = (logData: ILog): string => {
 			outputJson.scope = outputJson.scope || {};
 			Object.assign(outputJson.scope, logData[key as keyof ILog]);
 		} else {
-			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 			// @ts-ignore
 			outputJson[key] = logData[key as keyof ILog];
 		}

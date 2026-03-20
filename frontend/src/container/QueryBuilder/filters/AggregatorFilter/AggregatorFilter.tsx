@@ -1,4 +1,6 @@
 // ** Components
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from 'react-query';
 import { AutoComplete, Spin } from 'antd';
 // ** Api
 import { getAggregateAttribute } from 'api/queryBuilder/getAggregateAttribute';
@@ -12,8 +14,6 @@ import useDebounce from 'hooks/useDebounce';
 import { createIdFromObjectFields } from 'lib/createIdFromObjectFields';
 import { chooseAutocompleteFromCustomValue } from 'lib/newQueryBuilder/chooseAutocompleteFromCustomValue';
 import { getAutocompleteValueAndType } from 'lib/newQueryBuilder/getAutocompleteValueAndType';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
 import { SuccessResponse } from 'types/api';
 import {
 	BaseAutocompleteData,
@@ -57,7 +57,6 @@ export const AggregatorFilter = memo(function AggregatorFilter({
 	}, [signalSource]);
 
 	const debouncedSearchText = useMemo(() => {
-		// eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unused-vars
 		const [_, value] = getAutocompleteValueAndType(searchText);
 
 		return value;

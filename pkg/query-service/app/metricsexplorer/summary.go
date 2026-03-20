@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
+	"log/slog"
 
 	"github.com/SigNoz/signoz/pkg/modules/dashboard"
 	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
@@ -62,23 +62,23 @@ func (receiver *SummaryService) FilterValues(ctx context.Context, orgID valuer.U
 		response.FilterValues = filterValues
 		return &response, nil
 	case "metric_unit":
-		attributes, err := receiver.reader.GetAllMetricFilterUnits(ctx, params)
-		if err != nil {
-			return nil, err
+		attributes, apiErr := receiver.reader.GetAllMetricFilterUnits(ctx, params)
+		if apiErr != nil {
+			return nil, apiErr
 		}
 		response.FilterValues = attributes
 		return &response, nil
 	case "metric_type":
-		attributes, err := receiver.reader.GetAllMetricFilterTypes(ctx, params)
-		if err != nil {
-			return nil, err
+		attributes, apiErr := receiver.reader.GetAllMetricFilterTypes(ctx, params)
+		if apiErr != nil {
+			return nil, apiErr
 		}
 		response.FilterValues = attributes
 		return &response, nil
 	default:
-		attributes, err := receiver.reader.GetAllMetricFilterAttributeValues(ctx, params)
-		if err != nil {
-			return nil, err
+		attributes, apiErr := receiver.reader.GetAllMetricFilterAttributeValues(ctx, params)
+		if apiErr != nil {
+			return nil, apiErr
 		}
 		response.FilterValues = attributes
 		return &response, nil
@@ -108,45 +108,45 @@ func (receiver *SummaryService) GetMetricsSummary(ctx context.Context, orgID val
 	})
 
 	g.Go(func() error {
-		dataPoints, err := receiver.reader.GetMetricsDataPoints(ctx, metricName)
-		if err != nil {
-			return err
+		dataPoints, apiErr := receiver.reader.GetMetricsDataPoints(ctx, metricName)
+		if apiErr != nil {
+			return apiErr.ToError()
 		}
 		metricDetailsDTO.Samples = dataPoints
 		return nil
 	})
 
 	g.Go(func() error {
-		lastReceived, err := receiver.reader.GetMetricsLastReceived(ctx, metricName)
-		if err != nil {
-			return err
+		lastReceived, apiErr := receiver.reader.GetMetricsLastReceived(ctx, metricName)
+		if apiErr != nil {
+			return apiErr.ToError()
 		}
 		metricDetailsDTO.LastReceived = lastReceived
 		return nil
 	})
 
 	g.Go(func() error {
-		totalSeries, err := receiver.reader.GetTotalTimeSeriesForMetricName(ctx, metricName)
-		if err != nil {
-			return err
+		totalSeries, apiErr := receiver.reader.GetTotalTimeSeriesForMetricName(ctx, metricName)
+		if apiErr != nil {
+			return apiErr.ToError()
 		}
 		metricDetailsDTO.TimeSeriesTotal = totalSeries
 		return nil
 	})
 
 	g.Go(func() error {
-		activeSeries, err := receiver.reader.GetActiveTimeSeriesForMetricName(ctx, metricName, 120*time.Minute)
-		if err != nil {
-			return err
+		activeSeries, apiErr := receiver.reader.GetActiveTimeSeriesForMetricName(ctx, metricName, 120*time.Minute)
+		if apiErr != nil {
+			return apiErr.ToError()
 		}
 		metricDetailsDTO.TimeSeriesActive = activeSeries
 		return nil
 	})
 
 	g.Go(func() error {
-		attributes, err := receiver.reader.GetAttributesForMetricName(ctx, metricName, nil, nil, nil)
-		if err != nil {
-			return err
+		attributes, apiErr := receiver.reader.GetAttributesForMetricName(ctx, metricName, nil, nil, nil)
+		if apiErr != nil {
+			return apiErr.ToError()
 		}
 		if attributes != nil {
 			metricDetailsDTO.Attributes = *attributes
@@ -173,14 +173,14 @@ func (receiver *SummaryService) GetMetricsSummary(ctx context.Context, orgID val
 		if data != nil {
 			jsonData, err := json.Marshal(data)
 			if err != nil {
-				zap.L().Error("Error marshalling data:", zap.Error(err))
+				slog.Error("error marshalling data", "error", err)
 				return &model.ApiError{Typ: "MarshallingErr", Err: err}
 			}
 
 			var dashboards map[string][]metrics_explorer.Dashboard
 			err = json.Unmarshal(jsonData, &dashboards)
 			if err != nil {
-				zap.L().Error("Error unmarshalling data:", zap.Error(err))
+				slog.Error("error unmarshalling data", "error", err)
 				return &model.ApiError{Typ: "UnMarshallingErr", Err: err}
 			}
 			if _, ok := dashboards[metricName]; ok {
@@ -264,7 +264,7 @@ func (receiver *SummaryService) GetRelatedMetrics(ctx context.Context, params *m
 	if err != nil {
 		// If we hit a deadline exceeded error, proceed with only name similarity
 		if errors.Is(err.Err, context.DeadlineExceeded) {
-			zap.L().Warn("Attribute similarity calculation timed out, proceeding with name similarity only")
+			slog.Warn("attribute similarity calculation timed out, proceeding with name similarity only")
 			attrSimilarityScores = make(map[string]metrics_explorer.RelatedMetricsScore)
 		} else {
 			return nil, err
@@ -350,12 +350,12 @@ func (receiver *SummaryService) GetRelatedMetrics(ctx context.Context, params *m
 		if names != nil {
 			jsonData, err := json.Marshal(names)
 			if err != nil {
-				zap.L().Error("Error marshalling dashboard data", zap.Error(err))
+				slog.Error("error marshalling dashboard data", "error", err)
 				return &model.ApiError{Typ: "MarshallingErr", Err: err}
 			}
 			err = json.Unmarshal(jsonData, &dashboardsRelatedData)
 			if err != nil {
-				zap.L().Error("Error unmarshalling dashboard data", zap.Error(err))
+				slog.Error("error unmarshalling dashboard data", "error", err)
 				return &model.ApiError{Typ: "UnMarshallingErr", Err: err}
 			}
 		}

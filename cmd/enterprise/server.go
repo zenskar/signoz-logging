@@ -8,8 +8,13 @@ import (
 	"github.com/SigNoz/signoz/cmd"
 	"github.com/SigNoz/signoz/ee/authn/callbackauthn/oidccallbackauthn"
 	"github.com/SigNoz/signoz/ee/authn/callbackauthn/samlcallbackauthn"
+	"github.com/SigNoz/signoz/ee/authz/openfgaauthz"
+	eequerier "github.com/SigNoz/signoz/ee/querier"
+	"github.com/SigNoz/signoz/ee/authz/openfgaschema"
+	"github.com/SigNoz/signoz/ee/gateway/httpgateway"
 	enterpriselicensing "github.com/SigNoz/signoz/ee/licensing"
 	"github.com/SigNoz/signoz/ee/licensing/httplicensing"
+	"github.com/SigNoz/signoz/ee/modules/dashboard/impldashboard"
 	enterpriseapp "github.com/SigNoz/signoz/ee/query-service/app"
 	"github.com/SigNoz/signoz/ee/sqlschema/postgressqlschema"
 	"github.com/SigNoz/signoz/ee/sqlstore/postgressqlstore"
@@ -17,9 +22,15 @@ import (
 	"github.com/SigNoz/signoz/ee/zeus/httpzeus"
 	"github.com/SigNoz/signoz/pkg/analytics"
 	"github.com/SigNoz/signoz/pkg/authn"
+	"github.com/SigNoz/signoz/pkg/authz"
 	"github.com/SigNoz/signoz/pkg/factory"
+	"github.com/SigNoz/signoz/pkg/gateway"
 	"github.com/SigNoz/signoz/pkg/licensing"
+	"github.com/SigNoz/signoz/pkg/modules/dashboard"
+	pkgimpldashboard "github.com/SigNoz/signoz/pkg/modules/dashboard/impldashboard"
 	"github.com/SigNoz/signoz/pkg/modules/organization"
+	"github.com/SigNoz/signoz/pkg/querier"
+	"github.com/SigNoz/signoz/pkg/queryparser"
 	"github.com/SigNoz/signoz/pkg/signoz"
 	"github.com/SigNoz/signoz/pkg/sqlschema"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
@@ -31,14 +42,14 @@ import (
 )
 
 func registerServer(parentCmd *cobra.Command, logger *slog.Logger) {
-	var flags signoz.DeprecatedFlags
+	var configFiles []string
 
 	serverCmd := &cobra.Command{
 		Use:                "server",
 		Short:              "Run the SigNoz server",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		RunE: func(currCmd *cobra.Command, args []string) error {
-			config, err := cmd.NewSigNozConfig(currCmd.Context(), logger, flags)
+			config, err := cmd.NewSigNozConfig(currCmd.Context(), logger, configFiles)
 			if err != nil {
 				return err
 			}
@@ -47,7 +58,7 @@ func registerServer(parentCmd *cobra.Command, logger *slog.Logger) {
 		},
 	}
 
-	flags.RegisterFlags(serverCmd)
+	serverCmd.Flags().StringArrayVar(&configFiles, "config", nil, "path to a YAML configuration file (can be specified multiple times, later files override earlier ones)")
 	parentCmd.AddCommand(serverCmd)
 }
 
@@ -105,7 +116,21 @@ func runServer(ctx context.Context, config signoz.Config, logger *slog.Logger) e
 
 			return authNs, nil
 		},
+		func(ctx context.Context, sqlstore sqlstore.SQLStore, licensing licensing.Licensing, dashboardModule dashboard.Module) factory.ProviderFactory[authz.AuthZ, authz.Config] {
+			return openfgaauthz.NewProviderFactory(sqlstore, openfgaschema.NewSchema().Get(ctx), licensing, dashboardModule)
+		},
+		func(store sqlstore.SQLStore, settings factory.ProviderSettings, analytics analytics.Analytics, orgGetter organization.Getter, queryParser queryparser.QueryParser, querier querier.Querier, licensing licensing.Licensing) dashboard.Module {
+			return impldashboard.NewModule(pkgimpldashboard.NewStore(store), settings, analytics, orgGetter, queryParser, querier, licensing)
+		},
+		func(licensing licensing.Licensing) factory.ProviderFactory[gateway.Gateway, gateway.Config] {
+			return httpgateway.NewProviderFactory(licensing)
+		},
+		func(ps factory.ProviderSettings, q querier.Querier, a analytics.Analytics) querier.Handler {
+			communityHandler := querier.NewHandler(ps, q, a)
+			return eequerier.NewHandler(ps, q, communityHandler)
+		},
 	)
+
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to create signoz", "error", err)
 		return err

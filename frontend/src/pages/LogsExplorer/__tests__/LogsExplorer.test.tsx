@@ -1,4 +1,6 @@
-/* eslint-disable sonarjs/no-duplicate-string */
+import { MemoryRouter } from 'react-router-dom-v5-compat';
+// https://virtuoso.dev/mocking-in-tests/
+import { VirtuosoMockContext } from 'react-virtuoso';
 import {
 	initialQueriesMap,
 	initialQueryBuilderFormValues,
@@ -11,9 +13,6 @@ import { server } from 'mocks-server/server';
 import { rest } from 'msw';
 import { PreferenceContextProvider } from 'providers/preferences/context/PreferenceContextProvider';
 import { QueryBuilderContext } from 'providers/QueryBuilder';
-import { MemoryRouter } from 'react-router-dom-v5-compat';
-// https://virtuoso.dev/mocking-in-tests/
-import { VirtuosoMockContext } from 'react-virtuoso';
 import { fireEvent, render, waitFor } from 'tests/test-utils';
 import { Query } from 'types/api/queryBuilder/queryBuilderData';
 
@@ -32,8 +31,8 @@ jest.mock('react-router-dom', () => ({
 jest.mock(
 	'container/TimeSeriesView/TimeSeriesView',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
-		function () {
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+		function TimeSeriesView() {
 			return <div>Time Series Chart</div>;
 		},
 );
@@ -42,8 +41,8 @@ const frequencyChartContent = 'Frequency chart content';
 jest.mock(
 	'container/LogsExplorerChart',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
-		function () {
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+		function LogsExplorerChart() {
 			return <div>{frequencyChartContent}</div>;
 		},
 );
@@ -68,7 +67,7 @@ jest.mock('providers/preferences/sync/usePreferenceSync', () => ({
 		preferences: {
 			columns: [],
 			formatting: {
-				maxLines: 2,
+				maxLines: 1,
 				format: 'table',
 				fontSize: 'small',
 				version: 1,

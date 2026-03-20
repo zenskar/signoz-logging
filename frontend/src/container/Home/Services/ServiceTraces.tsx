@@ -1,3 +1,7 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 import { Button, Select, Skeleton, Table } from 'antd';
 import logEvent from 'api/common/logEvent';
 import ROUTES from 'constants/routes';
@@ -7,9 +11,6 @@ import history from 'lib/history';
 import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import Card from 'periscope/components/Card/Card';
 import { useAppContext } from 'providers/App/App';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
 import { AppState } from 'store/reducers';
 import { LicensePlatform } from 'types/api/licensesV3/getActive';
 import { ServicesList } from 'types/api/metrics/getService';

@@ -1,10 +1,9 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-/* eslint-disable react/jsx-props-no-spreading */
+// eslint-disable-next-line no-restricted-imports
+import { Provider } from 'react-redux';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { InspectMetricsSeries } from 'api/metricsExplorer/getInspectMetricsDetails';
 import { MetricType } from 'api/metricsExplorer/getMetricsList';
-import { Provider } from 'react-redux';
 import store from 'store';
 import { AlignedData } from 'uplot';
 
@@ -54,7 +53,7 @@ describe('GraphView', () => {
 		setExpandedViewOptions: jest.fn(),
 		resetInspection: jest.fn(),
 		showExpandedView: false,
-		metricInspectionOptions: {
+		metricInspectionAppliedOptions: {
 			timeAggregationInterval: 60,
 			spaceAggregationOption: SpaceAggregationOptions.MAX_BY,
 			spaceAggregationLabels: ['host_name'],

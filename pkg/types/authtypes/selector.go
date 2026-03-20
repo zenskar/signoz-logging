@@ -1,11 +1,14 @@
 package authtypes
 
 import (
-	"context"
+	"encoding"
 	"encoding/json"
+	"net/http"
 	"regexp"
 
 	"github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/valuer"
 )
 
 var (
@@ -13,20 +16,29 @@ var (
 )
 
 var (
-	_ json.Marshaler   = new(Selector)
-	_ json.Unmarshaler = new(Selector)
+	_ json.Marshaler           = new(Selector)
+	_ json.Unmarshaler         = new(Selector)
+	_ encoding.TextMarshaler   = new(Selector)
+	_ encoding.TextUnmarshaler = new(Selector)
 )
 
 var (
-	typeUserSelectorRegex         = regexp.MustCompile(`^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
-	typeRoleSelectorRegex         = regexp.MustCompile(`^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
-	typeOrganizationSelectorRegex = regexp.MustCompile(`^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
-	typeMetaResourceSelectorRegex = regexp.MustCompile(`^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
-	// metaresources selectors are used to select either all or none
+	typeUserSelectorRegex           = regexp.MustCompile(`^(^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$|\*)$`)
+	typeServiceAccountSelectorRegex = regexp.MustCompile(`^(^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$|\*)$`)
+	typeRoleSelectorRegex           = regexp.MustCompile(`^([a-z-]{1,50}|\*)$`)
+	typeAnonymousSelectorRegex      = regexp.MustCompile(`^\*$`)
+	typeOrganizationSelectorRegex   = regexp.MustCompile(`^(^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$|\*)$`)
+	typeMetaResourceSelectorRegex   = regexp.MustCompile(`^(^[0-9a-f]{8}(?:\-[0-9a-f]{4}){3}-[0-9a-f]{12}$|\*)$`)
+	// metaresources selectors are used to select either all or none until we introduce some hierarchy here.
 	typeMetaResourcesSelectorRegex = regexp.MustCompile(`^\*$`)
 )
 
-type SelectorCallbackFn func(context.Context, Claims) ([]Selector, error)
+var (
+	WildCardSelectorString = "*"
+)
+
+type SelectorCallbackWithClaimsFn func(*http.Request, Claims) ([]Selector, error)
+type SelectorCallbackWithoutClaimsFn func(*http.Request, []*types.Organization) ([]Selector, valuer.UUID, error)
 
 type Selector struct {
 	val string
@@ -71,6 +83,15 @@ func (typed *Selector) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (selector Selector) MarshalText() ([]byte, error) {
+	return []byte(selector.val), nil
+}
+
+func (selector *Selector) UnmarshalText(text []byte) error {
+	*selector = Selector{val: string(text)}
+	return nil
+}
+
 func IsValidSelector(typed Type, selector string) error {
 	switch typed {
 	case TypeUser:
@@ -78,9 +99,19 @@ func IsValidSelector(typed Type, selector string) error {
 			return errors.Newf(errors.TypeInvalidInput, ErrCodeAuthZInvalidSelector, "selector must conform to regex %s", typeUserSelectorRegex.String())
 		}
 		return nil
+	case TypeServiceAccount:
+		if !typeServiceAccountSelectorRegex.MatchString(selector) {
+			return errors.Newf(errors.TypeInvalidInput, ErrCodeAuthZInvalidSelector, "selector must conform to regex %s", typeServiceAccountSelectorRegex.String())
+		}
+		return nil
 	case TypeRole:
 		if !typeRoleSelectorRegex.MatchString(selector) {
 			return errors.Newf(errors.TypeInvalidInput, ErrCodeAuthZInvalidSelector, "selector must conform to regex %s", typeRoleSelectorRegex.String())
+		}
+		return nil
+	case TypeAnonymous:
+		if !typeAnonymousSelectorRegex.MatchString(selector) {
+			return errors.Newf(errors.TypeInvalidInput, ErrCodeAuthZInvalidSelector, "selector must conform to regex %s", typeAnonymousSelectorRegex.String())
 		}
 		return nil
 	case TypeOrganization:

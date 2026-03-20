@@ -15,17 +15,21 @@ var (
 )
 
 var (
-	TypeUser          = Type{valuer.NewString("user")}
-	TypeRole          = Type{valuer.NewString("role")}
-	TypeOrganization  = Type{valuer.NewString("organization")}
-	TypeMetaResource  = Type{valuer.NewString("metaresource")}
-	TypeMetaResources = Type{valuer.NewString("metaresources")}
+	TypeUser           = Type{valuer.NewString("user")}
+	TypeServiceAccount = Type{valuer.NewString("serviceaccount")}
+	TypeAnonymous      = Type{valuer.NewString("anonymous")}
+	TypeRole           = Type{valuer.NewString("role")}
+	TypeOrganization   = Type{valuer.NewString("organization")}
+	TypeMetaResource   = Type{valuer.NewString("metaresource")}
+	TypeMetaResources  = Type{valuer.NewString("metaresources")}
 )
 
 var (
-	TypeableUser         = &typeableUser{}
-	TypeableRole         = &typeableRole{}
-	TypeableOrganization = &typeableOrganization{}
+	TypeableUser           = &typeableUser{}
+	TypeableServiceAccount = &typeableServiceAccount{}
+	TypeableAnonymous      = &typeableAnonymous{}
+	TypeableRole           = &typeableRole{}
+	TypeableOrganization   = &typeableOrganization{}
 )
 
 type Typeable interface {
@@ -33,6 +37,7 @@ type Typeable interface {
 	Name() Name
 	Prefix(orgId valuer.UUID) string
 	Tuples(subject string, relation Relation, selector []Selector, orgID valuer.UUID) ([]*openfgav1.TupleKey, error)
+	Scope(relation Relation) string
 }
 
 type Type struct{ valuer.String }
@@ -50,6 +55,8 @@ func NewType(input string) (Type, error) {
 	switch input {
 	case "user":
 		return TypeUser, nil
+	case "serviceaccount":
+		return TypeServiceAccount, nil
 	case "role":
 		return TypeRole, nil
 	case "organization":
@@ -85,6 +92,8 @@ func NewTypeableFromType(typed Type, name Name) (Typeable, error) {
 		return TypeableRole, nil
 	case TypeUser:
 		return TypeableUser, nil
+	case TypeServiceAccount:
+		return TypeableServiceAccount, nil
 	case TypeOrganization:
 		return TypeableOrganization, nil
 	case TypeMetaResource:

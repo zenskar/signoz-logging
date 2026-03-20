@@ -93,13 +93,15 @@ export const OnboardingV2 = Loadable(
 	() => import(/* webpackChunkName: "Onboarding V2" */ 'pages/OnboardingPageV2'),
 );
 
-export const DashboardPage = Loadable(
+export const DashboardsListPage = Loadable(
 	() =>
-		import(/* webpackChunkName: "DashboardPage" */ 'pages/DashboardsListPage'),
+		import(
+			/* webpackChunkName: "DashboardsListPage" */ 'pages/DashboardsListPage'
+		),
 );
 
-export const NewDashboardPage = Loadable(
-	() => import(/* webpackChunkName: "New DashboardPage" */ 'pages/NewDashboard'),
+export const DashboardPage = Loadable(
+	() => import(/* webpackChunkName: "DashboardPage" */ 'pages/DashboardPage'),
 );
 
 export const DashboardWidget = Loadable(
@@ -163,11 +165,6 @@ export const MySettings = Loadable(
 	() => import(/* webpackChunkName: "All MySettings" */ 'pages/Settings'),
 );
 
-export const CustomDomainSettings = Loadable(
-	() =>
-		import(/* webpackChunkName: "Custom Domain Settings" */ 'pages/Settings'),
-);
-
 export const Logs = Loadable(
 	() => import(/* webpackChunkName: "Logs" */ 'pages/LogsModulePage'),
 );
@@ -190,6 +187,10 @@ export const PipelinePage = Loadable(
 
 export const Login = Loadable(
 	() => import(/* webpackChunkName: "Login" */ 'pages/Login'),
+);
+
+export const ForgotPassword = Loadable(
+	() => import(/* webpackChunkName: "ForgotPassword" */ 'pages/ForgotPassword'),
 );
 
 export const UnAuthorized = Loadable(
@@ -294,4 +295,23 @@ export const MetricsExplorer = Loadable(
 
 export const ApiMonitoring = Loadable(
 	() => import(/* webpackChunkName: "ApiMonitoring" */ 'pages/ApiMonitoring'),
+);
+
+export const PublicDashboardPage = Loadable(
+	() =>
+		import(
+			/* webpackChunkName: "Public Dashboard Page" */ 'pages/PublicDashboard'
+		),
+);
+
+export const AlertTypeSelectionPage = Loadable(
+	() =>
+		import(
+			/* webpackChunkName: "Alert Type Selection Page" */ 'pages/AlertTypeSelection'
+		),
+);
+
+export const MeterExplorerPage = Loadable(
+	() =>
+		import(/* webpackChunkName: "Meter Explorer Page" */ 'pages/MeterExplorer'),
 );

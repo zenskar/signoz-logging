@@ -1,6 +1,10 @@
+import { useMemo } from 'react';
+import { useQueries } from 'react-query';
+// eslint-disable-next-line no-restricted-imports
+import { useSelector } from 'react-redux';
 import { LoadingOutlined } from '@ant-design/icons';
 import { Spin, Table } from 'antd';
-import { ColumnType } from 'antd/lib/table';
+import type { ColumnType } from 'antd/lib/table';
 import logEvent from 'api/common/logEvent';
 import { ENTITY_VERSION_V4 } from 'constants/app';
 import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
@@ -13,9 +17,6 @@ import {
 } from 'container/ApiMonitoring/utils';
 import LoadingContainer from 'container/InfraMonitoringK8s/LoadingContainer';
 import { GetMetricQueryRange } from 'lib/dashboard/getQueryResults';
-import { useMemo } from 'react';
-import { useQueries } from 'react-query';
-import { useSelector } from 'react-redux';
 import { AppState } from 'store/reducers';
 import { SuccessResponse } from 'types/api';
 import { MetricRangePayloadProps } from 'types/api/metrics/getQueryRange';
@@ -42,7 +43,9 @@ function ExpandedRow({
 		(state) => state.globalTime,
 	);
 	const groupedByRowDataQueryPayload = useMemo(() => {
-		if (!selectedRowData) return null;
+		if (!selectedRowData) {
+			return null;
+		}
 
 		const filters = createFiltersForSelectedRowData(selectedRowData);
 

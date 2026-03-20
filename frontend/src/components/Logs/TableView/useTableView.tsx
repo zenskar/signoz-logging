@@ -1,14 +1,11 @@
-import './useTableView.styles.scss';
-
-import { Typography } from 'antd';
-import { ColumnsType } from 'antd/es/table';
+import { useMemo } from 'react';
+import { TableColumnsType as ColumnsType, Typography } from 'antd';
 import cx from 'classnames';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import { getSanitizedLogBody } from 'container/LogDetailedView/utils';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import { FlatLogData } from 'lib/logs/flatLogData';
 import { useTimezone } from 'providers/Timezone';
-import { useMemo } from 'react';
 
 import LogStateIndicator from '../LogStateIndicator/LogStateIndicator';
 import {
@@ -22,6 +19,8 @@ import {
 	UseTableViewProps,
 	UseTableViewResult,
 } from './types';
+
+import './useTableView.styles.scss';
 
 export const useTableView = (props: UseTableViewProps): UseTableViewResult => {
 	const {
@@ -84,7 +83,6 @@ export const useTableView = (props: UseTableViewProps): UseTableViewResult => {
 				// We do not need any title and data index for the log state indicator
 				title: '',
 				dataIndex: '',
-				// eslint-disable-next-line sonarjs/no-duplicate-string
 				key: 'state-indicator',
 				accessorKey: 'state-indicator',
 				id: 'state-indicator',

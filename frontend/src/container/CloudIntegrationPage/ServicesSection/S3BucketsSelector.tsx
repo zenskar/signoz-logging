@@ -1,7 +1,7 @@
+import { useCallback, useMemo, useState } from 'react';
 import { Form, Select, Skeleton, Typography } from 'antd';
 import { useAwsAccounts } from 'hooks/integration/aws/useAwsAccounts';
 import useUrlQuery from 'hooks/useUrlQuery';
-import { useCallback, useMemo, useState } from 'react';
 
 const { Title } = Typography;
 
@@ -33,7 +33,9 @@ function S3BucketsSelector({
 
 	// Get all regions to display (union of account regions and initialBucketsByRegion regions)
 	const allRegions = useMemo(() => {
-		if (!activeAccount) return [];
+		if (!activeAccount) {
+			return [];
+		}
 
 		// Get unique regions from both sources
 		const initialRegions = Object.keys(initialBucketsByRegion);
@@ -88,7 +90,6 @@ function S3BucketsSelector({
 					<Form.Item
 						key={region}
 						label={region}
-						// eslint-disable-next-line react/jsx-props-no-spreading
 						{...(disabled && {
 							help:
 								'Region disabled in account settings; S3 buckets here will not be synced.',

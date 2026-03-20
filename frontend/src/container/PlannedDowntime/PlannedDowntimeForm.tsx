@@ -1,8 +1,4 @@
-/* eslint-disable no-nested-ternary */
-/* eslint-disable sonarjs/no-identical-functions */
-import './PlannedDowntime.styles.scss';
-import 'dayjs/locale/en';
-
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckOutlined } from '@ant-design/icons';
 import {
 	Button,
@@ -13,11 +9,11 @@ import {
 	Input,
 	Modal,
 	Select,
+	SelectProps,
 	Spin,
 	Typography,
 } from 'antd';
-import { DefaultOptionType } from 'antd/es/select';
-import { SelectProps } from 'antd/lib';
+import type { DefaultOptionType } from 'antd/es/select';
 import {
 	DowntimeSchedules,
 	Recurrence,
@@ -33,9 +29,12 @@ import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import { useNotifications } from 'hooks/useNotifications';
 import { defaultTo, isEmpty } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ALL_TIME_ZONES } from 'utils/timeZoneUtil';
 
+import 'dayjs/locale/en';
+
+import { SOMETHING_WENT_WRONG } from '../../constants/api';
+import { showErrorNotification } from '../../utils/error';
 import { AlertRuleTags } from './PlannedDowntimeList';
 import {
 	createEditDowntimeSchedule,
@@ -48,6 +47,8 @@ import {
 	recurrenceOptionWithSubmenu,
 	recurrenceWeeklyOptions,
 } from './PlannedDowntimeutils';
+
+import './PlannedDowntime.styles.scss';
 
 dayjs.locale('en');
 dayjs.extend(utc);
@@ -176,14 +177,14 @@ export function PlannedDowntimeForm(
 				} else {
 					notifications.error({
 						message: 'Error',
-						description: response.error || 'unexpected_error',
+						description:
+							typeof response.error === 'string'
+								? response.error
+								: response.error?.message || SOMETHING_WENT_WRONG,
 					});
 				}
-			} catch (e) {
-				notifications.error({
-					message: 'Error',
-					description: 'unexpected_error',
-				});
+			} catch (e: unknown) {
+				showErrorNotification(notifications, e as Error);
 			}
 			setSaveLoading(false);
 		},
@@ -254,10 +255,7 @@ export function PlannedDowntimeForm(
 		setSelectedTags(options);
 	};
 
-	const noTagRenderer: SelectProps['tagRender'] = () => (
-		// eslint-disable-next-line react/jsx-no-useless-fragment
-		<></>
-	);
+	const noTagRenderer: SelectProps['tagRender'] = () => <></>;
 
 	const handleClose = (removedTag: DefaultOptionType['value']): void => {
 		if (!removedTag) {

@@ -1,6 +1,13 @@
 /* eslint-disable sonarjs/cognitive-complexity */
-import './QueryBuilderSearchV2.styles.scss';
-
+import {
+	KeyboardEvent,
+	ReactElement,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
 import { Select, Spin, Tag, Tooltip } from 'antd';
 import cx from 'classnames';
 import {
@@ -12,6 +19,7 @@ import {
 } from 'constants/queryBuilder';
 import { DEBOUNCE_DELAY } from 'constants/queryBuilderFilterConfig';
 import { LogsExplorerShortcuts } from 'constants/shortcuts/logsExplorerShortcuts';
+import { useDashboardVariablesByType } from 'hooks/dashboard/useDashboardVariablesByType';
 import { useKeyboardHotkeys } from 'hooks/hotkeys/useKeyboardHotkeys';
 import { WhereClauseConfig } from 'hooks/queryBuilder/useAutoComplete';
 import { useGetAggregateKeys } from 'hooks/queryBuilder/useGetAggregateKeys';
@@ -31,18 +39,7 @@ import {
 	unset,
 } from 'lodash-es';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { useDashboard } from 'providers/Dashboard/Dashboard';
 import type { BaseSelectRef } from 'rc-select';
-import {
-	KeyboardEvent,
-	ReactElement,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
-import { IDashboardVariable } from 'types/api/dashboard/getAll';
 import {
 	BaseAutocompleteData,
 	DataTypes,
@@ -70,11 +67,13 @@ import QueryBuilderSearchDropdown from './QueryBuilderSearchDropdown';
 import SpanScopeSelector from './SpanScopeSelector';
 import Suggestions from './Suggestions';
 
+import './QueryBuilderSearchV2.styles.scss';
+
 export interface ITag {
 	id?: string;
 	key: BaseAutocompleteData;
 	op: string;
-	value: string[] | string | number | boolean;
+	value: (string | number | boolean)[] | string | number | boolean;
 }
 
 interface CustomTagProps {
@@ -101,6 +100,17 @@ interface QueryBuilderSearchV2Props {
 	// Determines whether to call onChange when a tag is closed
 	triggerOnChangeOnClose?: boolean;
 	skipQueryBuilderRedirect?: boolean;
+	/** Additional props passed through to the underlying Ant Design Select (e.g. listHeight, listItemHeight) */
+	selectProps?: Partial<
+		Pick<
+			React.ComponentProps<typeof Select>,
+			| 'listHeight'
+			| 'listItemHeight'
+			| 'popupClassName'
+			| 'dropdownMatchSelectWidth'
+			| 'popupMatchSelectWidth'
+		>
+	>;
 }
 
 export interface Option {
@@ -143,6 +153,7 @@ function QueryBuilderSearchV2(
 		hideSpanScopeSelector,
 		triggerOnChangeOnClose,
 		skipQueryBuilderRedirect,
+		selectProps,
 	} = props;
 
 	const { registerShortcut, deregisterShortcut } = useKeyboardHotkeys();
@@ -248,14 +259,9 @@ function QueryBuilderSearchV2(
 		return false;
 	}, [currentState, query.aggregateAttribute?.dataType, query.dataSource]);
 
-	const { selectedDashboard } = useDashboard();
-
-	const dynamicVariables = useMemo(
-		() =>
-			Object.values(selectedDashboard?.data?.variables || {})?.filter(
-				(variable: IDashboardVariable) => variable.type === 'DYNAMIC',
-			),
-		[selectedDashboard],
+	const dashboardDynamicVariables = useDashboardVariablesByType(
+		'DYNAMIC',
+		'values',
 	);
 
 	const { data, isFetching } = useGetAggregateKeys(
@@ -300,7 +306,8 @@ function QueryBuilderSearchV2(
 				currentFilterItem?.key?.dataType ?? DataTypes.EMPTY,
 			tagType: currentFilterItem?.key?.type ?? '',
 			searchText: isArray(currentFilterItem?.value)
-				? currentFilterItem?.value?.[currentFilterItem.value.length - 1] || ''
+				? String(currentFilterItem?.value?.[currentFilterItem.value.length - 1]) ||
+				  ''
 				: currentFilterItem?.value?.toString() || '',
 		},
 		{
@@ -333,7 +340,6 @@ function QueryBuilderSearchV2(
 								key: 'body',
 								dataType: DataTypes.String,
 								type: '',
-								// eslint-disable-next-line sonarjs/no-duplicate-string
 								id: 'body--string----true',
 							},
 							op: OPERATORS.CONTAINS,
@@ -792,9 +798,12 @@ function QueryBuilderSearchV2(
 			const values: string[] = [];
 			const { tagValue } = getTagToken(searchValue);
 			if (isArray(tagValue)) {
-				if (!isEmpty(tagValue[tagValue.length - 1]))
+				if (!isEmpty(tagValue[tagValue.length - 1])) {
 					values.push(tagValue[tagValue.length - 1]);
-			} else if (!isEmpty(tagValue)) values.push(tagValue);
+				}
+			} else if (!isEmpty(tagValue)) {
+				values.push(tagValue);
+			}
 
 			if (attributeValues?.payload) {
 				const dataType = currentFilterItem?.key?.dataType || DataTypes.String;
@@ -802,7 +811,7 @@ function QueryBuilderSearchV2(
 				values.push(...(attributeValues?.payload?.[key] || []));
 
 				// here we want to suggest the variable name matching with the key here, we will go over the dynamic variables for the keys
-				const variableName = dynamicVariables?.find(
+				const variableName = dashboardDynamicVariables?.find(
 					(variable) =>
 						variable?.dynamicVariablesAttribute === currentFilterItem?.key?.key,
 				)?.name;
@@ -833,7 +842,7 @@ function QueryBuilderSearchV2(
 		suggestionsData?.payload?.attributes,
 		operatorConfigKey,
 		currentFilterItem?.key?.key,
-		dynamicVariables,
+		dashboardDynamicVariables,
 	]);
 
 	// keep the query in sync with the selected tags in logs explorer page
@@ -959,7 +968,9 @@ function QueryBuilderSearchV2(
 							disabled={isDisabled}
 							$isEnabled={!!searchValue}
 							onClick={(): void => {
-								if (!isDisabled) tagEditHandler(value);
+								if (!isDisabled) {
+									tagEditHandler(value);
+								}
 							}}
 						>
 							{chipValue}
@@ -973,10 +984,10 @@ function QueryBuilderSearchV2(
 	return (
 		<div className="query-builder-search-v2">
 			<Select
+				{...selectProps}
+				data-testid={'qb-search-select'}
 				ref={selectRef}
-				// eslint-disable-next-line react/jsx-props-no-spreading
 				{...(hasPopupContainer ? { getPopupContainer: popupContainer } : {})}
-				// eslint-disable-next-line react/jsx-props-no-spreading
 				{...(maxTagCount ? { maxTagCount } : {})}
 				key={queryTags.join('.')}
 				virtual={false}
@@ -988,7 +999,6 @@ function QueryBuilderSearchV2(
 				autoFocus={isOpen}
 				open={isOpen}
 				suffixIcon={
-					// eslint-disable-next-line no-nested-ternary
 					!isUndefined(suffixIcon) ? (
 						suffixIcon
 					) : isOpen ? (
@@ -1018,7 +1028,6 @@ function QueryBuilderSearchV2(
 				notFoundContent={loading ? <Spin size="small" /> : null}
 				showAction={['focus']}
 				onBlur={handleOnBlur}
-				// eslint-disable-next-line react/no-unstable-nested-components
 				dropdownRender={(menu): ReactElement => (
 					<QueryBuilderSearchDropdown
 						menu={menu}
@@ -1081,6 +1090,7 @@ QueryBuilderSearchV2.defaultProps = {
 	hideSpanScopeSelector: true,
 	triggerOnChangeOnClose: false,
 	skipQueryBuilderRedirect: false,
+	selectProps: undefined,
 };
 
 export default QueryBuilderSearchV2;

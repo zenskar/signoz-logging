@@ -1,8 +1,3 @@
-import { Form } from 'antd';
-import { FormInstance } from 'antd/lib';
-import { CloudAccount } from 'container/CloudIntegrationPage/ServicesSection/types';
-import { useUpdateAccountConfig } from 'hooks/integration/aws/useUpdateAccountConfig';
-import { isEqual } from 'lodash-es';
 import {
 	Dispatch,
 	SetStateAction,
@@ -11,6 +6,10 @@ import {
 	useMemo,
 	useState,
 } from 'react';
+import { Form, FormInstance } from 'antd';
+import { CloudAccount } from 'container/CloudIntegrationPage/ServicesSection/types';
+import { useUpdateAccountConfig } from 'hooks/integration/aws/useUpdateAccountConfig';
+import { isEqual } from 'lodash-es';
 import { AccountConfigPayload } from 'types/api/integrations/aws';
 import { regions } from 'utils/regions';
 
@@ -41,7 +40,9 @@ const allRegions = (): string[] =>
 	regions.flatMap((r) => r.subRegions.map((sr) => sr.name));
 
 const getRegionPreviewText = (regions: string[] | undefined): string[] => {
-	if (!regions) return [];
+	if (!regions) {
+		return [];
+	}
 	if (regions.includes('all')) {
 		return allRegions();
 	}

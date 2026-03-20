@@ -1,5 +1,4 @@
-import './FunnelConfiguration.styles.scss';
-
+import { memo, useState } from 'react';
 import { Button, Divider, Tooltip } from 'antd';
 import cx from 'classnames';
 import OverlayScrollbar from 'components/OverlayScrollbar/OverlayScrollbar';
@@ -9,7 +8,6 @@ import FunnelItemPopover from 'pages/TracesFunnels/components/FunnelsList/Funnel
 import { useFunnelContext } from 'pages/TracesFunnels/FunnelContext';
 import CopyToClipboard from 'periscope/components/CopyToClipboard';
 import { useAppContext } from 'providers/App/App';
-import { memo, useState } from 'react';
 import { Span } from 'types/api/trace/getTraceV2';
 import { FunnelData } from 'types/api/traceFunnels';
 
@@ -18,6 +16,8 @@ import FunnelBreadcrumb from './FunnelBreadcrumb';
 import StepsContent from './StepsContent';
 import StepsFooter from './StepsFooter';
 import StepsHeader from './StepsHeader';
+
+import './FunnelConfiguration.styles.scss';
 
 interface FunnelConfigurationProps {
 	funnel: FunnelData;
@@ -64,7 +64,6 @@ function FunnelConfiguration({
 					<div className="funnel-configuration__header-right">
 						<Tooltip
 							title={
-								// eslint-disable-next-line no-nested-ternary
 								!hasEditPermission
 									? 'You need editor or admin access to edit funnel description'
 									: funnel?.description

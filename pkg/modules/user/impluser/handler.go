@@ -13,6 +13,7 @@ import (
 	root "github.com/SigNoz/signoz/pkg/modules/user"
 	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
+	"github.com/SigNoz/signoz/pkg/types/integrationtypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
 	"github.com/gorilla/mux"
 )
@@ -24,25 +25,6 @@ type handler struct {
 
 func NewHandler(module root.Module, getter root.Getter) root.Handler {
 	return &handler{module: module, getter: getter}
-}
-
-func (h *handler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	req := new(types.PostableAcceptInvite)
-	if err := binding.JSON.BindBody(r.Body, req); err != nil {
-		render.Error(w, err)
-		return
-	}
-
-	user, err := h.module.AcceptInvite(ctx, req.InviteToken, req.Password)
-	if err != nil {
-		render.Error(w, err)
-		return
-	}
-
-	render.Success(w, http.StatusCreated, user)
 }
 
 func (h *handler) CreateInvite(rw http.ResponseWriter, r *http.Request) {
@@ -101,64 +83,6 @@ func (h *handler) CreateBulkInvite(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Success(rw, http.StatusCreated, nil)
-}
-
-func (h *handler) GetInvite(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	token := mux.Vars(r)["token"]
-	invite, err := h.module.GetInviteByToken(ctx, token)
-	if err != nil {
-		render.Error(w, err)
-		return
-	}
-
-	render.Success(w, http.StatusOK, invite)
-}
-
-func (h *handler) ListInvite(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	claims, err := authtypes.ClaimsFromContext(ctx)
-	if err != nil {
-		render.Error(w, err)
-		return
-	}
-
-	invites, err := h.module.ListInvite(ctx, claims.OrgID)
-	if err != nil {
-		render.Error(w, err)
-		return
-	}
-
-	render.Success(w, http.StatusOK, invites)
-}
-
-func (h *handler) DeleteInvite(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	id := mux.Vars(r)["id"]
-
-	claims, err := authtypes.ClaimsFromContext(ctx)
-	if err != nil {
-		render.Error(w, err)
-		return
-	}
-
-	uuid, err := valuer.NewUUID(id)
-	if err != nil {
-		render.Error(w, errors.Newf(errors.TypeInvalidInput, errors.CodeInvalidInput, "orgId is invalid"))
-		return
-	}
-
-	if err := h.module.DeleteInvite(ctx, claims.OrgID, uuid); err != nil {
-		render.Error(w, err)
-		return
-	}
-	render.Success(w, http.StatusNoContent, nil)
 }
 
 func (h *handler) GetUser(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +256,25 @@ func (handler *handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	render.Success(w, http.StatusNoContent, nil)
 }
 
+func (h *handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	req := new(types.PostableForgotPassword)
+	if err := binding.JSON.BindBody(r.Body, req); err != nil {
+		render.Error(w, err)
+		return
+	}
+
+	err := h.module.ForgotPassword(ctx, req.OrgID, req.Email, req.FrontendBaseURL)
+	if err != nil {
+		render.Error(w, err)
+		return
+	}
+
+	render.Success(w, http.StatusNoContent, nil)
+}
+
 func (h *handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -443,7 +386,7 @@ func (h *handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if slices.Contains(types.AllIntegrationUserEmails, types.IntegrationUserEmail(createdByUser.Email.String())) {
+	if slices.Contains(integrationtypes.AllIntegrationUserEmails, integrationtypes.IntegrationUserEmail(createdByUser.Email.String())) {
 		render.Error(w, errors.Newf(errors.TypeInvalidInput, errors.CodeInvalidInput, "API Keys for integration users cannot be revoked"))
 		return
 	}
@@ -488,7 +431,7 @@ func (h *handler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if slices.Contains(types.AllIntegrationUserEmails, types.IntegrationUserEmail(createdByUser.Email.String())) {
+	if slices.Contains(integrationtypes.AllIntegrationUserEmails, integrationtypes.IntegrationUserEmail(createdByUser.Email.String())) {
 		render.Error(w, errors.Newf(errors.TypeInvalidInput, errors.CodeInvalidInput, "API Keys for integration users cannot be revoked"))
 		return
 	}

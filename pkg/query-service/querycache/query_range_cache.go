@@ -10,10 +10,11 @@ import (
 	"github.com/SigNoz/signoz/pkg/cache"
 	"github.com/SigNoz/signoz/pkg/errors"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
+	"log/slog"
+
 	"github.com/SigNoz/signoz/pkg/query-service/utils/labels"
 	"github.com/SigNoz/signoz/pkg/types/cachetypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
-	"go.uber.org/zap"
 )
 
 type queryCache struct {
@@ -87,7 +88,7 @@ func (q *queryCache) FindMissingTimeRangesV2(orgID valuer.UUID, start, end int64
 		return cachedSeriesDataList[i].Start < cachedSeriesDataList[j].Start
 	})
 
-	zap.L().Info("Number of non-overlapping cached series data", zap.Int("count", len(cachedSeriesDataList)))
+	slog.Info("number of non-overlapping cached series data", "count", len(cachedSeriesDataList))
 
 	// Exclude the flux interval from the cached end time
 
@@ -180,7 +181,7 @@ func (q *queryCache) FindMissingTimeRanges(orgID valuer.UUID, start, end, step i
 		return cachedSeriesDataList[i].Start < cachedSeriesDataList[j].Start
 	})
 
-	zap.L().Info("Number of non-overlapping cached series data", zap.Int("count", len(cachedSeriesDataList)))
+	slog.Info("number of non-overlapping cached series data", "count", len(cachedSeriesDataList))
 
 	// Exclude the flux interval from the cached end time
 
@@ -236,7 +237,7 @@ func (q *queryCache) FindMissingTimeRanges(orgID valuer.UUID, start, end, step i
 
 func (q *queryCache) getCachedSeriesData(orgID valuer.UUID, cacheKey string) []*CachedSeriesData {
 	cacheableSeriesData := new(CacheableSeriesData)
-	err := q.cache.Get(context.TODO(), orgID, cacheKey, cacheableSeriesData, true)
+	err := q.cache.Get(context.TODO(), orgID, cacheKey, cacheableSeriesData)
 	if err != nil && !errors.Ast(err, errors.TypeNotFound) {
 		return nil
 	}
@@ -291,7 +292,7 @@ func (q *queryCache) storeMergedData(orgID valuer.UUID, cacheKey string, mergedD
 	cacheableSeriesData := CacheableSeriesData{Series: mergedData}
 	err := q.cache.Set(context.TODO(), orgID, cacheKey, &cacheableSeriesData, 0)
 	if err != nil {
-		zap.L().Error("error storing merged data", zap.Error(err))
+		slog.Error("error storing merged data", "error", err)
 	}
 }
 
@@ -301,7 +302,7 @@ func (q *queryCache) MergeWithCachedSeriesDataV2(orgID valuer.UUID, cacheKey str
 	}
 
 	cacheableSeriesData := new(CacheableSeriesData)
-	err := q.cache.Get(context.TODO(), orgID, cacheKey, cacheableSeriesData, true)
+	err := q.cache.Get(context.TODO(), orgID, cacheKey, cacheableSeriesData)
 	if err != nil && !errors.Ast(err, errors.TypeNotFound) {
 		return nil
 	}

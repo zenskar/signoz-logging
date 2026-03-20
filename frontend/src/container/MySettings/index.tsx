@@ -1,5 +1,5 @@
-import './MySettings.styles.scss';
-
+import { useEffect, useState } from 'react';
+import { useMutation } from 'react-query';
 import { Radio, RadioChangeEvent, Switch, Tag } from 'antd';
 import setLocalStorageApi from 'api/browser/localstorage/set';
 import logEvent from 'api/common/logEvent';
@@ -10,13 +10,14 @@ import useThemeMode, { useIsDarkMode, useSystemTheme } from 'hooks/useDarkMode';
 import { useNotifications } from 'hooks/useNotifications';
 import { MonitorCog, Moon, Sun } from 'lucide-react';
 import { useAppContext } from 'providers/App/App';
-import { useEffect, useState } from 'react';
-import { useMutation } from 'react-query';
 import { UserPreference } from 'types/api/preferences/preference';
 import { showErrorNotification } from 'utils/error';
 
+import LicenseSection from './LicenseSection';
 import TimezoneAdaptation from './TimezoneAdaptation/TimezoneAdaptation';
 import UserInfo from './UserInfo';
+
+import './MySettings.styles.scss';
 
 function MySettings(): JSX.Element {
 	const isDarkMode = useIsDarkMode();
@@ -35,7 +36,6 @@ function MySettings(): JSX.Element {
 				)?.value as boolean,
 			);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [userPreferences]);
 
 	const {
@@ -81,7 +81,9 @@ function MySettings(): JSX.Element {
 	];
 
 	const [theme, setTheme] = useState(() => {
-		if (autoSwitch) return 'auto';
+		if (autoSwitch) {
+			return 'auto';
+		}
 		return isDarkMode ? 'dark' : 'light';
 	});
 
@@ -159,7 +161,7 @@ function MySettings(): JSX.Element {
 		<div className="my-settings-container">
 			<div className="user-info-section">
 				<div className="user-info-section-header">
-					<div className="user-info-section-title">General </div>
+					<div className="user-info-section-title">Account </div>
 
 					<div className="user-info-section-subtitle">
 						Manage your account settings.
@@ -230,6 +232,8 @@ function MySettings(): JSX.Element {
 					</div>
 				</div>
 			</div>
+
+			<LicenseSection />
 		</div>
 	);
 }

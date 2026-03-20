@@ -68,8 +68,12 @@ export function mapPanelTypeToRequestType(panelType: PANEL_TYPES): RequestType {
  * Gets signal type from data source
  */
 function getSignalType(dataSource: string): 'traces' | 'logs' | 'metrics' {
-	if (dataSource === 'traces') return 'traces';
-	if (dataSource === 'logs') return 'logs';
+	if (dataSource === 'traces') {
+		return 'traces';
+	}
+	if (dataSource === 'logs') {
+		return 'logs';
+	}
 	return 'metrics';
 }
 
@@ -304,7 +308,7 @@ export function createAggregation(
  * Converts query builder data to V5 builder queries
  */
 export function convertBuilderQueriesToV5(
-	builderQueries: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+	builderQueries: Record<string, any>,
 	requestType: RequestType,
 	panelType?: PANEL_TYPES,
 ): QueryEnvelope[] {
@@ -463,7 +467,7 @@ export function convertTraceOperatorToV5(
  * Converts PromQL queries to V5 format
  */
 export function convertPromQueriesToV5(
-	promQueries: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+	promQueries: Record<string, any>,
 ): QueryEnvelope[] {
 	return Object.entries(promQueries).map(
 		([queryName, queryData]): QueryEnvelope => ({
@@ -484,7 +488,7 @@ export function convertPromQueriesToV5(
  * Converts ClickHouse queries to V5 format
  */
 export function convertClickHouseQueriesToV5(
-	chQueries: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+	chQueries: Record<string, any>,
 ): QueryEnvelope[] {
 	return Object.entries(chQueries).map(
 		([queryName, queryData]): QueryEnvelope => ({
@@ -504,16 +508,17 @@ export function convertClickHouseQueriesToV5(
  * Helper function to reduce query arrays to objects
  */
 function reduceQueriesToObject(
-	queryArray: any[], // eslint-disable-line @typescript-eslint/no-explicit-any
+	queryArray: any[],
 ): { queries: Record<string, any>; legends: Record<string, string> } {
-	// eslint-disable-line @typescript-eslint/no-explicit-any
 	const legends: Record<string, string> = {};
 	const queries = queryArray.reduce((acc, queryItem) => {
-		if (!queryItem.query) return acc;
+		if (!queryItem.query) {
+			return acc;
+		}
 		acc[queryItem.name] = queryItem;
 		legends[queryItem.name] = queryItem.legend;
 		return acc;
-	}, {} as Record<string, any>); // eslint-disable-line @typescript-eslint/no-explicit-any
+	}, {} as Record<string, any>);
 
 	return { queries, legends };
 }
@@ -583,7 +588,6 @@ export const prepareQueryRangePayloadV5 = ({
 						limit: formulaData.limit ?? undefined,
 						legend: isEmpty(formulaData.legend) ? undefined : formulaData.legend,
 						order: formulaData.orderBy?.map(
-							// eslint-disable-next-line sonarjs/no-identical-functions
 							(order: any): OrderBy => ({
 								key: {
 									name: order.columnName,

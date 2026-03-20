@@ -1,7 +1,5 @@
-/* eslint-disable sonarjs/no-identical-functions */
 /* eslint-disable sonarjs/cognitive-complexity */
-import './QuerySearch.styles.scss';
-
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircleFilled } from '@ant-design/icons';
 import {
 	autocompletion,
@@ -28,19 +26,16 @@ import {
 	QUERY_BUILDER_OPERATORS_BY_KEY_TYPE,
 	queryOperatorSuggestions,
 } from 'constants/antlrQueryConstants';
-import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
+import { useDashboardVariablesByType } from 'hooks/dashboard/useDashboardVariablesByType';
 import { useIsDarkMode } from 'hooks/useDarkMode';
 import useDebounce from 'hooks/useDebounce';
 import { debounce, isNull } from 'lodash-es';
 import { Info, TriangleAlert } from 'lucide-react';
-import { useDashboard } from 'providers/Dashboard/Dashboard';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
 	IDetailedError,
 	IQueryContext,
 	IValidationResult,
 } from 'types/antlrQueryTypes';
-import { IDashboardVariable } from 'types/api/dashboard/getAll';
 import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
 import { QueryKeyDataSuggestionsProps } from 'types/api/querySuggestions/types';
 import { DataSource } from 'types/common/queryBuilder';
@@ -52,6 +47,8 @@ import { validateQuery } from 'utils/queryValidationUtils';
 import { unquote } from 'utils/stringUtils';
 
 import { queryExamples } from './constants';
+
+import './QuerySearch.styles.scss';
 
 const { Panel } = Collapse;
 
@@ -79,6 +76,17 @@ const stopEventsExtension = EditorView.domEventHandlers({
 	},
 });
 
+interface QuerySearchProps {
+	placeholder?: string;
+	onChange: (value: string) => void;
+	queryData: IBuilderQuery;
+	dataSource: DataSource;
+	signalSource?: string;
+	hardcodedAttributeKeys?: QueryKeyDataSuggestionsProps[];
+	onRun?: (query: string) => void;
+	showFilterSuggestionsWithoutMetric?: boolean;
+}
+
 function QuerySearch({
 	placeholder,
 	onChange,
@@ -87,17 +95,9 @@ function QuerySearch({
 	onRun,
 	signalSource,
 	hardcodedAttributeKeys,
-}: {
-	placeholder?: string;
-	onChange: (value: string) => void;
-	queryData: IBuilderQuery;
-	dataSource: DataSource;
-	signalSource?: string;
-	hardcodedAttributeKeys?: QueryKeyDataSuggestionsProps[];
-	onRun?: (query: string) => void;
-}): JSX.Element {
+	showFilterSuggestionsWithoutMetric,
+}: QuerySearchProps): JSX.Element {
 	const isDarkMode = useIsDarkMode();
-	const [query, setQuery] = useState<string>(queryData.filter?.expression || '');
 	const [valueSuggestions, setValueSuggestions] = useState<any[]>([]);
 	const [activeKey, setActiveKey] = useState<string>('');
 	const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -107,10 +107,14 @@ function QuerySearch({
 		message: '',
 		errors: [],
 	});
+	const isProgrammaticChangeRef = useRef(false);
+	const [isEditorReady, setIsEditorReady] = useState(false);
+	const [isFocused, setIsFocused] = useState(false);
+	const editorRef = useRef<EditorView | null>(null);
 
-	const handleQueryValidation = (newQuery: string): void => {
+	const handleQueryValidation = useCallback((newExpression: string): void => {
 		try {
-			const validationResponse = validateQuery(newQuery);
+			const validationResponse = validateQuery(newExpression);
 			setValidation(validationResponse);
 		} catch (error) {
 			setValidation({
@@ -119,29 +123,68 @@ function QuerySearch({
 				errors: [error as IDetailedError],
 			});
 		}
-	};
+	}, []);
 
-	// Track if the query was changed externally (from queryData) vs internally (user input)
-	const [isExternalQueryChange, setIsExternalQueryChange] = useState(false);
-	const [lastExternalQuery, setLastExternalQuery] = useState<string>('');
+	const getCurrentExpression = useCallback(
+		(): string => editorRef.current?.state.doc.toString() || '',
+		[],
+	);
 
-	useEffect(() => {
-		const newQuery = queryData.filter?.expression || '';
-		// Only mark as external change if the query actually changed from external source
-		if (newQuery !== lastExternalQuery) {
-			setQuery(newQuery);
-			setIsExternalQueryChange(true);
-			setLastExternalQuery(newQuery);
-		}
-	}, [queryData.filter?.expression, lastExternalQuery]);
+	const updateEditorValue = useCallback(
+		(value: string, options: { skipOnChange?: boolean } = {}): void => {
+			const view = editorRef.current;
+			if (!view) {
+				return;
+			}
 
-	// Validate query when it changes externally (from queryData)
-	useEffect(() => {
-		if (isExternalQueryChange && query) {
-			handleQueryValidation(query);
-			setIsExternalQueryChange(false);
-		}
-	}, [isExternalQueryChange, query]);
+			const currentValue = view.state.doc.toString();
+			if (currentValue === value) {
+				return;
+			}
+
+			if (options.skipOnChange) {
+				isProgrammaticChangeRef.current = true;
+			}
+
+			view.dispatch({
+				changes: {
+					from: 0,
+					to: currentValue.length,
+					insert: value,
+				},
+				selection: {
+					anchor: value.length,
+				},
+			});
+		},
+		[],
+	);
+
+	const handleEditorCreate = useCallback((view: EditorView): void => {
+		editorRef.current = view;
+		setIsEditorReady(true);
+	}, []);
+
+	useEffect(
+		() => {
+			if (!isEditorReady) {
+				return;
+			}
+
+			const newExpression = queryData.filter?.expression || '';
+			const currentExpression = getCurrentExpression();
+
+			// Do not update codemirror editor if the expression is the same
+			if (newExpression !== currentExpression && !isFocused) {
+				updateEditorValue(newExpression, { skipOnChange: true });
+				if (newExpression) {
+					handleQueryValidation(newExpression);
+				}
+			}
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[isEditorReady, queryData.filter?.expression, isFocused],
+	);
 
 	const [keySuggestions, setKeySuggestions] = useState<
 		QueryKeyDataSuggestionsProps[] | null
@@ -150,7 +193,6 @@ function QuerySearch({
 	const [showExamples] = useState(false);
 
 	const [cursorPos, setCursorPos] = useState({ line: 0, ch: 0 });
-	const [isFocused, setIsFocused] = useState(false);
 
 	const [
 		isFetchingCompleteValuesList,
@@ -159,23 +201,14 @@ function QuerySearch({
 
 	const lastPosRef = useRef<{ line: number; ch: number }>({ line: 0, ch: 0 });
 
-	// Reference to the editor view for programmatic autocompletion
-	const editorRef = useRef<EditorView | null>(null);
 	const lastKeyRef = useRef<string>('');
 	const lastFetchedKeyRef = useRef<string>('');
 	const lastValueRef = useRef<string>('');
 	const isMountedRef = useRef<boolean>(true);
 
-	const { handleRunQuery } = useQueryBuilder();
-
-	const { selectedDashboard } = useDashboard();
-
-	const dynamicVariables = useMemo(
-		() =>
-			Object.values(selectedDashboard?.data?.variables || {})?.filter(
-				(variable: IDashboardVariable) => variable.type === 'DYNAMIC',
-			),
-		[selectedDashboard],
+	const dashboardDynamicVariables = useDashboardVariablesByType(
+		'DYNAMIC',
+		'values',
 	);
 
 	// Add back the generateOptions function and useEffect
@@ -200,7 +233,9 @@ function QuerySearch({
 	const toggleSuggestions = useCallback(
 		(timeout?: number) => {
 			const timeoutId = setTimeout(() => {
-				if (!editorRef.current) return;
+				if (!editorRef.current) {
+					return;
+				}
 				if (isFocused) {
 					startCompletion(editorRef.current);
 				} else {
@@ -217,7 +252,8 @@ function QuerySearch({
 		async (searchText?: string): Promise<void> => {
 			if (
 				dataSource === DataSource.METRICS &&
-				!queryData.aggregateAttribute?.key
+				!queryData.aggregateAttribute?.key &&
+				!showFilterSuggestionsWithoutMetric
 			) {
 				setKeySuggestions([]);
 				return;
@@ -245,7 +281,9 @@ function QuerySearch({
 				options.forEach((opt) => merged.set(opt.label, opt));
 				if (searchText && lastKeyRef.current !== searchText) {
 					(keySuggestions || []).forEach((opt) => {
-						if (!merged.has(opt.label)) merged.set(opt.label, opt);
+						if (!merged.has(opt.label)) {
+							merged.set(opt.label, opt);
+						}
 					});
 				}
 				setKeySuggestions(Array.from(merged.values()));
@@ -264,6 +302,7 @@ function QuerySearch({
 			queryData.aggregateAttribute?.key,
 			signalSource,
 			hardcodedAttributeKeys,
+			showFilterSuggestionsWithoutMetric,
 		],
 	);
 
@@ -310,7 +349,9 @@ function QuerySearch({
 
 	// Helper function to check if operator is for list operations (IN, NOT IN, etc.)
 	const isListOperator = (op: string | undefined): boolean => {
-		if (!op) return false;
+		if (!op) {
+			return false;
+		}
 		return op.toUpperCase() === 'IN' || op.toUpperCase() === 'NOT IN';
 	};
 
@@ -350,7 +391,6 @@ function QuerySearch({
 
 	// Use callback to prevent dependency changes on each render
 	const fetchValueSuggestions = useCallback(
-		// eslint-disable-next-line sonarjs/cognitive-complexity
 		async ({
 			key,
 			searchText,
@@ -364,8 +404,9 @@ function QuerySearch({
 				!key ||
 				(key === activeKey && !isLoadingSuggestions && !fetchingComplete) ||
 				!isMountedRef.current
-			)
+			) {
 				return;
+			}
 
 			// Set loading state and store the key we're fetching for
 			setIsLoadingSuggestions(true);
@@ -502,10 +543,13 @@ function QuerySearch({
 	);
 
 	const handleUpdate = useCallback((viewUpdate: { view: EditorView }): void => {
-		if (!isMountedRef.current) return;
+		if (!isMountedRef.current) {
+			return;
+		}
 
 		if (!editorRef.current) {
 			editorRef.current = viewUpdate.view;
+			setIsEditorReady(true);
 		}
 
 		const selection = viewUpdate.view.state.selection.main;
@@ -537,13 +581,21 @@ function QuerySearch({
 					| 'bracketList'
 					| null = null;
 
-				if (context.isInKey) newContextType = 'key';
-				else if (context.isInOperator) newContextType = 'operator';
-				else if (context.isInValue) newContextType = 'value';
-				else if (context.isInConjunction) newContextType = 'conjunction';
-				else if (context.isInFunction) newContextType = 'function';
-				else if (context.isInParenthesis) newContextType = 'parenthesis';
-				else if (context.isInBracketList) newContextType = 'bracketList';
+				if (context.isInKey) {
+					newContextType = 'key';
+				} else if (context.isInOperator) {
+					newContextType = 'operator';
+				} else if (context.isInValue) {
+					newContextType = 'value';
+				} else if (context.isInConjunction) {
+					newContextType = 'conjunction';
+				} else if (context.isInFunction) {
+					newContextType = 'function';
+				} else if (context.isInParenthesis) {
+					newContextType = 'parenthesis';
+				} else if (context.isInBracketList) {
+					newContextType = 'bracketList';
+				}
 
 				setQueryContext(context);
 
@@ -554,16 +606,17 @@ function QuerySearch({
 	}, []);
 
 	const handleChange = (value: string): void => {
-		setQuery(value);
+		if (isProgrammaticChangeRef.current) {
+			isProgrammaticChangeRef.current = false;
+			return;
+		}
+
 		onChange(value);
-		// Mark as internal change to avoid triggering external validation
-		setIsExternalQueryChange(false);
-		// Update lastExternalQuery to prevent external validation trigger
-		setLastExternalQuery(value);
 	};
 
 	const handleBlur = (): void => {
-		handleQueryValidation(query);
+		const currentExpression = getCurrentExpression();
+		handleQueryValidation(currentExpression);
 		setIsFocused(false);
 	};
 
@@ -582,17 +635,18 @@ function QuerySearch({
 
 	const handleExampleClick = (exampleQuery: string): void => {
 		// If there's an existing query, append the example with AND
-		const newQuery = query ? `${query} AND ${exampleQuery}` : exampleQuery;
-		setQuery(newQuery);
-		// Mark as internal change to avoid triggering external validation
-		setIsExternalQueryChange(false);
-		// Update lastExternalQuery to prevent external validation trigger
-		setLastExternalQuery(newQuery);
+		const currentExpression = getCurrentExpression();
+		const newExpression = currentExpression
+			? `${currentExpression} AND ${exampleQuery}`
+			: exampleQuery;
+		updateEditorValue(newExpression);
 	};
 
 	// Helper function to render a badge for the current context mode
 	const renderContextBadge = (): JSX.Element => {
-		if (!editingMode) return <Tag>Unknown</Tag>;
+		if (!editingMode) {
+			return <Tag>Unknown</Tag>;
+		}
 
 		switch (editingMode) {
 			case 'key':
@@ -615,15 +669,18 @@ function QuerySearch({
 	};
 
 	// Enhanced myCompletions function to better use context including query pairs
-	// eslint-disable-next-line sonarjs/cognitive-complexity
 	function autoSuggestions(context: CompletionContext): CompletionResult | null {
 		// This matches words before the cursor position
 		// eslint-disable-next-line no-useless-escape
 		const word = context.matchBefore(/[a-zA-Z0-9_.:/?&=#%\-\[\]]*/);
-		if (word?.from === word?.to && !context.explicit) return null;
+		if (word?.from === word?.to && !context.explicit) {
+			return null;
+		}
 
+		// Get current query from editor
+		const currentExpression = getCurrentExpression();
 		// Get the query context at the cursor position
-		const queryContext = getQueryContextAtCursor(query, cursorPos.ch);
+		const queryContext = getQueryContextAtCursor(currentExpression, cursorPos.ch);
 
 		// Define autocomplete options based on the context
 		let options: {
@@ -998,7 +1055,7 @@ function QuerySearch({
 			);
 
 			// Add dynamic variables suggestions for the current key
-			const variableName = dynamicVariables?.find(
+			const variableName = dashboardDynamicVariables?.find(
 				(variable) => variable?.dynamicVariablesAttribute === keyName,
 			)?.name;
 
@@ -1029,7 +1086,6 @@ function QuerySearch({
 				!(isLoadingSuggestions && lastKeyRef.current === keyName);
 
 			if (shouldFetch) {
-				// eslint-disable-next-line sonarjs/no-identical-functions
 				debouncedFetchValueSuggestions({
 					key: keyName,
 					searchText,
@@ -1119,7 +1175,8 @@ function QuerySearch({
 
 		if (queryContext.isInParenthesis) {
 			// Different suggestions based on the context within parenthesis or bracket
-			const curChar = query.charAt(cursorPos.ch - 1) || '';
+			const currentExpression = getCurrentExpression();
+			const curChar = currentExpression.charAt(cursorPos.ch - 1) || '';
 
 			if (curChar === '(' || curChar === '[') {
 				// Right after opening parenthesis/bracket
@@ -1180,7 +1237,9 @@ function QuerySearch({
 	}, [isFocused, toggleSuggestions]);
 
 	useEffect(() => {
-		if (!queryContext) return;
+		if (!queryContext) {
+			return;
+		}
 		// Trigger suggestions based on context
 		if (editorRef.current) {
 			toggleSuggestions(10);
@@ -1260,7 +1319,10 @@ function QuerySearch({
 			)}
 
 			<div className="query-where-clause-editor-container">
-				<Tooltip title={getTooltipContent()} placement="left">
+				<Tooltip
+					title={<div data-log-detail-ignore="true">{getTooltipContent()}</div>}
+					placement="left"
+				>
 					<a
 						href="https://signoz.io/docs/userguide/search-syntax/"
 						target="_blank"
@@ -1268,7 +1330,7 @@ function QuerySearch({
 						style={{
 							position: 'absolute',
 							top: 8,
-							right: validation.isValid === false && query ? 40 : 8, // Move left when error shown
+							right: validation.isValid === false && getCurrentExpression() ? 40 : 8, // Move left when error shown
 							cursor: 'help',
 							zIndex: 10,
 							transition: 'right 0.2s ease',
@@ -1289,10 +1351,10 @@ function QuerySearch({
 				</Tooltip>
 
 				<CodeMirror
-					value={query}
 					theme={isDarkMode ? copilot : githubLight}
 					onChange={handleChange}
 					onUpdate={handleUpdate}
+					onCreateEditor={handleEditorCreate}
 					className={cx('query-where-clause-editor', {
 						isValid: validation.isValid === true,
 						hasErrors: validation.errors.length > 0,
@@ -1330,9 +1392,7 @@ function QuerySearch({
 									// Mod-Enter is usually Ctrl-Enter or Cmd-Enter based on OS
 									run: (): boolean => {
 										if (onRun && typeof onRun === 'function') {
-											onRun(query);
-										} else {
-											handleRunQuery();
+											onRun(getCurrentExpression());
 										}
 										return true;
 									},
@@ -1356,7 +1416,7 @@ function QuerySearch({
 					onBlur={handleBlur}
 				/>
 
-				{query && validation.isValid === false && !isFocused && (
+				{getCurrentExpression() && validation.isValid === false && !isFocused && (
 					<div
 						className={cx('query-status-container', {
 							hasErrors: validation.errors.length > 0,
@@ -1496,6 +1556,7 @@ QuerySearch.defaultProps = {
 	hardcodedAttributeKeys: undefined,
 	placeholder:
 		"Enter your filter query (e.g., http.status_code >= 500 AND service.name = 'frontend')",
+	showFilterSuggestionsWithoutMetric: false,
 };
 
 export default QuerySearch;

@@ -14,6 +14,7 @@ function TablePanelWrapper({
 	onOpenTraceBtnClick,
 	customOnRowClick,
 	enableDrillDown = false,
+	onColumnWidthsChange,
 }: PanelWrapperProps): JSX.Element {
 	const panelData =
 		(queryResponse.data?.payload?.data?.result?.[0] as any)?.table || [];
@@ -34,6 +35,8 @@ function TablePanelWrapper({
 			onOpenTraceBtnClick={onOpenTraceBtnClick}
 			customOnRowClick={customOnRowClick}
 			widgetId={widget.id}
+			columnWidths={widget.columnWidths}
+			onColumnWidthsChange={onColumnWidthsChange}
 			renderColumnCell={widget.renderColumnCell}
 			customColTitles={widget.customColTitles}
 			contextLinks={widget.contextLinks}
@@ -41,7 +44,7 @@ function TablePanelWrapper({
 			panelType={widget.panelTypes}
 			queryRangeRequest={queryRangeRequest}
 			decimalPrecision={widget.decimalPrecision}
-			// eslint-disable-next-line react/jsx-props-no-spreading
+			hiddenColumns={widget.hiddenColumns}
 			{...GRID_TABLE_CONFIG}
 		/>
 	);

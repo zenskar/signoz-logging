@@ -1,10 +1,3 @@
-import { Form } from 'antd';
-import { FormInstance } from 'antd/lib';
-import {
-	ActiveViewEnum,
-	ModalStateEnum,
-} from 'container/CloudIntegrationPage/HeroSection/types';
-import useAxiosError from 'hooks/useAxiosError';
 import {
 	Dispatch,
 	SetStateAction,
@@ -13,6 +6,12 @@ import {
 	useMemo,
 	useState,
 } from 'react';
+import { Form, FormInstance } from 'antd';
+import {
+	ActiveViewEnum,
+	ModalStateEnum,
+} from 'container/CloudIntegrationPage/HeroSection/types';
+import useAxiosError from 'hooks/useAxiosError';
 import {
 	ConnectionParams,
 	ConnectionUrlResponse,

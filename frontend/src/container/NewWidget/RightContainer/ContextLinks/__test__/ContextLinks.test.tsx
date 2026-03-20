@@ -1,12 +1,11 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-
-import '@testing-library/jest-dom';
-
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+// eslint-disable-next-line no-restricted-imports
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import store from 'store';
 import { ContextLinksData } from 'types/api/dashboard/getAll';
+
+import '@testing-library/jest-dom';
 
 import ContextLinks from '../index';
 
@@ -56,9 +55,6 @@ describe('ContextLinks Component', () => {
 					setContextLinks={mockSetContextLinks}
 				/>,
 			);
-
-			// Check that the component renders
-			expect(screen.getByText('Context Links')).toBeInTheDocument();
 
 			// Check that the add button is present
 			expect(

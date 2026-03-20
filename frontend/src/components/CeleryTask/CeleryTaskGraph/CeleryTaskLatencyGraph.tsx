@@ -1,5 +1,7 @@
-import './CeleryTaskGraph.style.scss';
-
+import { useCallback, useMemo, useState } from 'react';
+// eslint-disable-next-line no-restricted-imports
+import { useDispatch, useSelector } from 'react-redux';
+import { useHistory, useLocation } from 'react-router-dom';
 import { Col, Row } from 'antd';
 import logEvent from 'api/common/logEvent';
 import { QueryParams } from 'constants/query';
@@ -13,9 +15,6 @@ import { useIsDarkMode } from 'hooks/useDarkMode';
 import useUrlQuery from 'hooks/useUrlQuery';
 import { OnClickPluginOpts } from 'lib/uPlotLib/plugins/onClickPlugin';
 import { getStartAndEndTimesInMilliseconds } from 'pages/MessagingQueues/MessagingQueuesUtils';
-import { useCallback, useMemo, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useHistory, useLocation } from 'react-router-dom';
 import { UpdateTimeInterval } from 'store/actions';
 import { AppState } from 'store/reducers';
 import { DataSource } from 'types/common/queryBuilder';
@@ -28,6 +27,8 @@ import {
 } from '../CeleryUtils';
 import { useNavigateToExplorer } from '../useNavigateToExplorer';
 import { celeryTaskLatencyWidgetData } from './CeleryTaskGraphUtils';
+
+import './CeleryTaskGraph.style.scss';
 
 interface TabData {
 	label: string;

@@ -1,11 +1,15 @@
-import './IngestionSettings.styles.scss';
-
-import { Skeleton, Table, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { useQuery } from 'react-query';
+import {
+	Skeleton,
+	Table,
+	TableColumnsType as ColumnsType,
+	Typography,
+} from 'antd';
 import getIngestionData from 'api/settings/getIngestionData';
 import { useAppContext } from 'providers/App/App';
-import { useQuery } from 'react-query';
 import { IngestionDataType } from 'types/api/settings/ingestion';
+
+import './IngestionSettings.styles.scss';
 
 export default function IngestionSettings(): JSX.Element {
 	const { user } = useAppContext();

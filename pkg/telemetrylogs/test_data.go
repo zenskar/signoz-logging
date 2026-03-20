@@ -27,13 +27,6 @@ func buildCompleteFieldKeyMap() map[string][]*telemetrytypes.TelemetryFieldKey {
 				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
 		},
-		"body": {
-			{
-				Name:          "body",
-				FieldContext:  telemetrytypes.FieldContextLog,
-				FieldDataType: telemetrytypes.FieldDataTypeString,
-			},
-		},
 		"http.status_code": {
 			{
 				Name:          "http.status_code",
@@ -320,6 +313,18 @@ func buildCompleteFieldKeyMap() map[string][]*telemetrytypes.TelemetryFieldKey {
 				Name:          "severity",
 				FieldContext:  telemetrytypes.FieldContextAttribute,
 				FieldDataType: telemetrytypes.FieldDataTypeString,
+			},
+		},
+		"severity_number": {
+			{
+				Name:          "severity_number",
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeNumber,
+			},
+			{
+				Name:          "severity_number",
+				FieldContext:  telemetrytypes.FieldContextBody,
+				FieldDataType: telemetrytypes.FieldDataTypeNumber,
 			},
 		},
 		"created_at": {
@@ -890,6 +895,49 @@ func buildCompleteFieldKeyMap() map[string][]*telemetrytypes.TelemetryFieldKey {
 				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
 		},
+		"mixed.materialization.key": {
+			{
+				Name:          "mixed.materialization.key",
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+				Materialized:  true,
+			},
+			{
+				Name:          "mixed.materialization.key",
+				FieldContext:  telemetrytypes.FieldContextResource,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+				Materialized:  false,
+			},
+		},
+		"multi.mat.key": {
+			{
+				Name:          "multi.mat.key",
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+				Materialized:  true,
+			},
+			{
+				Name:          "multi.mat.key",
+				FieldContext:  telemetrytypes.FieldContextResource,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+				Materialized:  true,
+			},
+		},
+		"mat.key": {
+			{
+				Name:          "mat.key",
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+				Materialized:  true,
+			},
+		},
+		"body": {
+			{
+				Name:          "body",
+				FieldContext:  telemetrytypes.FieldContextLog,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+			},
+		},
 	}
 
 	for _, keys := range keysMap {
@@ -897,6 +945,7 @@ func buildCompleteFieldKeyMap() map[string][]*telemetrytypes.TelemetryFieldKey {
 			key.Signal = telemetrytypes.SignalLogs
 		}
 	}
+
 	return keysMap
 }
 
@@ -940,6 +989,14 @@ func buildCompleteFieldKeyMapCollision() map[string][]*telemetrytypes.TelemetryF
 				Name:          "user.id",
 				FieldContext:  telemetrytypes.FieldContextAttribute,
 				FieldDataType: telemetrytypes.FieldDataTypeString,
+			},
+		},
+		"materialized.key.name": {
+			{
+				Name:          "materialized.key.name",
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
+				Materialized:  true,
 			},
 		},
 	}

@@ -1,5 +1,7 @@
+import { Dispatch, ReactElement, SetStateAction } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Form, FormInstance, Input, Select, Switch, Typography } from 'antd';
-import { Store } from 'antd/lib/form/interface';
+import type { Store } from 'antd/lib/form/interface';
 import ROUTES from 'constants/routes';
 import {
 	ChannelType,
@@ -10,8 +12,6 @@ import {
 	WebhookChannel,
 } from 'container/CreateAlertChannels/config';
 import history from 'lib/history';
-import { Dispatch, ReactElement, SetStateAction } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import EmailSettings from './Settings/Email';
 import MsTeamsSettings from './Settings/MsTeams';

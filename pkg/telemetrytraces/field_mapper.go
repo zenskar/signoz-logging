@@ -188,6 +188,11 @@ func (m *defaultFieldMapper) getColumn(
 			return indexV3Columns["attributes_bool"], nil
 		}
 	case telemetrytypes.FieldContextSpan, telemetrytypes.FieldContextUnspecified:
+		/*
+			TODO: This is incorrect, we cannot assume all unspecified context fields are span context.
+			User could be referring to attributes, but we cannot fix this until we fix where_clause vistior
+			https://github.com/SigNoz/signoz/pull/10102
+		*/
 		// Check if this is a span scope field
 		if strings.ToLower(key.Name) == SpanSearchScopeRoot || strings.ToLower(key.Name) == SpanSearchScopeEntryPoint {
 			// The actual SQL will be generated in the condition builder
@@ -196,17 +201,28 @@ func (m *defaultFieldMapper) getColumn(
 
 		// TODO(srikanthccv): remove this when it's safe to remove
 		// issue with CH aliasing
+
+		/*
+			NOTE: There are fields which are deprecated for only to not show up as user suggestion and is possible that
+			they don't have a mapping in oldToNew map. So we need to look up in indexV3Columns directly for those fields.
+			For example: kind, timestamp etc.
+		*/
 		if _, ok := CalculatedFieldsDeprecated[key.Name]; ok {
-			return indexV3Columns[oldToNew[key.Name]], nil
+			// Check if we have a mapping for the deprecated calculated field
+			if col, ok := indexV3Columns[oldToNew[key.Name]]; ok {
+				return col, nil
+			}
 		}
 		if _, ok := IntrinsicFieldsDeprecated[key.Name]; ok {
-			return indexV3Columns[oldToNew[key.Name]], nil
+			// Check if we have a mapping for the deprecated intrinsic field
+			if col, ok := indexV3Columns[oldToNew[key.Name]]; ok {
+				return col, nil
+			}
 		}
 
 		if col, ok := indexV3Columns[key.Name]; ok {
 			return col, nil
 		}
-		return nil, qbtypes.ErrColumnNotFound
 	}
 	return nil, qbtypes.ErrColumnNotFound
 }
@@ -236,8 +252,8 @@ func (m *defaultFieldMapper) FieldFor(
 		return "", err
 	}
 
-	switch column.Type {
-	case schema.JSONColumnType{}:
+	switch column.Type.GetType() {
+	case schema.ColumnTypeEnumJSON:
 		// json is only supported for resource context as of now
 		if key.FieldContext != telemetrytypes.FieldContextResource {
 			return "", errors.Newf(errors.TypeInvalidInput, errors.CodeInvalidInput, "only resource context fields are supported for json columns, got %s", key.FieldContext.String)
@@ -253,44 +269,38 @@ func (m *defaultFieldMapper) FieldFor(
 		} else {
 			return fmt.Sprintf("multiIf(%s.`%s` IS NOT NULL, %s.`%s`::String, mapContains(%s, '%s'), %s, NULL)", column.Name, key.Name, column.Name, key.Name, oldColumn.Name, key.Name, oldKeyName), nil
 		}
-
-	case schema.ColumnTypeString,
-		schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-		schema.ColumnTypeUInt64,
-		schema.ColumnTypeUInt32,
-		schema.ColumnTypeInt8,
-		schema.ColumnTypeInt16,
-		schema.ColumnTypeBool,
-		schema.DateTime64ColumnType{Precision: 9, Timezone: "UTC"},
-		schema.FixedStringColumnType{Length: 32}:
+	case schema.ColumnTypeEnumString,
+		schema.ColumnTypeEnumUInt64,
+		schema.ColumnTypeEnumUInt32,
+		schema.ColumnTypeEnumInt8,
+		schema.ColumnTypeEnumInt16,
+		schema.ColumnTypeEnumBool,
+		schema.ColumnTypeEnumDateTime64,
+		schema.ColumnTypeEnumFixedString:
 		return column.Name, nil
-	case schema.MapColumnType{
-		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-		ValueType: schema.ColumnTypeString,
-	}:
-		// a key could have been materialized, if so return the materialized column name
-		if key.Materialized {
-			return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
+	case schema.ColumnTypeEnumLowCardinality:
+		switch elementType := column.Type.(schema.LowCardinalityColumnType).ElementType; elementType.GetType() {
+		case schema.ColumnTypeEnumString:
+			return column.Name, nil
+		default:
+			return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "value type %s is not supported for low cardinality column type %s", elementType, column.Type)
 		}
-		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
-	case schema.MapColumnType{
-		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-		ValueType: schema.ColumnTypeFloat64,
-	}:
-		// a key could have been materialized, if so return the materialized column name
-		if key.Materialized {
-			return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
+	case schema.ColumnTypeEnumMap:
+		keyType := column.Type.(schema.MapColumnType).KeyType
+		if _, ok := keyType.(schema.LowCardinalityColumnType); !ok {
+			return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "key type %s is not supported for map column type %s", keyType, column.Type)
 		}
-		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
-	case schema.MapColumnType{
-		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-		ValueType: schema.ColumnTypeBool,
-	}:
-		// a key could have been materialized, if so return the materialized column name
-		if key.Materialized {
-			return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
+
+		switch valueType := column.Type.(schema.MapColumnType).ValueType; valueType.GetType() {
+		case schema.ColumnTypeEnumString, schema.ColumnTypeEnumFloat64, schema.ColumnTypeEnumBool:
+			// a key could have been materialized, if so return the materialized column name
+			if key.Materialized {
+				return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
+			}
+			return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
+		default:
+			return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "value type %s is not supported for map column type %s", valueType, column.Type)
 		}
-		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	}
 	// should not reach here
 	return column.Name, nil

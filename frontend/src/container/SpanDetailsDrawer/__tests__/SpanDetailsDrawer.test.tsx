@@ -1,10 +1,8 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-/* eslint-disable sonarjs/no-identical-functions */
-
 import getSpanPercentiles from 'api/trace/getSpanPercentiles';
 import getUserPreference from 'api/v1/user/preferences/name/get';
 import { QueryParams } from 'constants/query';
 import ROUTES from 'constants/routes';
+import { SPAN_ATTRIBUTES } from 'container/ApiMonitoring/Explorer/Domains/DomainDetails/constants';
 import { GetMetricQueryRange } from 'lib/dashboard/getQueryResults';
 import { server } from 'mocks-server/server';
 import { QueryBuilderContext } from 'providers/QueryBuilder';
@@ -29,6 +27,8 @@ import {
 	mockEmptyLogsResponse,
 	mockSpan,
 	mockSpanLogsResponse,
+	mockSpanWithLongStatusMessage,
+	mockSpanWithShortStatusMessage,
 } from './mockData';
 
 // Get typed mocks
@@ -64,7 +64,6 @@ const mockUpdateAllQueriesOperators = jest.fn().mockReturnValue({
 				dataSource: 'logs',
 				queryName: 'A',
 				aggregateOperator: 'noop',
-				// eslint-disable-next-line sonarjs/no-duplicate-string
 				filter: { expression: "trace_id = 'test-trace-id'" },
 				expression: 'A',
 				disabled: false,
@@ -128,6 +127,39 @@ jest.mock('lib/uPlotLib/utils/generateColor', () => ({
 	generateColor: jest.fn().mockReturnValue('#1f77b4'),
 }));
 
+jest.mock(
+	'container/SpanDetailsDrawer/Events/components/AttributeWithExpandablePopover',
+	() =>
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+		function AttributeWithExpandablePopover({
+			attributeKey,
+			attributeValue,
+			onExpand,
+		}: {
+			attributeKey: string;
+			attributeValue: string;
+			onExpand: (title: string, content: string) => void;
+		}) {
+			return (
+				<div className="attribute-container" key={attributeKey}>
+					<div className="attribute-key">{attributeKey}</div>
+					<div className="wrapper">
+						<div className="attribute-value">{attributeValue}</div>
+						<div data-testid="popover-content">
+							<pre>{attributeValue}</pre>
+							<button
+								type="button"
+								onClick={(): void => onExpand(attributeKey, attributeValue)}
+							>
+								Expand
+							</button>
+						</div>
+					</div>
+				</div>
+			);
+		},
+);
+
 // Mock getSpanPercentiles API
 jest.mock('api/trace/getSpanPercentiles', () => ({
 	__esModule: true,
@@ -143,8 +175,11 @@ jest.mock('api/v1/user/preferences/name/get', () => ({
 jest.mock(
 	'components/OverlayScrollbar/OverlayScrollbar',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
-		function ({ children }: { children: React.ReactNode }) {
+		function OverlayScrollbar({
+			children,
+		}: {
+			children: React.ReactNode;
+		}): JSX.Element {
 			return <div data-testid="overlay-scrollbar">{children}</div>;
 		},
 );
@@ -174,7 +209,7 @@ jest.mock('react-virtuoso', () => ({
 jest.mock(
 	'components/Logs/RawLogView',
 	() =>
-		// eslint-disable-next-line func-names, @typescript-eslint/explicit-function-return-type, react/display-name
+		// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 		function MockRawLogView({
 			data,
 			onLogClick,
@@ -187,10 +222,8 @@ jest.mock(
 			helpTooltip: string;
 		}) {
 			return (
-				// eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
 				<div
 					data-testid={`raw-log-${data.id}`}
-					// eslint-disable-next-line sonarjs/no-duplicate-string
 					className={isHighlighted ? 'log-highlighted' : 'log-context'}
 					title={helpTooltip}
 					onClick={(e): void => onLogClick?.(data, e)}
@@ -252,7 +285,6 @@ const renderSpanDetailsDrawer = (props = {}): void => {
 				selectedSpan={mockSpan}
 				traceStartTime={1640995200000} // 2022-01-01 00:00:00 in milliseconds
 				traceEndTime={1640995260000} // 2022-01-01 00:01:00 in milliseconds
-				// eslint-disable-next-line react/jsx-props-no-spreading
 				{...props}
 			/>
 		</QueryBuilderContext.Provider>,
@@ -327,7 +359,9 @@ describe('SpanDetailsDrawer', () => {
 			const filterExpression = (query as any)?.query?.builder?.queryData?.[0]
 				?.filter?.expression;
 
-			if (!filterExpression) return Promise.resolve(mockEmptyLogsResponse);
+			if (!filterExpression) {
+				return Promise.resolve(mockEmptyLogsResponse);
+			}
 
 			// Check for span logs query (contains both trace_id and span_id)
 			if (filterExpression.includes('span_id')) {
@@ -363,7 +397,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Verify logs tab is visible
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		expect(logsButton).toBeInTheDocument();
 		expect(logsButton).toBeVisible();
 	});
@@ -372,19 +406,15 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Click on logs tab
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for logs view to open and logs to be displayed
 		await waitFor(() => {
 			expect(screen.getByTestId('overlay-scrollbar')).toBeInTheDocument();
-			// eslint-disable-next-line sonarjs/no-duplicate-string
 			expect(screen.getByTestId('raw-log-span-log-1')).toBeInTheDocument();
-			// eslint-disable-next-line sonarjs/no-duplicate-string
 			expect(screen.getByTestId('raw-log-span-log-2')).toBeInTheDocument();
-			// eslint-disable-next-line sonarjs/no-duplicate-string
 			expect(screen.getByTestId('raw-log-context-log-before')).toBeInTheDocument();
-			// eslint-disable-next-line sonarjs/no-duplicate-string
 			expect(screen.getByTestId('raw-log-context-log-after')).toBeInTheDocument();
 		});
 	});
@@ -393,7 +423,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Click on logs tab to trigger API calls
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for all API calls to complete
@@ -434,7 +464,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Click on logs tab to trigger API calls
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for all API calls to complete
@@ -468,7 +498,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Open logs view
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for logs to load
@@ -514,7 +544,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Open logs view
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for logs to load
@@ -527,7 +557,6 @@ describe('SpanDetailsDrawer', () => {
 		fireEvent.click(contextLog);
 
 		// Verify window.open was called
-		// eslint-disable-next-line sonarjs/no-identical-functions
 		await waitFor(() => {
 			expect(mockWindowOpen).toHaveBeenCalledWith(
 				expect.stringContaining(ROUTES.LOGS_EXPLORER),
@@ -560,7 +589,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Open logs view
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for logs to load
@@ -573,7 +602,6 @@ describe('SpanDetailsDrawer', () => {
 		fireEvent.click(spanLog);
 
 		// Verify window.open was called for new tab
-		// eslint-disable-next-line sonarjs/no-identical-functions
 		await waitFor(() => {
 			expect(mockWindowOpen).toHaveBeenCalledWith(
 				expect.stringContaining(ROUTES.LOGS_EXPLORER),
@@ -589,7 +617,7 @@ describe('SpanDetailsDrawer', () => {
 		renderSpanDetailsDrawer();
 
 		// Open logs view
-		const logsButton = screen.getByRole('radio', { name: /logs/i });
+		const logsButton = screen.getByRole('button', { name: /logs/i });
 		fireEvent.click(logsButton);
 
 		// Wait for all API calls to complete first
@@ -841,7 +869,9 @@ describe('SpanDetailsDrawer', () => {
 
 			// Verify only matching attributes are shown (use getAllByText for all since they appear in multiple places)
 			expect(screen.getAllByText('http.method').length).toBeGreaterThan(0);
-			expect(screen.getAllByText('http.url').length).toBeGreaterThan(0);
+			expect(screen.getAllByText(SPAN_ATTRIBUTES.HTTP_URL).length).toBeGreaterThan(
+				0,
+			);
 			expect(screen.getAllByText('http.status_code').length).toBeGreaterThan(0);
 		});
 
@@ -1089,7 +1119,7 @@ describe('SpanDetailsDrawer - Search Visibility User Flows', () => {
 
 		// User sees all attributes initially
 		expect(screen.getByText('http.method')).toBeInTheDocument();
-		expect(screen.getByText('http.url')).toBeInTheDocument();
+		expect(screen.getByText(SPAN_ATTRIBUTES.HTTP_URL)).toBeInTheDocument();
 		expect(screen.getByText('http.status_code')).toBeInTheDocument();
 
 		// User types "method" in search
@@ -1099,7 +1129,7 @@ describe('SpanDetailsDrawer - Search Visibility User Flows', () => {
 		// User sees only matching attributes
 		await waitFor(() => {
 			expect(screen.getByText('http.method')).toBeInTheDocument();
-			expect(screen.queryByText('http.url')).not.toBeInTheDocument();
+			expect(screen.queryByText(SPAN_ATTRIBUTES.HTTP_URL)).not.toBeInTheDocument();
 			expect(screen.queryByText('http.status_code')).not.toBeInTheDocument();
 		});
 	});
@@ -1151,5 +1181,114 @@ describe('SpanDetailsDrawer - Search Visibility User Flows', () => {
 		) as HTMLInputElement;
 		expect(searchInput).toBeInTheDocument();
 		expect(searchInput).toHaveFocus();
+	});
+});
+
+describe('SpanDetailsDrawer - Status Message Truncation User Flows', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockSafeNavigate.mockClear();
+		mockWindowOpen.mockClear();
+		mockUpdateAllQueriesOperators.mockClear();
+
+		(GetMetricQueryRange as jest.Mock).mockImplementation(() =>
+			Promise.resolve(mockEmptyLogsResponse),
+		);
+	});
+
+	afterEach(() => {
+		server.resetHandlers();
+	});
+
+	it('should display expandable popover with Expand button for long status message', () => {
+		render(
+			<QueryBuilderContext.Provider value={mockQueryBuilderContextValue as any}>
+				<SpanDetailsDrawer
+					isSpanDetailsDocked={false}
+					setIsSpanDetailsDocked={jest.fn()}
+					selectedSpan={mockSpanWithLongStatusMessage}
+					traceStartTime={1640995200000}
+					traceEndTime={1640995260000}
+				/>
+			</QueryBuilderContext.Provider>,
+		);
+
+		// User sees status message label
+		expect(screen.getByText('status message')).toBeInTheDocument();
+
+		// User sees the status message value (appears in both original element and popover preview)
+		const statusMessageElements = screen.getAllByText(
+			mockSpanWithLongStatusMessage.statusMessage,
+		);
+		expect(statusMessageElements.length).toBeGreaterThan(0);
+
+		// User sees Expand button in popover (popover is mocked to render immediately)
+		const expandButton = screen.getByRole('button', { name: /expand/i });
+		expect(expandButton).toBeInTheDocument();
+	});
+
+	it('should open modal with full status message when user clicks Expand button', async () => {
+		render(
+			<QueryBuilderContext.Provider value={mockQueryBuilderContextValue as any}>
+				<SpanDetailsDrawer
+					isSpanDetailsDocked={false}
+					setIsSpanDetailsDocked={jest.fn()}
+					selectedSpan={mockSpanWithLongStatusMessage}
+					traceStartTime={1640995200000}
+					traceEndTime={1640995260000}
+				/>
+			</QueryBuilderContext.Provider>,
+		);
+
+		// User clicks the Expand button (popover is mocked to render immediately)
+		const expandButton = screen.getByRole('button', { name: /expand/i });
+		await fireEvent.click(expandButton);
+
+		// User sees modal with the full status message content
+		await waitFor(() => {
+			// Modal should be visible with the title
+			const modalTitle = document.querySelector('.ant-modal-title');
+			expect(modalTitle).toBeInTheDocument();
+			expect(modalTitle?.textContent).toBe('status message');
+			// Modal content should contain the full message in a pre tag
+			const preElement = document.querySelector(
+				'.attribute-with-expandable-popover__full-view',
+			);
+			expect(preElement).toBeInTheDocument();
+			expect(preElement?.textContent).toBe(
+				mockSpanWithLongStatusMessage.statusMessage,
+			);
+		});
+	});
+
+	it('should display short status message as simple text without popover', () => {
+		render(
+			<QueryBuilderContext.Provider value={mockQueryBuilderContextValue as any}>
+				<SpanDetailsDrawer
+					isSpanDetailsDocked={false}
+					setIsSpanDetailsDocked={jest.fn()}
+					selectedSpan={mockSpanWithShortStatusMessage}
+					traceStartTime={1640995200000}
+					traceEndTime={1640995260000}
+				/>
+			</QueryBuilderContext.Provider>,
+		);
+
+		// User sees status message label and value
+		expect(screen.getByText('status message')).toBeInTheDocument();
+		expect(
+			screen.getByText(mockSpanWithShortStatusMessage.statusMessage),
+		).toBeInTheDocument();
+
+		// User hovers over the status message value
+		const statusMessageValue = screen.getByText(
+			mockSpanWithShortStatusMessage.statusMessage,
+		);
+		fireEvent.mouseEnter(statusMessageValue);
+
+		// No Expand button should appear (no expandable popover for short messages)
+		expect(
+			screen.queryByRole('button', { name: /expand/i }),
+		).not.toBeInTheDocument();
 	});
 });

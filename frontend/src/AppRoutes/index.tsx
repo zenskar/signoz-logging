@@ -1,17 +1,22 @@
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Route, Router, Switch } from 'react-router-dom';
+import { CompatRouter } from 'react-router-dom-v5-compat';
 import * as Sentry from '@sentry/react';
 import { ConfigProvider } from 'antd';
 import getLocalStorageApi from 'api/browser/localstorage/get';
 import setLocalStorageApi from 'api/browser/localstorage/set';
 import logEvent from 'api/common/logEvent';
 import AppLoading from 'components/AppLoading/AppLoading';
-import KBarCommandPalette from 'components/KBarCommandPalette/KBarCommandPalette';
+import { CmdKPalette } from 'components/cmdKPalette/cmdKPalette';
 import NotFound from 'components/NotFound';
+import { ShiftHoldOverlayController } from 'components/ShiftOverlay/ShiftHoldOverlayController';
 import Spinner from 'components/Spinner';
-import UserpilotRouteTracker from 'components/UserpilotRouteTracker/UserpilotRouteTracker';
 import { FeatureKeys } from 'constants/features';
 import { LOCALSTORAGE } from 'constants/localStorage';
 import ROUTES from 'constants/routes';
 import AppLayout from 'container/AppLayout';
+import Hex from 'crypto-js/enc-hex';
+import HmacSHA256 from 'crypto-js/hmac-sha256';
 import { KeyboardHotkeysProvider } from 'hooks/hotkeys/useKeyboardHotkeys';
 import { useThemeConfig } from 'hooks/useDarkMode';
 import { useGetTenantLicense } from 'hooks/useGetTenantLicense';
@@ -21,19 +26,13 @@ import { StatusCodes } from 'http-status-codes';
 import history from 'lib/history';
 import ErrorBoundaryFallback from 'pages/ErrorBoundaryFallback/ErrorBoundaryFallback';
 import posthog from 'posthog-js';
-import AlertRuleProvider from 'providers/Alert';
 import { useAppContext } from 'providers/App/App';
 import { IUser } from 'providers/App/types';
-import { DashboardProvider } from 'providers/Dashboard/Dashboard';
+import { CmdKProvider } from 'providers/cmdKProvider';
 import { ErrorModalProvider } from 'providers/ErrorModalProvider';
-import { KBarCommandPaletteProvider } from 'providers/KBarCommandPaletteProvider';
 import { PreferenceContextProvider } from 'providers/preferences/context/PreferenceContextProvider';
 import { QueryBuilderProvider } from 'providers/QueryBuilder';
-import { Suspense, useCallback, useEffect, useState } from 'react';
-import { Route, Router, Switch } from 'react-router-dom';
-import { CompatRouter } from 'react-router-dom-v5-compat';
 import { LicenseStatus } from 'types/api/licensesV3/getActive';
-import { Userpilot } from 'userpilot';
 import { extractDomain } from 'utils/app';
 
 import { Home } from './pageComponents';
@@ -84,9 +83,9 @@ function App(): JSX.Element {
 					email,
 					name: displayName,
 					company_name: orgName,
-					tenant_id: hostNameParts[0],
+					deployment_name: hostNameParts[0],
 					data_region: hostNameParts[1],
-					tenant_url: hostname,
+					deployment_url: hostname,
 					company_domain: domain,
 					source: 'signoz-ui',
 					role,
@@ -94,9 +93,9 @@ function App(): JSX.Element {
 
 				const groupTraits = {
 					name: orgName,
-					tenant_id: hostNameParts[0],
+					deployment_name: hostNameParts[0],
 					data_region: hostNameParts[1],
-					tenant_url: hostname,
+					deployment_url: hostname,
 					company_domain: domain,
 					source: 'signoz-ui',
 				};
@@ -111,37 +110,23 @@ function App(): JSX.Element {
 				if (window && window.Appcues) {
 					window.Appcues.identify(id, {
 						name: displayName,
-
-						tenant_id: hostNameParts[0],
+						deployment_name: hostNameParts[0],
 						data_region: hostNameParts[1],
-						tenant_url: hostname,
+						deployment_url: hostname,
 						company_domain: domain,
-
 						companyName: orgName,
 						email,
 						paidUser: !!trialInfo?.trialConvertedToSubscription,
 					});
 				}
 
-				Userpilot.identify(email, {
-					email,
-					name: displayName,
-					orgName,
-					tenant_id: hostNameParts[0],
-					data_region: hostNameParts[1],
-					tenant_url: hostname,
-					company_domain: domain,
-					source: 'signoz-ui',
-					isPaidUser: !!trialInfo?.trialConvertedToSubscription,
-				});
-
 				posthog?.identify(id, {
 					email,
 					name: displayName,
 					orgName,
-					tenant_id: hostNameParts[0],
+					deployment_name: hostNameParts[0],
 					data_region: hostNameParts[1],
-					tenant_url: hostname,
+					deployment_url: hostname,
 					company_domain: domain,
 					source: 'signoz-ui',
 					isPaidUser: !!trialInfo?.trialConvertedToSubscription,
@@ -149,9 +134,9 @@ function App(): JSX.Element {
 
 				posthog?.group('company', orgId, {
 					name: orgName,
-					tenant_id: hostNameParts[0],
+					deployment_name: hostNameParts[0],
 					data_region: hostNameParts[1],
-					tenant_url: hostname,
+					deployment_url: hostname,
 					company_domain: domain,
 					source: 'signoz-ui',
 					isPaidUser: !!trialInfo?.trialConvertedToSubscription,
@@ -228,14 +213,13 @@ function App(): JSX.Element {
 	]);
 
 	useEffect(() => {
-		if (pathname === ROUTES.ONBOARDING) {
-			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-			// @ts-ignore
-			window.Pylon('hideChatBubble');
+		if (
+			pathname === ROUTES.ONBOARDING ||
+			pathname.startsWith('/public/dashboard/')
+		) {
+			window.Pylon?.('hideChatBubble');
 		} else {
-			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-			// @ts-ignore
-			window.Pylon('showChatBubble');
+			window.Pylon?.('showChatBubble');
 		}
 	}, [pathname]);
 
@@ -270,11 +254,20 @@ function App(): JSX.Element {
 				!showAddCreditCardModal &&
 				(isCloudUser || isEnterpriseSelfHostedUser)
 			) {
+				const email = user.email || '';
+				const secret = process.env.PYLON_IDENTITY_SECRET || '';
+				let emailHash = '';
+
+				if (email && secret) {
+					emailHash = HmacSHA256(email, Hex.parse(secret)).toString(Hex);
+				}
+
 				window.pylon = {
 					chat_settings: {
 						app_id: process.env.PYLON_APP_ID,
 						email: user.email,
 						name: user.displayName || user.email,
+						email_hash: emailHash,
 					},
 				};
 			}
@@ -308,10 +301,6 @@ function App(): JSX.Element {
 				});
 			}
 
-			if (process.env.USERPILOT_KEY) {
-				Userpilot.initialize(process.env.USERPILOT_KEY);
-			}
-
 			if (!isSentryInitialized) {
 				Sentry.init({
 					dsn: process.env.SENTRY_DSN,
@@ -331,6 +320,19 @@ function App(): JSX.Element {
 					// Session Replay
 					replaysSessionSampleRate: 0.1, // This sets the sample rate at 10%. You may want to change it to 100% while in development and then sample at a lower rate in production.
 					replaysOnErrorSampleRate: 1.0, // If you're not already sampling the entire session, change the sample rate to 100% when sampling sessions where errors occur.
+					beforeSend(event) {
+						const sessionReplayUrl = posthog.get_session_replay_url?.({
+							withTimestamp: true,
+						});
+						if (sessionReplayUrl) {
+							// eslint-disable-next-line no-param-reassign
+							event.contexts = {
+								...event.contexts,
+								posthog: { session_replay_url: sessionReplayUrl },
+							};
+						}
+						return event;
+					},
 				});
 
 				setIsSentryInitialized(true);
@@ -371,44 +373,42 @@ function App(): JSX.Element {
 			<ConfigProvider theme={themeConfig}>
 				<Router history={history}>
 					<CompatRouter>
-						<KBarCommandPaletteProvider>
-							<UserpilotRouteTracker />
-							<KBarCommandPalette />
+						<CmdKProvider>
 							<NotificationProvider>
 								<ErrorModalProvider>
+									{isLoggedInState && <CmdKPalette userRole={user.role} />}
+									{isLoggedInState && (
+										<ShiftHoldOverlayController userRole={user.role} />
+									)}
 									<PrivateRoute>
 										<ResourceProvider>
 											<QueryBuilderProvider>
-												<DashboardProvider>
-													<KeyboardHotkeysProvider>
-														<AlertRuleProvider>
-															<AppLayout>
-																<PreferenceContextProvider>
-																	<Suspense fallback={<Spinner size="large" tip="Loading..." />}>
-																		<Switch>
-																			{routes.map(({ path, component, exact }) => (
-																				<Route
-																					key={`${path}`}
-																					exact={exact}
-																					path={path}
-																					component={component}
-																				/>
-																			))}
-																			<Route exact path="/" component={Home} />
-																			<Route path="*" component={NotFound} />
-																		</Switch>
-																	</Suspense>
-																</PreferenceContextProvider>
-															</AppLayout>
-														</AlertRuleProvider>
-													</KeyboardHotkeysProvider>
-												</DashboardProvider>
+												<KeyboardHotkeysProvider>
+													<AppLayout>
+														<PreferenceContextProvider>
+															<Suspense fallback={<Spinner size="large" tip="Loading..." />}>
+																<Switch>
+																	{routes.map(({ path, component, exact }) => (
+																		<Route
+																			key={`${path}`}
+																			exact={exact}
+																			path={path}
+																			component={component}
+																		/>
+																	))}
+																	<Route exact path="/" component={Home} />
+																	<Route path="*" component={NotFound} />
+																</Switch>
+															</Suspense>
+														</PreferenceContextProvider>
+													</AppLayout>
+												</KeyboardHotkeysProvider>
 											</QueryBuilderProvider>
 										</ResourceProvider>
 									</PrivateRoute>
 								</ErrorModalProvider>
 							</NotificationProvider>
-						</KBarCommandPaletteProvider>
+						</CmdKProvider>
 					</CompatRouter>
 				</Router>
 			</ConfigProvider>

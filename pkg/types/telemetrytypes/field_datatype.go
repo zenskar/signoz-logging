@@ -31,6 +31,9 @@ var (
 	FieldDataTypeArrayInt64  = FieldDataType{valuer.NewString("[]int64")}
 	FieldDataTypeArrayNumber = FieldDataType{valuer.NewString("[]number")}
 
+	FieldDataTypeArrayObject  = FieldDataType{valuer.NewString("[]object")}
+	FieldDataTypeArrayDynamic = FieldDataType{valuer.NewString("[]dynamic")}
+
 	// Map string representations to FieldDataType values
 	// We want to handle all the possible string representations of the data types.
 	// Even if the user uses some non-standard representation, we want to be able to
@@ -90,6 +93,14 @@ var (
 		FieldDataTypeArrayFloat64: "Array(Float64)",
 		FieldDataTypeArrayBool:    "Array(Bool)",
 	}
+
+	ScalerFieldTypeToArrayFieldType = map[FieldDataType]FieldDataType{
+		FieldDataTypeString:  FieldDataTypeArrayString,
+		FieldDataTypeBool:    FieldDataTypeArrayBool,
+		FieldDataTypeNumber:  FieldDataTypeArrayNumber,
+		FieldDataTypeInt64:   FieldDataTypeArrayInt64,
+		FieldDataTypeFloat64: FieldDataTypeArrayFloat64,
+	}
 )
 
 func (f FieldDataType) CHDataType() string {
@@ -97,6 +108,10 @@ func (f FieldDataType) CHDataType() string {
 		return chDataType
 	}
 	return "String"
+}
+
+func (f FieldDataType) IsArray() bool {
+	return strings.HasPrefix(f.StringValue(), "[]") || strings.HasSuffix(f.StringValue(), "[]")
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface
@@ -160,5 +175,21 @@ func (f FieldDataType) TagDataType() string {
 		return "float64"
 	default:
 		return "string"
+	}
+}
+
+// Enum returns the acceptable values for FieldDataType.
+func (FieldDataType) Enum() []any {
+	return []any{
+		FieldDataTypeString,
+		FieldDataTypeBool,
+		FieldDataTypeFloat64,
+		FieldDataTypeInt64,
+		FieldDataTypeNumber,
+		// FieldDataTypeArrayString,
+		// FieldDataTypeArrayFloat64,
+		// FieldDataTypeArrayBool,
+		// FieldDataTypeArrayInt64,
+		// FieldDataTypeArrayNumber,
 	}
 }

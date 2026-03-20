@@ -1,6 +1,3 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-/* eslint-disable import/first */
-
 // Mock dayjs before importing any other modules
 const MOCK_DATE_STRING = '2024-01-15T00:30:00Z';
 const MOCK_DATE_STRING_NON_LEAP_YEAR = '2023-01-15T00:30:00Z';
@@ -492,7 +489,9 @@ describe('utils', () => {
 			jest.doMock('dayjs', () => {
 				const originalDayjs = jest.requireActual('dayjs');
 				const mockDayjs = (date?: string | Date): Dayjs => {
-					if (date) return originalDayjs(date);
+					if (date) {
+						return originalDayjs(date);
+					}
 					return originalDayjs(MOCK_DATE_STRING_NON_LEAP_YEAR);
 				};
 				Object.assign(mockDayjs, originalDayjs);
@@ -599,7 +598,9 @@ describe('utils', () => {
 			jest.doMock('dayjs', () => {
 				const originalDayjs = jest.requireActual('dayjs');
 				const mockDayjs = (date?: string | Date): Dayjs => {
-					if (date) return originalDayjs(date);
+					if (date) {
+						return originalDayjs(date);
+					}
 					return originalDayjs(MOCK_DATE_STRING_SPANS_MONTHS);
 				};
 				Object.assign(mockDayjs, originalDayjs);

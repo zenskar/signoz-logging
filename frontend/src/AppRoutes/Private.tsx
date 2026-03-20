@@ -1,3 +1,6 @@
+import { ReactChild, useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery } from 'react-query';
+import { matchPath, Redirect, useLocation } from 'react-router-dom';
 import getLocalStorageApi from 'api/browser/localstorage/get';
 import setLocalStorageApi from 'api/browser/localstorage/set';
 import getAll from 'api/v1/user/get';
@@ -9,9 +12,6 @@ import { useGetTenantLicense } from 'hooks/useGetTenantLicense';
 import history from 'lib/history';
 import { isEmpty } from 'lodash-es';
 import { useAppContext } from 'providers/App/App';
-import { ReactChild, useCallback, useEffect, useMemo, useState } from 'react';
-import { useQuery } from 'react-query';
-import { matchPath, useLocation } from 'react-router-dom';
 import { SuccessResponseV2 } from 'types/api';
 import APIError from 'types/api/error';
 import { LicensePlatform, LicenseState } from 'types/api/licensesV3/getActive';
@@ -128,6 +128,7 @@ function PrivateRoute({ children }: PrivateRouteProps): JSX.Element {
 			isAdmin &&
 			(path === ROUTES.SETTINGS ||
 				path === ROUTES.ORG_SETTINGS ||
+				path === ROUTES.MEMBERS_SETTINGS ||
 				path === ROUTES.BILLING ||
 				path === ROUTES.MY_SETTINGS);
 
@@ -236,15 +237,17 @@ function PrivateRoute({ children }: PrivateRouteProps): JSX.Element {
 	useEffect(() => {
 		// if it is an old route navigate to the new route
 		if (isOldRoute) {
-			const redirectUrl = oldNewRoutesMapping[pathname];
-
-			const newLocation = {
-				...location,
-				pathname: redirectUrl,
-			};
-			history.replace(newLocation);
+			// this will be handled by the redirect component below
 			return;
 		}
+
+		// if the current route is public dashboard then don't redirect to login
+		const isPublicDashboard = currentRoute?.path === ROUTES.PUBLIC_DASHBOARD;
+
+		if (isPublicDashboard) {
+			return;
+		}
+
 		// if the current route
 		if (currentRoute) {
 			const { isPrivate, key } = currentRoute;
@@ -288,8 +291,20 @@ function PrivateRoute({ children }: PrivateRouteProps): JSX.Element {
 		}
 	}, [isLoggedInState, pathname, user, isOldRoute, currentRoute, location]);
 
+	if (isOldRoute) {
+		const redirectUrl = oldNewRoutesMapping[pathname];
+		return (
+			<Redirect
+				to={{
+					pathname: redirectUrl,
+					search: location.search,
+					hash: location.hash,
+				}}
+			/>
+		);
+	}
+
 	// NOTE: disabling this rule as there is no need to have div
-	// eslint-disable-next-line react/jsx-no-useless-fragment
 	return <>{children}</>;
 }
 

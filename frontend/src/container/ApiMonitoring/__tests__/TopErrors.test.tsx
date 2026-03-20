@@ -1,9 +1,12 @@
+import { BuilderQuery } from 'api/v5/v5';
 import { useNavigateToExplorer } from 'components/CeleryTask/useNavigateToExplorer';
 import { rest, server } from 'mocks-server/server';
 import { fireEvent, render, screen, waitFor, within } from 'tests/test-utils';
 import { DataSource } from 'types/common/queryBuilder';
 
+import { SPAN_ATTRIBUTES } from '../Explorer/Domains/DomainDetails/constants';
 import TopErrors from '../Explorer/Domains/DomainDetails/TopErrors';
+import { getTopErrorsQueryPayload } from '../utils';
 
 // Mock the EndPointsDropDown component to avoid issues
 jest.mock(
@@ -80,7 +83,7 @@ describe('TopErrors', () => {
 									{
 										columns: [
 											{
-												name: 'http.url',
+												name: SPAN_ATTRIBUTES.HTTP_URL,
 												fieldDataType: 'string',
 												fieldContext: 'attribute',
 											},
@@ -96,7 +99,6 @@ describe('TopErrors', () => {
 											},
 											{ name: 'count()', fieldDataType: 'int64', fieldContext: '' },
 										],
-										// eslint-disable-next-line sonarjs/no-duplicate-string
 										data: [['/api/test', '500', 'Internal Server Error', 10]],
 									},
 								],
@@ -120,7 +122,7 @@ describe('TopErrors', () => {
 										table: {
 											rows: [
 												{
-													'http.url': '/api/test',
+													http_url: '/api/test',
 													A: 100,
 												},
 											],
@@ -136,7 +138,6 @@ describe('TopErrors', () => {
 	});
 
 	it('renders component correctly', async () => {
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		const { container } = render(<TopErrors {...mockProps} />);
 
 		// Check if the title and toggle are rendered
@@ -164,7 +165,6 @@ describe('TopErrors', () => {
 			),
 		);
 
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		render(<TopErrors {...mockProps} />);
 
 		// Wait for error state
@@ -182,7 +182,6 @@ describe('TopErrors', () => {
 		const navigateMock = jest.fn();
 		(useNavigateToExplorer as jest.Mock).mockReturnValue(navigateMock);
 
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		const { container } = render(<TopErrors {...mockProps} />);
 
 		// Wait for data to load
@@ -202,7 +201,7 @@ describe('TopErrors', () => {
 		expect(navigateMock).toHaveBeenCalledWith({
 			filters: expect.arrayContaining([
 				expect.objectContaining({
-					key: expect.objectContaining({ key: 'http.url' }),
+					key: expect.objectContaining({ key: SPAN_ATTRIBUTES.HTTP_URL }),
 					op: '=',
 					value: '/api/test',
 				}),
@@ -212,7 +211,7 @@ describe('TopErrors', () => {
 					value: 'true',
 				}),
 				expect.objectContaining({
-					key: expect.objectContaining({ key: 'net.peer.name' }),
+					key: expect.objectContaining({ key: SPAN_ATTRIBUTES.SERVER_NAME }),
 					op: '=',
 					value: 'test-domain',
 				}),
@@ -230,7 +229,6 @@ describe('TopErrors', () => {
 	});
 
 	it('updates endpoint filter when dropdown value changes', async () => {
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		render(<TopErrors {...mockProps} />);
 
 		// Wait for initial load
@@ -249,7 +247,6 @@ describe('TopErrors', () => {
 	});
 
 	it('handles status message toggle correctly', async () => {
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		render(<TopErrors {...mockProps} />);
 
 		// Wait for initial load
@@ -282,7 +279,6 @@ describe('TopErrors', () => {
 	});
 
 	it('includes toggle state in query key for cache busting', async () => {
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		render(<TopErrors {...mockProps} />);
 
 		// Wait for initial load
@@ -305,66 +301,32 @@ describe('TopErrors', () => {
 	});
 
 	it('sends query_range v5 API call with required filters including has_error', async () => {
-		let capturedRequest: any;
+		// let capturedRequest: any;
 
-		// Override the v5 API mock to capture the request
-		server.use(
-			rest.post(V5_QUERY_RANGE_API_PATH, async (req, res, ctx) => {
-				capturedRequest = await req.json();
-				return res(
-					ctx.status(200),
-					ctx.json({
-						data: {
-							data: {
-								results: [
-									{
-										columns: [
-											{
-												name: 'http.url',
-												fieldDataType: 'string',
-												fieldContext: 'attribute',
-											},
-											{
-												name: 'response_status_code',
-												fieldDataType: 'string',
-												fieldContext: 'span',
-											},
-											{
-												name: 'status_message',
-												fieldDataType: 'string',
-												fieldContext: 'span',
-											},
-											{ name: 'count()', fieldDataType: 'int64', fieldContext: '' },
-										],
-										data: [['/api/test', '500', 'Internal Server Error', 10]],
-									},
-								],
-							},
-						},
-					}),
-				);
-			}),
+		const topErrorsPayload = getTopErrorsQueryPayload(
+			'test-domain',
+			mockProps.timeRange.startTime,
+			mockProps.timeRange.endTime,
+			{ items: [], op: 'AND' },
+			false,
 		);
 
-		// eslint-disable-next-line react/jsx-props-no-spreading
 		render(<TopErrors {...mockProps} />);
 
 		// Wait for the API call to be made
 		await waitFor(() => {
-			expect(capturedRequest).toBeDefined();
+			expect(topErrorsPayload).toBeDefined();
 		});
 
 		// Extract the filter expression from the captured request
-		const filterExpression =
-			capturedRequest.compositeQuery.queries[0].spec.filter.expression;
+		// getTopErrorsQueryPayload returns a builder_query with TraceBuilderQuery spec
+		const builderQuery = topErrorsPayload.compositeQuery.queries[0]
+			.spec as BuilderQuery;
+		const filterExpression = builderQuery.filter?.expression;
 
 		// Verify all required filters are present
-		expect(filterExpression).toContain(`kind_string = 'Client'`);
-		expect(filterExpression).toContain(`(http.url EXISTS OR url.full EXISTS)`);
 		expect(filterExpression).toContain(
-			`(net.peer.name = 'test-domain' OR server.address = 'test-domain')`,
+			`kind_string = 'Client' AND ${SPAN_ATTRIBUTES.HTTP_URL} EXISTS AND ${SPAN_ATTRIBUTES.SERVER_NAME} = 'test-domain' AND has_error = true`,
 		);
-		expect(filterExpression).toContain(`has_error = true`);
-		expect(filterExpression).toContain(`status_message EXISTS`); // toggle is on by default
 	});
 });

@@ -1,4 +1,6 @@
 /* eslint-disable sonarjs/cognitive-complexity */
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueries } from 'react-query';
 import { getKeySuggestions } from 'api/querySuggestions/getKeySuggestions';
 import { TelemetryFieldKey } from 'api/v5/v5';
 import { AxiosResponse } from 'axios';
@@ -10,8 +12,6 @@ import useUrlQueryData from 'hooks/useUrlQueryData';
 import { has } from 'lodash-es';
 import { AllTraceFilterKeyValue } from 'pages/TracesExplorer/Filter/filterUtils';
 import { usePreferenceContext } from 'providers/preferences/context/PreferenceContextProvider';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useQueries } from 'react-query';
 import {
 	QueryKeyRequestProps,
 	QueryKeySuggestionsResponseProps,
@@ -27,6 +27,7 @@ import {
 	defaultLogsSelectedColumns,
 	defaultOptionsQuery,
 	defaultTraceSelectedColumns,
+	EXCLUDED_COLUMNS,
 	URL_OPTIONS,
 } from './constants';
 import {
@@ -267,8 +268,9 @@ const useOptionsMenu = ({
 
 	const optionsFromAttributeKeys = useMemo(() => {
 		const filteredAttributeKeys = searchedAttributeKeys.filter((item) => {
-			if (dataSource !== DataSource.LOGS) {
-				return item.name !== 'body';
+			const exclusions = EXCLUDED_COLUMNS[dataSource];
+			if (exclusions) {
+				return !exclusions.includes(item.name);
 			}
 			return true;
 		});
@@ -292,7 +294,9 @@ const useOptionsMenu = ({
 					...(preferences?.columns || []),
 				].find(({ name }) => name === key);
 
-				if (!column) return acc;
+				if (!column) {
+					return acc;
+				}
 				return [...acc, column];
 			}, [] as TelemetryFieldKey[]);
 

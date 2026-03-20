@@ -11,7 +11,13 @@ import (
 	"github.com/SigNoz/signoz/pkg/alertmanager/signozalertmanager"
 	"github.com/SigNoz/signoz/pkg/emailing/emailingtest"
 	"github.com/SigNoz/signoz/pkg/factory/factorytest"
+	"github.com/SigNoz/signoz/pkg/flagger"
+	"github.com/SigNoz/signoz/pkg/instrumentation/instrumentationtest"
+	"github.com/SigNoz/signoz/pkg/modules/dashboard/impldashboard"
 	"github.com/SigNoz/signoz/pkg/modules/organization/implorganization"
+	"github.com/SigNoz/signoz/pkg/modules/user/impluser"
+	"github.com/SigNoz/signoz/pkg/querier"
+	"github.com/SigNoz/signoz/pkg/queryparser"
 	"github.com/SigNoz/signoz/pkg/sharder"
 	"github.com/SigNoz/signoz/pkg/sharder/noopsharder"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
@@ -33,12 +39,21 @@ func TestNewHandlers(t *testing.T) {
 	require.NoError(t, err)
 	alertmanager, err := signozalertmanager.New(context.TODO(), providerSettings, alertmanager.Config{}, sqlstore, orgGetter, notificationManager)
 	require.NoError(t, err)
-	tokenizer := tokenizertest.New()
+	tokenizer := tokenizertest.NewMockTokenizer(t)
 	emailing := emailingtest.New()
-	modules := NewModules(sqlstore, tokenizer, emailing, providerSettings, orgGetter, alertmanager, nil, nil, nil, nil)
+	queryParser := queryparser.New(providerSettings)
+	require.NoError(t, err)
+	dashboardModule := impldashboard.NewModule(impldashboard.NewStore(sqlstore), providerSettings, nil, orgGetter, queryParser)
 
-	handlers := NewHandlers(modules, providerSettings)
+	flagger, err := flagger.New(context.Background(), instrumentationtest.New().ToProviderSettings(), flagger.Config{}, flagger.MustNewRegistry())
+	require.NoError(t, err)
 
+	userGetter := impluser.NewGetter(impluser.NewStore(sqlstore, providerSettings), flagger)
+
+	modules := NewModules(sqlstore, tokenizer, emailing, providerSettings, orgGetter, alertmanager, nil, nil, nil, nil, nil, nil, nil, queryParser, Config{}, dashboardModule, userGetter)
+
+	querierHandler := querier.NewHandler(providerSettings, nil, nil)
+	handlers := NewHandlers(modules, providerSettings, nil, querierHandler, nil, nil, nil, nil, nil, nil, nil)
 	reflectVal := reflect.ValueOf(handlers)
 	for i := 0; i < reflectVal.NumField(); i++ {
 		f := reflectVal.Field(i)

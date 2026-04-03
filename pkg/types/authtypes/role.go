@@ -48,6 +48,12 @@ var (
 		types.RoleEditor: SigNozEditorRoleName,
 		types.RoleViewer: SigNozViewerRoleName,
 	}
+
+	SigNozManagedRoleToExistingLegacyRole = map[string]types.Role{
+		SigNozAdminRoleName:  types.RoleAdmin,
+		SigNozEditorRoleName: types.RoleEditor,
+		SigNozViewerRoleName: types.RoleViewer,
+	}
 )
 
 var (
@@ -59,19 +65,21 @@ type StorableRole struct {
 
 	types.Identifiable
 	types.TimeAuditable
-	Name        string `bun:"name,type:string"`
-	Description string `bun:"description,type:string"`
-	Type        string `bun:"type,type:string"`
-	OrgID       string `bun:"org_id,type:string"`
+	Name        string `bun:"name,type:string" json:"name"`
+	Description string `bun:"description,type:string" json:"description"`
+	Type        string `bun:"type,type:string" json:"type"`
+	OrgID       string `bun:"org_id,type:string" json:"orgId"`
 }
 
 type Role struct {
+	bun.BaseModel `bun:"table:role"`
+
 	types.Identifiable
 	types.TimeAuditable
-	Name        string        `json:"name" required:"true"`
-	Description string        `json:"description" required:"true"`
-	Type        valuer.String `json:"type" required:"true"`
-	OrgID       valuer.UUID   `json:"orgId" required:"true"`
+	Name        string        `bun:"name,type:string" json:"name" required:"true"`
+	Description string        `bun:"description,type:string"  json:"description" required:"true"`
+	Type        valuer.String `bun:"type,type:string" json:"type" required:"true"`
+	OrgID       valuer.UUID   `bun:"org_id,type:string" json:"orgId" required:"true"`
 }
 
 type PostableRole struct {

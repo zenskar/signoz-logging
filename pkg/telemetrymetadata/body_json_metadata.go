@@ -3,6 +3,7 @@ package telemetrymetadata
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 	"time"
@@ -46,7 +47,7 @@ var (
 //   - For lookup: set to 0 (no limit needed for single path)
 //   - For metadata API: set to desired pagination limit
 //
-// searchOperator: LIKE for pattern matching, EQUAL for exact match
+// searchOperator: LIKE for pattern matching, EQUAL for exact match.
 func (t *telemetryMetaStore) fetchBodyJSONPaths(ctx context.Context,
 	fieldKeySelectors []*telemetrytypes.FieldKeySelector) ([]*telemetrytypes.TelemetryFieldKey, []string, bool, error) {
 	ctx = ctxtypes.NewContextWithCommentVals(ctx, map[string]string{
@@ -78,7 +79,7 @@ func (t *telemetryMetaStore) fetchBodyJSONPaths(ctx context.Context,
 		for _, typ := range typesArray {
 			mapping, found := telemetrytypes.MappingStringToJSONDataType[typ]
 			if !found {
-				t.logger.ErrorContext(ctx, "failed to map type string to JSON data type", "type", typ, "path", path)
+				t.logger.ErrorContext(ctx, "failed to map type string to JSON data type", slog.String("type", typ), slog.String("path", path))
 				continue
 			}
 			fieldKeys = append(fieldKeys, &telemetrytypes.TelemetryFieldKey{
@@ -229,7 +230,7 @@ func (t *telemetryMetaStore) getJSONPathIndexes(ctx context.Context, paths ...st
 
 			jsonDataType, found := telemetrytypes.MappingStringToJSONDataType[columnType]
 			if !found {
-				t.logger.ErrorContext(ctx, "failed to map column type to JSON data type", "column_type", columnType, "column_expr", columnExpr)
+				t.logger.ErrorContext(ctx, "failed to map column type to JSON data type", slog.String("column_type", columnType), slog.String("column_expr", columnExpr))
 				continue
 			}
 
@@ -302,7 +303,7 @@ func (t *telemetryMetaStore) ListLogsJSONIndexes(ctx context.Context, filters ..
 	return indexes, nil
 }
 
-// TODO(Piyush): Remove this if not used in future
+// TODO(Piyush): Remove this if not used in future.
 func (t *telemetryMetaStore) ListJSONValues(ctx context.Context, path string, limit int) (*telemetrytypes.TelemetryFieldValues, bool, error) {
 	ctx = withTelemetryContext(ctx, "ListJSONValues")
 	path = CleanPathPrefixes(path)
@@ -519,7 +520,7 @@ func (t *telemetryMetaStore) GetPromotedPaths(ctx context.Context, paths ...stri
 	return promotedPaths, nil
 }
 
-// TODO(Piyush): Remove this function
+// TODO(Piyush): Remove this function.
 func CleanPathPrefixes(path string) string {
 	path = strings.TrimPrefix(path, telemetrytypes.BodyJSONStringSearchPrefix)
 	path = strings.TrimPrefix(path, telemetrylogs.BodyV2ColumnPrefix)

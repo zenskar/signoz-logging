@@ -40,17 +40,6 @@ func (middleware *AuthZ) ViewAccess(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if claims.IdentNProvider == authtypes.IdentNProviderAPIKey.StringValue() {
-			if err := claims.IsViewer(); err != nil {
-				middleware.logger.WarnContext(ctx, authzDeniedMessage, "claims", claims)
-				render.Error(rw, err)
-				return
-			}
-
-			next(rw, req)
-			return
-		}
-
 		selectors := []authtypes.Selector{
 			authtypes.MustNewSelector(authtypes.TypeRole, authtypes.SigNozAdminRoleName),
 			authtypes.MustNewSelector(authtypes.TypeRole, authtypes.SigNozEditorRoleName),
@@ -67,7 +56,7 @@ func (middleware *AuthZ) ViewAccess(next http.HandlerFunc) http.HandlerFunc {
 			selectors,
 		)
 		if err != nil {
-			middleware.logger.WarnContext(ctx, authzDeniedMessage, "claims", claims)
+			middleware.logger.WarnContext(ctx, authzDeniedMessage, slog.Any("claims", claims))
 			if errors.Asc(err, authtypes.ErrCodeAuthZForbidden) {
 				render.Error(rw, errors.New(errors.TypeForbidden, authtypes.ErrCodeAuthZForbidden, "only viewers/editors/admins can access this resource"))
 				return
@@ -90,17 +79,6 @@ func (middleware *AuthZ) EditAccess(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if claims.IdentNProvider == authtypes.IdentNProviderAPIKey.StringValue() {
-			if err := claims.IsEditor(); err != nil {
-				middleware.logger.WarnContext(ctx, authzDeniedMessage, "claims", claims)
-				render.Error(rw, err)
-				return
-			}
-
-			next(rw, req)
-			return
-		}
-
 		selectors := []authtypes.Selector{
 			authtypes.MustNewSelector(authtypes.TypeRole, authtypes.SigNozAdminRoleName),
 			authtypes.MustNewSelector(authtypes.TypeRole, authtypes.SigNozEditorRoleName),
@@ -116,7 +94,7 @@ func (middleware *AuthZ) EditAccess(next http.HandlerFunc) http.HandlerFunc {
 			selectors,
 		)
 		if err != nil {
-			middleware.logger.WarnContext(ctx, authzDeniedMessage, "claims", claims)
+			middleware.logger.WarnContext(ctx, authzDeniedMessage, slog.Any("claims", claims))
 			if errors.Asc(err, authtypes.ErrCodeAuthZForbidden) {
 				render.Error(rw, errors.New(errors.TypeForbidden, authtypes.ErrCodeAuthZForbidden, "only editors/admins can access this resource"))
 				return
@@ -139,17 +117,6 @@ func (middleware *AuthZ) AdminAccess(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if claims.IdentNProvider == authtypes.IdentNProviderAPIKey.StringValue() {
-			if err := claims.IsAdmin(); err != nil {
-				middleware.logger.WarnContext(ctx, authzDeniedMessage, "claims", claims)
-				render.Error(rw, err)
-				return
-			}
-
-			next(rw, req)
-			return
-		}
-
 		selectors := []authtypes.Selector{
 			authtypes.MustNewSelector(authtypes.TypeRole, authtypes.SigNozAdminRoleName),
 		}
@@ -164,7 +131,7 @@ func (middleware *AuthZ) AdminAccess(next http.HandlerFunc) http.HandlerFunc {
 			selectors,
 		)
 		if err != nil {
-			middleware.logger.WarnContext(ctx, authzDeniedMessage, "claims", claims)
+			middleware.logger.WarnContext(ctx, authzDeniedMessage, slog.Any("claims", claims))
 			if errors.Asc(err, authtypes.ErrCodeAuthZForbidden) {
 				render.Error(rw, errors.New(errors.TypeForbidden, authtypes.ErrCodeAuthZForbidden, "only admins can access this resource"))
 				return
@@ -186,13 +153,28 @@ func (middleware *AuthZ) SelfAccess(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		id := mux.Vars(req)["id"]
-		if err := claims.IsSelfAccess(id); err != nil {
-			middleware.logger.WarnContext(req.Context(), authzDeniedMessage, "claims", claims)
-			render.Error(rw, err)
-			return
+		selectors := []authtypes.Selector{
+			authtypes.MustNewSelector(authtypes.TypeRole, authtypes.SigNozAdminRoleName),
 		}
 
+		err = middleware.authzService.CheckWithTupleCreation(
+			req.Context(),
+			claims,
+			valuer.MustNewUUID(claims.OrgID),
+			authtypes.RelationAssignee,
+			authtypes.TypeableRole,
+			selectors,
+			selectors,
+		)
+
+		if err != nil {
+			id := mux.Vars(req)["id"]
+			if err := claims.IsSelfAccess(id); err != nil {
+				middleware.logger.WarnContext(req.Context(), authzDeniedMessage, slog.Any("claims", claims))
+				render.Error(rw, err)
+				return
+			}
+		}
 		next(rw, req)
 	})
 }

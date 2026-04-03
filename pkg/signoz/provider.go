@@ -31,9 +31,13 @@ import (
 	"github.com/SigNoz/signoz/pkg/modules/organization/implorganization"
 	"github.com/SigNoz/signoz/pkg/modules/preference/implpreference"
 	"github.com/SigNoz/signoz/pkg/modules/promote/implpromote"
+	"github.com/SigNoz/signoz/pkg/modules/serviceaccount"
 	"github.com/SigNoz/signoz/pkg/modules/session/implsession"
 	"github.com/SigNoz/signoz/pkg/modules/user"
 	"github.com/SigNoz/signoz/pkg/modules/user/impluser"
+	"github.com/SigNoz/signoz/pkg/pprof"
+	"github.com/SigNoz/signoz/pkg/pprof/httppprof"
+	"github.com/SigNoz/signoz/pkg/pprof/nooppprof"
 	"github.com/SigNoz/signoz/pkg/prometheus"
 	"github.com/SigNoz/signoz/pkg/prometheus/clickhouseprometheus"
 	"github.com/SigNoz/signoz/pkg/querier"
@@ -86,6 +90,13 @@ func NewWebProviderFactories() factory.NamedMap[factory.ProviderFactory[web.Web,
 	return factory.MustNewNamedMap(
 		routerweb.NewFactory(),
 		noopweb.NewFactory(),
+	)
+}
+
+func NewPProfProviderFactories() factory.NamedMap[factory.ProviderFactory[pprof.PProf, pprof.Config]] {
+	return factory.MustNewNamedMap(
+		httppprof.NewFactory(),
+		nooppprof.NewFactory(),
 	)
 }
 
@@ -178,6 +189,11 @@ func NewSQLMigrationProviderFactories(
 		sqlmigration.NewDeprecateUserInviteFactory(sqlstore, sqlschema),
 		sqlmigration.NewUpdateCloudIntegrationUniqueIndexFactory(sqlstore, sqlschema),
 		sqlmigration.NewUpdatePlannedMaintenanceRuleFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddUserRoleFactory(sqlstore, sqlschema),
+		sqlmigration.NewDropUserRoleColumnFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddServiceAccountFactory(sqlstore, sqlschema),
+		sqlmigration.NewDeprecateAPIKeyFactory(sqlstore, sqlschema),
+		sqlmigration.NewServiceAccountAuthzactory(sqlstore),
 	)
 }
 
@@ -249,7 +265,7 @@ func NewAPIServerProviderFactories(orgGetter organization.Getter, authz authz.Au
 			orgGetter,
 			authz,
 			implorganization.NewHandler(modules.OrgGetter, modules.OrgSetter),
-			impluser.NewHandler(modules.User, modules.UserGetter),
+			impluser.NewHandler(modules.UserSetter, modules.UserGetter),
 			implsession.NewHandler(modules.Session),
 			implauthdomain.NewHandler(modules.AuthDomain),
 			implpreference.NewHandler(modules.Preference),
@@ -262,9 +278,13 @@ func NewAPIServerProviderFactories(orgGetter organization.Getter, authz authz.Au
 			handlers.GatewayHandler,
 			handlers.Fields,
 			handlers.AuthzHandler,
+			handlers.RawDataExport,
 			handlers.ZeusHandler,
 			handlers.QuerierHandler,
 			handlers.ServiceAccountHandler,
+			handlers.RegistryHandler,
+			handlers.CloudIntegrationHandler,
+			handlers.RuleStateHistory,
 		),
 	)
 }
@@ -277,11 +297,11 @@ func NewTokenizerProviderFactories(cache cache.Cache, sqlstore sqlstore.SQLStore
 	)
 }
 
-func NewIdentNProviderFactories(sqlstore sqlstore.SQLStore, tokenizer tokenizer.Tokenizer, orgGetter organization.Getter, userGetter user.Getter, userConfig user.Config) factory.NamedMap[factory.ProviderFactory[identn.IdentN, identn.Config]] {
+func NewIdentNProviderFactories(tokenizer tokenizer.Tokenizer, serviceAccount serviceaccount.Module, orgGetter organization.Getter, userGetter user.Getter, userConfig user.Config) factory.NamedMap[factory.ProviderFactory[identn.IdentN, identn.Config]] {
 	return factory.MustNewNamedMap(
 		impersonationidentn.NewFactory(orgGetter, userGetter, userConfig),
 		tokenizeridentn.NewFactory(tokenizer),
-		apikeyidentn.NewFactory(sqlstore),
+		apikeyidentn.NewFactory(serviceAccount),
 	)
 }
 

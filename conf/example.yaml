@@ -39,6 +39,13 @@ instrumentation:
             host: "0.0.0.0"
             port: 9090
 
+##################### PProf #####################
+pprof:
+  # Whether to enable the pprof server.
+  enabled: true
+  # The address on which the pprof server listens.
+  address: 0.0.0.0:6060
+
 ##################### Web #####################
 web:
   # Whether to enable the web frontend
@@ -78,10 +85,12 @@ sqlstore:
   sqlite:
     # The path to the SQLite database file.
     path: /var/lib/signoz/signoz.db
-    # Mode is the mode to use for the sqlite database.
+    # The journal mode for the sqlite database. Supported values: delete, wal.
     mode: delete
-    # BusyTimeout is the timeout for the sqlite database to wait for a lock.
+    # The timeout for the sqlite database to wait for a lock.
     busy_timeout: 10s
+    # The default transaction locking behavior. Supported values: deferred, immediate, exclusive.
+    transaction_mode: deferred
 
 ##################### APIServer #####################
 apiserver:
@@ -137,6 +146,8 @@ telemetrystore:
 
 ##################### Prometheus #####################
 prometheus:
+  # The maximum time a PromQL query is allowed to run before being aborted.
+  timeout: 2m
   active_query_tracker:
     # Whether to enable the active query tracker.
     enabled: true
@@ -343,3 +354,13 @@ identn:
   impersonation:
     # toggle impersonation identN, when enabled, all requests will impersonate the root user
     enabled: false
+
+##################### Service Account #####################
+serviceaccount:
+  email:
+    # email domain for the service account principal
+    domain: signozserviceaccount.com
+
+  analytics:
+    # toggle service account analytics
+    enabled: true

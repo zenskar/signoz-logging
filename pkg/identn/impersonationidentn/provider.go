@@ -79,16 +79,15 @@ func (provider *provider) GetIdentity(req *http.Request) (*authtypes.Identity, e
 		return nil, err
 	}
 
-	rootUser, err := provider.userGetter.GetRootUserByOrgID(ctx, org.ID)
+	rootUser, _, err := provider.userGetter.GetRootUserByOrgID(ctx, org.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	provider.identity = authtypes.NewIdentity(
+	provider.identity = authtypes.NewPrincipalUserIdentity(
 		rootUser.ID,
 		rootUser.OrgID,
 		rootUser.Email,
-		rootUser.Role,
 		authtypes.IdentNProviderImpersonation,
 	)
 

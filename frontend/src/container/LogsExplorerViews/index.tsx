@@ -444,8 +444,6 @@ function LogsExplorerViewsContainer({
 						isLoading={isLoading}
 						isError={isError}
 						isSuccess={isSuccess}
-						minTime={minTime}
-						maxTime={maxTime}
 					/>
 				)}
 
@@ -501,16 +499,18 @@ function LogsExplorerViewsContainer({
 						</div>
 					)}
 					{selectedPanelType === PANEL_TYPES.TABLE && !showLiveLogs && (
-						<LogsExplorerTable
-							data={
-								(data?.payload?.data?.newResult?.data?.result ||
-									data?.payload?.data?.result ||
-									[]) as QueryDataV3[]
-							}
-							isLoading={isLoading || isFetching}
-							isError={isError}
-							error={error as APIError}
-						/>
+						<div className="table-view-container">
+							<LogsExplorerTable
+								data={
+									(data?.payload?.data?.newResult?.data?.result ||
+										data?.payload?.data?.result ||
+										[]) as QueryDataV3[]
+								}
+								isLoading={isLoading || isFetching}
+								isError={isError}
+								error={error as APIError}
+							/>
+						</div>
 					)}
 				</div>
 			</div>
